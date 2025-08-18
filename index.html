@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NobleReach Readiness Level Assessment Tool</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <div class="container">
+        <!-- Header Section -->
+        <header class="header">
+            <h1>NobleReach Readiness Level Assessment Tool</h1>
+            <p>Comprehensive evaluation framework for startup venture readiness</p>
+        </header>
+
+        <!-- Controls Section -->
+        <div class="controls">
+
+            <!-- New: Venture meta bar -->
+            <div class="meta-bar" role="region" aria-label="Venture details">
+                <div class="venture-name">
+                    <label for="venture-name">Venture name</label>
+                    <input type="text" id="venture-name" placeholder="e.g., NovaThera" />
+                </div>
+                <div class="snapshot-controls">
+                    <div class="timestamp">
+                        <span>Assessed:</span>
+                        <time id="assessed-at" aria-live="polite">—</time>
+                    </div>
+                    <button id="btn-export-pdf" class="btn small" title="Save selected levels to PDF">
+                        Save PDF
+                    </button>
+                </div>
+            </div>
+
+            <!-- Health mode -->
+            <div class="health-toggle">
+                <div class="row">
+                    <input type="checkbox" id="health-related" />
+                    <label for="health-related"><strong>Health-related venture mode</strong></label>
+                </div>
+                <small id="health-help-text" class="help-text">
+                    Switches to patient/clinical language and emphasizes healthcare criteria. Regulatory is enabled.
+                </small>
+                <div id="health-mode-note" class="info-banner hidden" aria-live="polite">
+                    Health mode ON: using patient-centric definitions.
+                </div>
+            </div>
+
+            <!-- View toggle -->
+            <div class="view-toggle">
+                <button class="view-btn active" data-view="expanded">Expanded View</button>
+                <button class="view-btn" data-view="compact">Compact View</button>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Sidebar Navigation -->
+            <aside class="sidebar">
+                <h3>Categories</h3>
+                <ul class="category-list" id="category-list">
+                    <!-- Categories will be dynamically generated -->
+                </ul>
+            </aside>
+
+            <!-- Assessment Area -->
+            <main class="assessment-area">
+                <div class="progress-notice">
+                    <h2 id="category-title">Select a category to begin</h2>
+
+                    <!-- Technology subtrack selector -->
+                    <div id="industry-selector" class="industry-selector hidden">
+                        <label for="industry-select">Technology track</label>
+                        <select id="industry-select">
+                            <optgroup label="General & Dual-Use">
+                                <option value="general">General</option>
+                                <option value="software">Software</option>
+                                <option value="hardware">Hardware</option>
+                            </optgroup>
+                            <optgroup label="Health (when enabled)" id="health-track-optgroup">
+                                <option value="health_device">Medical device</option>
+                                <option value="health_pharma">Pharmaceuticals</option>
+                            </optgroup>
+                        </select>
+                        <small class="help-text">
+                            When health mode is ON, choose a track to specialize Technology content.
+                        </small>
+                    </div>
+                </div>
+
+                <!-- Levels Container -->
+                <div id="levels-container" class="levels-container">
+                    <!-- Levels will be dynamically generated -->
+                </div>
+            </main>
+        </div>
+
+        <!-- Summary Panel -->
+        <div class="summary-panel" id="summary-panel">
+            <div class="summary-header">
+                <h3>Assessment Summary (0/8)</h3>
+                <div class="panel-controls">
+                    <button class="panel-btn minimize-btn" id="minimize-btn">−</button>
+                    <button class="panel-btn maximize-btn" id="maximize-btn">□</button>
+                </div>
+            </div>
+            <div class="summary-content">
+                <div class="summary-scores" id="summary-scores">
+                    <!-- Summary scores will be dynamically generated -->
+                </div>
+                <div class="venture-description">
+                    <p id="venture-desc-text">Begin assessment to generate venture description</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="panel-overlay" class="panel-overlay"></div>
+
+    <!-- Keep readiness data global -->
+    <script src="data.js"></script>
+    <!-- jsPDF for PDF export (used in modules) -->
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <!-- App modules -->
+    <script type="module" src="./main.js"></script>
+</body>
+</html>
