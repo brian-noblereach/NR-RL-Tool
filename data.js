@@ -667,3 +667,7 @@ const readinessData = {
         ]
     }
 };
+// --- Expose for ESM modules (vdr.js, main.js, etc.) ---
+if (typeof window !== "undefined" && !window.readinessData) {
+  window.readinessData = readinessData;
+}

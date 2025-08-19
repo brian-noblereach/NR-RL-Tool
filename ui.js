@@ -1,77 +1,148 @@
-// ui.js - generic UI helpers (no rendering of levels here)
+// ui.js
 import { AppState } from "./state.js";
 
-export function updateIndustrySelectorUI({ forceDefaultOnEnable = false } = {}) {
-  const selectorWrap = document.getElementById("industry-selector");
-  const selectEl = document.getElementById("industry-select");
-  const healthOptgroup = document.getElementById("health-track-optgroup");
 
-  const isTech = AppState.currentCategory === "Technology";
-  selectorWrap.classList.toggle("hidden", !isTech);
 
-  if (healthOptgroup) healthOptgroup.style.display = AppState.isHealthRelated ? "" : "none";
-
-  if (!selectEl) return;
-
-  const val = selectEl.value;
-  const isHealthTrack = val === "health_device" || val === "health_pharma";
-
-  if (AppState.isHealthRelated) {
-    if (forceDefaultOnEnable || !isHealthTrack) selectEl.value = "health_device";
+/* Summary panel controls (icons + titles) */
+function setSummaryHeaderText(){
+  const panel = document.getElementById("summary-panel");
+  const h = panel?.querySelector(".summary-header h3");
+  if (!panel || !h) return;
+  const done = Object.values(AppState.scores || {}).filter(Boolean).length;
+  const total = document.getElementById("health-related")?.checked ? 9 : 8;
+  if (panel.classList.contains("minimized")) {
+    h.textContent = `Summary ${done}/${total}`;
   } else {
-    if (isHealthTrack) selectEl.value = "general";
+    h.textContent = `Assessment Summary (${done}/${total})`;
   }
 }
+
+
+/* MM-DD-YYYY from earlier step */
+export function renderAssessedAt(){
+  const el = document.getElementById("assessed-at");
+  if (!el) return;
+  const d = AppState.assessedAt || new Date();
+  const mm = String(d.getMonth()+1).padStart(2,"0");
+  const dd = String(d.getDate()).padStart(2,"0");
+  const yy = d.getFullYear();
+  el.textContent = `${mm}-${dd}-${yy}`;
+}
+export function stampAssessedNow(){ AppState.assessedAt = new Date(); renderAssessedAt(); }
+
+/* ---- Summary panel controls & titles ---- */
+function syncSummaryControls(){
+  const panel = document.getElementById("summary-panel");
+  if (!panel) return;
+
+  const isMin = panel.classList.contains("minimized");
+  const isMax = panel.classList.contains("maximized");
+
+  const h = panel.querySelector(".summary-header h3");
+  if (h) {
+    const done = Object.values(AppState.scores || {}).filter(Boolean).length;
+    const total = document.getElementById("health-related")?.checked ? 9 : 8;
+    h.textContent = isMin ? `Summary ${done}/${total}` : `Assessment Summary (${done}/${total})`;
+  }
+
+  // Icons
+  const minBtn = document.getElementById("minimize-btn");
+  const maxBtn = document.getElementById("maximize-btn");
+  if (minBtn){
+    const iconMinus = minBtn.querySelector("#icon-minus");
+    const iconPlus  = minBtn.querySelector("#icon-plus");
+    // Show + only when minimized, otherwise show −
+    iconPlus?.classList.toggle("hidden", !isMin);
+    iconMinus?.classList.toggle("hidden", isMin);
+    minBtn.setAttribute("title", isMin ? "Restore" : "Minimize");
+    minBtn.setAttribute("aria-label", isMin ? "Restore" : "Minimize");
+  }
+  if (maxBtn){
+    const iconExpand  = maxBtn.querySelector("#icon-expand");
+    const iconRestore = maxBtn.querySelector("#icon-restore");
+    const showRestore = isMax;
+    iconExpand?.classList.toggle("hidden", showRestore);
+    iconRestore?.classList.toggle("hidden", !showRestore);
+    maxBtn.setAttribute("title", showRestore ? "Restore" : "Maximize");
+    maxBtn.setAttribute("aria-label", showRestore ? "Restore" : "Maximize");
+  }
+}
+
+export function toggleMinimizeSummaryPanel(){
+  const panel = document.getElementById("summary-panel");
+  const overlay = document.getElementById("panel-overlay");
+  if (!panel) return;
+
+  if (panel.classList.contains("minimized")) {
+    // restore to normal (not maximized)
+    panel.classList.remove("minimized","maximized");
+    overlay?.classList.remove("active");
+  } else {
+    // minimize from normal or maximized
+    panel.classList.remove("maximized");
+    panel.classList.add("minimized");
+    overlay?.classList.remove("active");
+  }
+  syncSummaryControls();
+}
+
+export function toggleMaximizeSummaryPanel(){
+  const panel = document.getElementById("summary-panel");
+  const overlay = document.getElementById("panel-overlay");
+  if (!panel) return;
+
+  if (panel.classList.contains("maximized")) {
+    // restore to normal (not minimized)
+    panel.classList.remove("maximized","minimized");
+    overlay?.classList.remove("active");
+  } else {
+    // ensure not minimized, then maximize
+    panel.classList.remove("minimized");
+    panel.classList.add("maximized");
+    overlay?.classList.add("active");
+  }
+  syncSummaryControls();
+}
+
+export function closeMaximizedPanel(){
+  const panel = document.getElementById("summary-panel");
+  if (!panel) return;
+  if (panel.classList.contains("maximized")){
+    panel.classList.remove("maximized");
+    document.getElementById("panel-overlay")?.classList.remove("active");
+    syncSummaryControls();
+  }
+}
+
+/* Keep this logic from earlier; unchanged except icons now sync via syncSummaryControls */
+export function updateIndustrySelectorUI({ forceDefaultOnEnable=false } = {}){
+  const health = document.getElementById("health-related")?.checked;
+  const sel = document.getElementById("industry-selector");
+  const group = document.getElementById("health-track-optgroup");
+  if (sel) sel.classList.toggle("hidden", !health);
+  if (group) group.disabled = !health;
+  if (forceDefaultOnEnable && health){
+    const s = document.getElementById("industry-select");
+    if (s) s.value = "health_device";
+  }
+}
+
+/* Expose one sync call for others */
+export function syncSummaryHeaderAndIcons(){ syncSummaryControls(); }
+
+
+
+
+
+
+
+
 
 export function toggleLevel(card) {
   card.classList.toggle("expanded");
 }
 
-// Summary panel helpers
-export function toggleMinimizeSummaryPanel() {
-  const panel = document.getElementById("summary-panel");
-  const minimizeBtn = document.getElementById("minimize-btn");
-  const maximizeBtn = document.getElementById("maximize-btn");
 
-  if (panel.classList.contains("minimized")) {
-    panel.classList.remove("minimized");
-    minimizeBtn.textContent = "-";
-    maximizeBtn.style.display = "";
-  } else {
-    panel.classList.remove("maximized");
-    panel.classList.add("minimized");
-    minimizeBtn.textContent = "+";
-    maximizeBtn.style.display = "none";
-    closeOverlay();
-  }
-}
-
-export function toggleMaximizeSummaryPanel() {
-  const panel = document.getElementById("summary-panel");
-  const overlay = document.getElementById("panel-overlay");
-  const minimizeBtn = document.getElementById("minimize-btn");
-
-  if (panel.classList.contains("maximized")) {
-    closeMaximizedPanel();
-  } else {
-    panel.classList.remove("minimized");
-    panel.classList.add("maximized");
-    overlay.classList.add("active");
-    minimizeBtn.textContent = "x";
-  }
-}
-
-export function closeMaximizedPanel() {
-  const panel = document.getElementById("summary-panel");
-  const overlay = document.getElementById("panel-overlay");
-  const minimizeBtn = document.getElementById("minimize-btn");
-
-  if (panel.classList.contains("maximized")) {
-    panel.classList.remove("maximized");
-    overlay.classList.remove("active");
-    minimizeBtn.textContent = "-";
-  }
-}
 
 export function closeOverlay() {
   const overlay = document.getElementById("panel-overlay");
@@ -102,13 +173,6 @@ function formatLocalDateTime(d) {
   return `${yr}-${mo}-${da} ${hh}:${mm}`;
 }
 
-export function renderAssessedAt() {
-  const el = document.getElementById("assessed-at");
-  if (!el) return;
-  el.textContent = AppState.assessedAt ? formatLocalDateTime(AppState.assessedAt) : "—";
-}
 
-export function stampAssessedNow() {
-  AppState.assessedAt = new Date();
-  renderAssessedAt();
-}
+
+

@@ -1,5 +1,4 @@
-
-// main.js - entry point & event wiring (additions marked NEW)
+// main.js — app entry + wiring (with VDR modal/init, robust readinessData access)
 import { AppState } from "./state.js";
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
 import { updateSummary } from "./summary.js";
@@ -10,154 +9,302 @@ import {
   closeMaximizedPanel,
   renderAssessedAt,
   stampAssessedNow,
+  syncSummaryHeaderAndIcons,
 } from "./ui.js";
 
-// NEW: VDR imports
-import { enterVdr, exitVdr, renderVdrGoals, generateVdr, downloadVdrPdf } from "./vdr.js";
+// VDR imports
+import {
+  enterVdr,
+  exitVdr,
+  renderVdrCards,
+  generateVdr,
+  downloadVdrPdf,
+  initVdrModalListeners,
+} from "./vdr.js";
 
+/* -------------------------
+   Safe readiness data accessor
+--------------------------*/
+function RD() {
+  return (typeof window !== "undefined" && window.readinessData) ||
+         (typeof globalThis !== "undefined" && globalThis.readinessData) ||
+         (typeof readinessData !== "undefined" && readinessData) ||
+         null;
+}
 
+/* -------------------------
+   Helpers
+--------------------------*/
 const CATEGORY_ORDER = [
-  "IP",
-  "Technology",
-  "Market",
-  "Product",
-  "Team",
-  "Go-to-Market",
-  "Business",
-  "Funding",
-  "Regulatory",
+  "IP","Technology","Market","Product","Team","Go-to-Market","Business","Funding","Regulatory",
 ];
 
-function pad(n) {
-  return n < 10 ? "0" + n : "" + n;
-}
-function formatLocalDateTime(d) {
-  const yr = d.getFullYear();
-  const mo = pad(d.getMonth() + 1);
-  const da = pad(d.getDate());
-  const hh = pad(d.getHours());
-  const mm = pad(d.getMinutes());
+function pad(n){return n<10?"0"+n:""+n;}
+function formatLocalDateTime(d){
+  const yr=d.getFullYear(),mo=pad(d.getMonth()+1),da=pad(d.getDate()),hh=pad(d.getHours()),mm=pad(d.getMinutes());
   return `${yr}-${mo}-${da} ${hh}:${mm}`;
 }
 
-function categoriesToInclude() {
-  const all = Object.keys(readinessData);
-  return AppState.isHealthRelated ? all : all.filter((c) => c !== "Regulatory");
+
+function centerElement(el){
+  if(!el) return;
+  el.scrollIntoView({ block:"center", behavior:"smooth"});
+}
+function categoriesToInclude(){
+  const data = (typeof window !== "undefined" && window.readinessData) ||
+               (typeof globalThis !== "undefined" && globalThis.readinessData) || null;
+  if (!data) return [];
+  const all = Object.keys(data);
+  return AppState.isHealthRelated ? all : all.filter(c => c !== "Regulatory");
+}
+function nextCategoryName(cur){
+  const allowed = categoriesToInclude();
+  const order = ["IP","Technology","Market","Product","Team","Go-to-Market","Business","Funding","Regulatory"];
+  const seq = order.filter(c => allowed.includes(c));
+  const idx = seq.indexOf(cur);
+  return idx >= 0 && idx < seq.length - 1 ? seq[idx+1] : null;
+}
+function navigateToCategory(cat) {
+  if (!cat) return;
+  if (AppState.currentCategory === cat) return;
+
+  console.log("[next-pill] navigating to", cat);
+  AppState.currentCategory = cat;
+
+  // Rebuild sidebar so the active state updates, then render the levels
+  initializeCategories();
+  updateCategoryDisplay();
+  updateSummary();
+  syncSummaryHeaderAndIcons();
+
+  // Scroll after DOM paints
+  requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
 }
 
-function buildSnapshotRows() {
-  // Build rows in fixed order, but only include categories present + allowed
-  const allowed = new Set(categoriesToInclude());
-  const rows = [];
-  CATEGORY_ORDER.forEach((cat) => {
-    if (!readinessData[cat] || !allowed.has(cat)) return;
-    const lvl = AppState.scores[cat] || "-";
-    rows.push({ category: cat, level: lvl });
+/* ---------- Center the selected card inside .assessment-area ---------- */
+
+function centerCardInAssessment(cardEl, retries = 3) {
+  const container = document.querySelector(".assessment-area");
+  if (!container || !cardEl) return;
+
+  const doCenter = (tag) => {
+    // Recompute each time; card height may have changed after expansion.
+    const cRect = container.getBoundingClientRect();
+    const tRect = cardEl.getBoundingClientRect();
+    const delta = (tRect.top - cRect.top);
+    const targetScrollTop = container.scrollTop + delta - (container.clientHeight / 2 - tRect.height / 2);
+    _scrollDebug(tag, container, cardEl);
+    container.scrollTo({ top: Math.max(targetScrollTop, 0), behavior: "smooth" });
+  };
+
+  // First try (immediate)
+  doCenter("initial");
+
+  // Try again after layout settles (card expansion)
+  if (retries > 0) {
+    setTimeout(() => {
+      const selectedAgain = document.querySelector(".levels-container .level-card.selected") || cardEl;
+      doCenter("retry-120ms");
+      if (retries > 1) {
+        setTimeout(() => {
+          doCenter("retry-350ms");
+        }, 230);
+      }
+    }, 120);
+  }
+}
+
+/* ---------- Toast DOM + fade helpers ---------- */
+
+/** Find the nearest scrollable ancestor; fallback to the document */
+function getScrollParent(el) {
+  const overflow = /auto|scroll/i;
+  let p = el && el.parentElement;
+  while (p && p !== document.body && p !== document.documentElement) {
+    const s = getComputedStyle(p);
+    if ((overflow.test(s.overflowY) || overflow.test(s.overflow)) && p.scrollHeight > p.clientHeight) {
+      return p;
+    }
+    p = p.parentElement;
+  }
+  return document.scrollingElement || document.documentElement; // window scroller
+}
+
+/** Debug trace used by the auto-center logic */
+function _scrollDebug(label, container, card, isDoc) {
+  const cRect = isDoc ? { top: 0, height: window.innerHeight } : container.getBoundingClientRect();
+  const tRect = card.getBoundingClientRect();
+  console.log(`[auto-center] ${label}`, {
+    isDoc,
+    containerTop: Math.round(cRect.top),
+    containerH: Math.round(cRect.height),
+    scrollTop: Math.round(isDoc ? (window.pageYOffset || document.documentElement.scrollTop || 0) : container.scrollTop),
+    cardTop: Math.round(tRect.top),
+    cardH: Math.round(tRect.height)
   });
-  return rows;
 }
 
-/* -------------------------
-   PDF Export (name + timestamp + levels)
---------------------------*/
-function savePdfSnapshot() {
-  // Ensure jsPDF is available
-  const jsPDF = window.jspdf && window.jspdf.jsPDF;
-  if (!jsPDF) {
-    alert("PDF library failed to load. Please check your network and reload the page.");
+/** Center a card in its real scroll container (document or element), with retries */
+function centerCardSmart(cardEl, retries = 3) {
+  if (!cardEl) return;
+
+  const container = getScrollParent(cardEl);
+  const isDoc = container === document.scrollingElement || container === document.documentElement || container === document.body;
+
+  const apply = (tag) => {
+    const rect = cardEl.getBoundingClientRect();
+
+    if (isDoc) {
+      const viewportH = window.innerHeight || document.documentElement.clientHeight;
+      const target = (window.pageYOffset || document.documentElement.scrollTop || 0)
+                   + rect.top - (viewportH / 2 - rect.height / 2);
+      _scrollDebug(tag, container, cardEl, true);
+      window.scrollTo({ top: Math.max(target, 0), behavior: "smooth" });
+    } else {
+      const cRect = container.getBoundingClientRect();
+      const delta = rect.top - cRect.top;
+      const target = container.scrollTop + delta - (container.clientHeight / 2 - rect.height / 2);
+      _scrollDebug(tag, container, cardEl, false);
+      container.scrollTo({ top: Math.max(target, 0), behavior: "smooth" });
+    }
+  };
+
+  // Immediate attempt
+  apply("initial");
+  // Retry after layout settles (expansion), then once more
+  if (retries > 0) {
+    setTimeout(() => {
+      apply("retry-120ms");
+      if (retries > 1) setTimeout(() => apply("retry-350ms"), 230);
+    }, 120);
+  }
+}
+
+/* ---------- Toast fade helpers (unchanged API, fade classes already in CSS) ---------- */
+function ensureNextToastDom() {
+  if (document.getElementById("next-cat-toast")) return;
+  const toast = document.createElement("div");
+  toast.id = "next-cat-toast";
+  toast.className = "next-toast hidden";
+  toast.setAttribute("aria-live", "polite");
+  toast.innerHTML = `
+    <button id="next-cat-btn" class="btn next-btn">
+      Next: <span id="next-cat-name">—</span> →
+    </button>`;
+  document.body.appendChild(toast);
+}
+function hideNextToast(immediate = false) {
+  const toast = document.getElementById("next-cat-toast");
+  if (!toast) return;
+
+  // Immediate hide (used when user clicks a category in the sidebar)
+  if (immediate) {
+    toast.classList.remove("show");
+    toast.classList.add("hidden");
     return;
   }
 
-  // Ensure we have a timestamp (if none yet, stamp now)
-  if (!AppState.assessedAt) {
-    stampAssessedNow();
+  // Animated fade-out
+  if (toast.classList.contains("hidden")) return;
+  toast.classList.remove("show");
+  const onEnd = (e) => {
+    if (e.target !== toast) return;
+    toast.classList.add("hidden");
+    toast.removeEventListener("transitionend", onEnd);
+  };
+  toast.addEventListener("transitionend", onEnd);
+}
+
+function showNextToast(nextCat) {
+  ensureNextToastDom();
+  const toast = document.getElementById("next-cat-toast");
+  const btn   = document.getElementById("next-cat-btn");
+  const name  = document.getElementById("next-cat-name");
+  name.textContent = nextCat;
+
+  if (!toast.classList.contains("show")) {
+    toast.classList.remove("hidden");
+    requestAnimationFrame(() => toast.classList.add("show")); // fade in
   }
 
-  const ventureName =
-    (AppState.ventureName && AppState.ventureName.trim()) || "(unnamed venture)";
-  const assessed = AppState.assessedAt
-    ? formatLocalDateTime(AppState.assessedAt)
-    : "—";
+  // Replace listeners to avoid duplicates, then attach fresh one
+  btn.replaceWith(btn.cloneNode(true));
+  document.getElementById("next-cat-btn").addEventListener("click", () => {
+    hideNextToast();                      // fade out
+    navigateToCategory(nextCat);          // <-- actually switch category
+  }, { once: true });
+}
 
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const left = 16;
-  let y = 20;
-  const lh = 8; // line height
 
-  // Header
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text("NobleReach Readiness Level Snapshot", left, y);
-  y += lh + 2;
 
-  // Meta
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(12);
-  doc.text(`Venture: ${ventureName}`, left, y);
-  y += lh;
-  doc.text(`Assessed: ${assessed}`, left, y);
-  y += lh + 2;
+/* -------------------------
+   Snapshot PDF
+--------------------------*/
+function buildSnapshotRows(){
+  const data = RD();
+  if (!data) return [];
+  const allowed=new Set(categoriesToInclude());
+  const rows=[];
+  CATEGORY_ORDER.forEach(cat=>{
+    if(!data[cat]||!allowed.has(cat)) return;
+    rows.push({category:cat, level:AppState.scores[cat]||"-"});
+  });
+  return rows;
+}
+function savePdfSnapshot(){
+  const jsPDF = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPDF) { alert("PDF library failed to load. Please check your network and reload the page."); return; }
+  if (!AppState.assessedAt) stampAssessedNow();
 
-  // Table header
-  doc.setFont("helvetica", "bold");
-  doc.text("Category", left, y);
-  doc.text("Level", left + 120, y);
-  y += lh;
+  const ventureName = (AppState.ventureName && AppState.ventureName.trim()) || "(unnamed venture)";
+  const assessed = AppState.assessedAt ? formatLocalDateTime(AppState.assessedAt) : "—";
 
-  doc.setLineWidth(0.2);
-  doc.line(left, y - 6, left + 160, y - 6);
+  const doc = new jsPDF({ unit:"mm", format:"a4" });
+  const left = 16; let y = 20; const lh = 8;
 
-  // Rows
-  doc.setFont("helvetica", "normal");
-  const rows = buildSnapshotRows();
-  rows.forEach((r) => {
-    // Simple page break guard
+  doc.setFont("helvetica","bold"); doc.setFontSize(16);
+  doc.text("NobleReach Readiness Level Snapshot", left, y); y += lh + 2;
+  doc.setFont("helvetica","normal"); doc.setFontSize(12);
+  doc.text(`Venture: ${ventureName}`, left, y); y += lh;
+  doc.text(`Assessed: ${assessed}`, left, y); y += lh + 2;
+
+  doc.setFont("helvetica","bold");
+  doc.text("Category", left, y); doc.text("Level", left+120, y); y += lh;
+  doc.setLineWidth(0.2); doc.line(left, y-6, left+160, y-6);
+  doc.setFont("helvetica","normal");
+
+  buildSnapshotRows().forEach(r=>{
     if (y > 280) {
-      doc.addPage();
-      y = 20;
-      doc.setFont("helvetica", "bold");
-      doc.text("Category", left, y);
-      doc.text("Level", left + 120, y);
-      y += lh;
-      doc.line(left, y - 6, left + 160, y - 6);
-      doc.setFont("helvetica", "normal");
+      doc.addPage(); y = 20;
+      doc.setFont("helvetica","bold");
+      doc.text("Category", left, y); doc.text("Level", left+120, y); y += lh;
+      doc.line(left, y-6, left+160, y-6);
+      doc.setFont("helvetica","normal");
     }
     doc.text(r.category, left, y);
-    doc.text(String(r.level), left + 120, y);
+    doc.text(String(r.level), left+120, y);
     y += lh;
   });
 
-  // Filename: ventureName_YYYYMMDD_HHmm.pdf
-  const now = new Date();
-  const fnameTs =
-    now.getFullYear().toString() +
-    pad(now.getMonth() + 1) +
-    pad(now.getDate()) +
-    "_" +
-    pad(now.getHours()) +
-    pad(now.getMinutes());
-  const fileSafeName = ventureName.replace(/[^\w\-]+/g, "_");
-  const filename = `${fileSafeName}_${fnameTs}.pdf`;
-
-  doc.save(filename);
+  const now=new Date();
+  const fnameTs = now.getFullYear().toString()+pad(now.getMonth()+1)+pad(now.getDate())+"_"+pad(now.getHours())+pad(now.getMinutes());
+  const fileSafeName = ventureName.replace(/[^\w\-]+/g,"_");
+  doc.save(`${fileSafeName}_${fnameTs}.pdf`);
 }
 
 /* -------------------------
-   Bootstrap
+   App boot
 --------------------------*/
-// main.js (only the initializeApp function changes below)
-
 function initializeApp() {
   initializeCategories();
   updateSummary();
+  syncSummaryHeaderAndIcons();
 
-  // Initialize meta UI based on state (ventureName, assessedAt)
   const nameInput = document.getElementById("venture-name");
-  if (nameInput) {
-    nameInput.value = AppState.ventureName || "";
-  }
+  if (nameInput) nameInput.value = AppState.ventureName || "";
+  renderAssessedAt();
 
-  // NEW: start the summary panel minimized so it doesn't get in the way
+  // Start summary panel minimized
   const panel = document.getElementById("summary-panel");
   const minimizeBtn = document.getElementById("minimize-btn");
   if (panel && !panel.classList.contains("maximized")) {
@@ -165,89 +312,104 @@ function initializeApp() {
     if (minimizeBtn) minimizeBtn.textContent = "+";
   }
 
-  renderAssessedAt(); // shows "—" until set
+  initVdrModalListeners();
 }
 
-
 function setupEventListeners() {
-	const btnCreateVdr = document.getElementById("btn-create-vdr");
-	if (btnCreateVdr) {
-		btnCreateVdr.addEventListener("click", () => {
-			enterVdr();        // hide main app, show VDR screen
-			renderVdrGoals();  // (redundant but safe if you want to refresh)
-    });
-  }
-  const btnVdrBack = document.getElementById("vdr-back");
-  if (btnVdrBack) btnVdrBack.addEventListener("click", exitVdr);
-
-  const btnVdrGen = document.getElementById("vdr-generate");
-  if (btnVdrGen) btnVdrGen.addEventListener("click", generateVdr);
-
-  const btnVdrPdf = document.getElementById("vdr-download-pdf");
-  if (btnVdrPdf) btnVdrPdf.addEventListener("click", downloadVdrPdf);
   // Health-related toggle
-  document.getElementById("health-related").addEventListener("change", (e) => {
+  document.getElementById("health-related").addEventListener("change",(e)=>{
     AppState.isHealthRelated = e.target.checked;
-
     const note = document.getElementById("health-mode-note");
     if (note) note.classList.toggle("hidden", !AppState.isHealthRelated);
-
-    updateIndustrySelectorUI({ forceDefaultOnEnable: true });
+    updateIndustrySelectorUI({ forceDefaultOnEnable:true });
     initializeCategories();
     updateSummary();
+	syncSummaryHeaderAndIcons();
   });
 
-  // View toggle buttons
-  document.querySelectorAll(".view-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
+const catList = document.getElementById("category-list");
+if (catList) {
+  // Capture so it runs even if inner handlers stop propagation
+  catList.addEventListener("click", (e) => {
+    if (e.target.closest(".category-item")) {
+      hideNextToast(true); // immediate hide
+    }
+  }, { capture: true });
+
+  // Keyboard navigation (Enter/Space on a category)
+  catList.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && e.target.closest(".category-item")) {
+      hideNextToast(true);
+    }
+  }, { capture: true });
+}
+
+// Center selected level & show "Next" pill.
+// capture:true so we still run even if the level button stops propagation.
+document.addEventListener("click", (e) => {
+  const selectBtn = e.target.closest?.(".level-select-btn");
+  if (!selectBtn) return;
+
+  // Let your existing select logic run first (re-renders + expands the card)
+  setTimeout(() => {
+    const selectedCard =
+      document.querySelector(".levels-container .level-card.selected") ||
+      selectBtn.closest(".level-card");
+
+    console.log("[auto-center] selection clicked; centering…", { category: AppState.currentCategory });
+    centerCardSmart(selectedCard, 3);
+
+    const nxt = (AppState.currentCategory && nextCategoryName(AppState.currentCategory)) || null;
+    if (nxt) showNextToast(nxt);
+  }, 0);
+}, { capture: true });
+
+
+
+  // View toggle
+  document.querySelectorAll(".view-btn").forEach((btn)=>{
+    btn.addEventListener("click",(e)=>{
       const view = e.target.dataset.view;
       AppState.currentView = view;
-      document
-        .querySelectorAll(".view-btn")
-        .forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+      document.querySelectorAll(".view-btn").forEach(b=>b.classList.toggle("active", b.dataset.view===view));
       if (AppState.currentCategory) updateCategoryDisplay();
     });
   });
 
   // Technology subtrack selector
-  document
-    .getElementById("industry-select")
-    .addEventListener("change", updateCategoryDisplay);
+  document.getElementById("industry-select").addEventListener("change", updateCategoryDisplay);
 
   // Summary panel controls
-  document
-    .getElementById("minimize-btn")
-    .addEventListener("click", toggleMinimizeSummaryPanel);
-  document
-    .getElementById("maximize-btn")
-    .addEventListener("click", toggleMaximizeSummaryPanel);
+  document.getElementById("minimize-btn").addEventListener("click", toggleMinimizeSummaryPanel);
+  document.getElementById("maximize-btn").addEventListener("click", toggleMaximizeSummaryPanel);
+  document.getElementById("panel-overlay").addEventListener("click", closeMaximizedPanel);
+  document.addEventListener("keydown",(e)=>{ if(e.key==="Escape") closeMaximizedPanel(); });
 
-  // Panel overlay click to close maximized view
-  document
-    .getElementById("panel-overlay")
-    .addEventListener("click", closeMaximizedPanel);
-
-  // ESC key to close maximized panel
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeMaximizedPanel();
-  });
-
-  // NEW: Venture name binding
+  // Venture name binding
   const nameInput = document.getElementById("venture-name");
-  if (nameInput) {
-    nameInput.addEventListener("input", (e) => {
-      AppState.ventureName = e.target.value;
-    });
-  }
+  if (nameInput) nameInput.addEventListener("input",(e)=>{ AppState.ventureName = e.target.value; });
 
-  // NEW: Save PDF button
+  // Snapshot PDF
   const btnPdf = document.getElementById("btn-export-pdf");
-  if (btnPdf) {
-    btnPdf.addEventListener("click", savePdfSnapshot);
-  }
+  if (btnPdf) btnPdf.addEventListener("click", savePdfSnapshot);
+
+  // VDR buttons
+// In setupEventListeners(), replace the Create VDR handler with:
+const btnCreateVdr = document.getElementById("btn-create-vdr");
+if (btnCreateVdr) {
+  btnCreateVdr.addEventListener("click", () => {
+    enterVdr(); // enterVdr() will call renderVdrCards() internally
+  });
+}
+
+  document.getElementById("vdr-back").addEventListener("click", exitVdr);
+  document.getElementById("vdr-generate").addEventListener("click", generateVdr);
+  document.getElementById("vdr-download-pdf").addEventListener("click", downloadVdrPdf);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   initializeApp();
   setupEventListeners();
+  ensureNextToastDom(); // make sure the Next pill exists even if HTML wasn’t added
 });
+

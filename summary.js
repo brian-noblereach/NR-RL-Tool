@@ -1,12 +1,26 @@
 // summary.js - summary panel + venture description
 import { AppState } from "./state.js";
 import { applyHealthTerms } from "./transform.js";
+import { /* ... */ } from "./transform.js";
+import { updateIndustrySelectorUI, /* ... */ } from "./ui.js";
+
 
 export function updateSummary() {
   const categories = Object.keys(readinessData);
   const categoriesToShow = AppState.isHealthRelated ? categories : categories.filter((c) => c !== "Regulatory");
   renderSummaryScores(categoriesToShow);
   updateSummaryHeader(categoriesToShow);
+  const panel = document.getElementById("summary-panel");
+const h = panel?.querySelector(".summary-header h3");
+if (h) {
+  const done = Object.values(AppState.scores || {}).filter(Boolean).length;
+  const total = document.getElementById("health-related")?.checked ? 9 : 8;
+  if (panel.classList.contains("minimized")) {
+    h.textContent = `Summary ${done}/${total}`;
+  } else {
+    h.textContent = `Assessment Summary (${done}/${total})`;
+  }
+}
 }
 
 export function renderSummaryScores(categories) {

@@ -3,30 +3,44 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
   <title>NobleReach Readiness Level Assessment Tool</title>
   <link rel="stylesheet" href="styles.css" />
-  <!-- Fix 404: embed a small SVG favicon (no extra file needed) -->
-  <link
-    rel="icon"
-    type="image/svg+xml"
-    href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="%236366f1"/><path d="M18 40l14-16 14 16" stroke="white" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-  />
+
+<link rel="icon" type="image/x-icon" href="https://noblereach.org/favicon.ico" />
+
 </head>
 <body>
   <div class="container">
 
-    <!-- TOPBAR: brand + primary actions -->
+    <!-- TOPBAR -->
     <div class="topbar">
-      <div class="brand">
-        <span class="brand-title">NobleReach Readiness Levels</span>
-      </div>
+      <!-- TOPBAR (replace the .brand div content) -->
+		<div class="brand">
+	  <img
+		src="https://noblereach.org/wp-content/uploads/2024/03/carousel1-decor1.svg"
+		alt="NobleReach logo"
+		class="nr-logo"
+		width="28"
+		height="28"
+		decoding="async"
+		loading="eager"
+	  />
+	  <span class="brand-title">
+		NobleReach<span class="tm">™</span> Readiness Levels
+	  </span>
+	</div>
+
+
       <div class="topbar-actions">
-        <button id="btn-export-pdf" class="btn small" title="Save selected levels to PDF">Save PDF</button>
-        <button id="btn-create-vdr" class="btn small" title="Create Venture Development Report">Create VDR</button>
+        <button id="btn-export-pdf" class="btn small">Save PDF</button>
+        <button id="btn-create-vdr" class="btn small">Create VDR</button>
       </div>
     </div>
 
-    <!-- TOOLBAR: venture name, assessed time, health toggle, view controls -->
+    <!-- TOOLBAR -->
     <div class="toolbar">
       <div class="venture-name">
         <label for="venture-name">Venture name</label>
@@ -57,7 +71,7 @@
       </div>
     </div>
 
-    <!-- MAIN APPLICATION VIEW -->
+    <!-- MAIN APP VIEW -->
     <div id="app-view">
       <div class="main-content">
         <!-- Sidebar -->
@@ -71,7 +85,7 @@
           <div class="progress-notice">
             <h2 id="category-title">Select a category to begin</h2>
 
-            <!-- Technology subtrack selector -->
+            <!-- Technology subtrack -->
             <div id="industry-selector" class="industry-selector hidden">
               <label for="industry-select">Technology track</label>
               <select id="industry-select">
@@ -100,10 +114,36 @@
       <div class="summary-panel" id="summary-panel">
         <div class="summary-header">
           <h3>Assessment Summary (0/8)</h3>
-          <div class="panel-controls">
-            <button class="panel-btn minimize-btn" id="minimize-btn">−</button>
-            <button class="panel-btn maximize-btn" id="maximize-btn">□</button>
-          </div>
+          <!-- SUMMARY PANEL controls (swap the two buttons; ids kept the same) -->
+			<div class="panel-controls">
+			  <!-- Minimize / Restore-to-normal -->
+			  <button class="panel-btn" id="minimize-btn" title="Minimize" aria-label="Minimize / Restore">
+				<!-- minus (shown in normal/maximized) -->
+				<svg id="icon-minus" width="18" height="18" viewBox="0 0 24 24">
+				  <path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+				</svg>
+				<!-- plus (shown when minimized) -->
+				<svg id="icon-plus" class="hidden" width="18" height="18" viewBox="0 0 24 24">
+				  <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+				</svg>
+			  </button>
+
+			  <!-- Maximize / Restore-from-max -->
+			  <button class="panel-btn" id="maximize-btn" title="Maximize" aria-label="Maximize / Restore">
+				<!-- expand -->
+				<svg id="icon-expand" width="18" height="18" viewBox="0 0 24 24">
+				  <path d="M8 3H3v5M21 8V3h-5M16 21h5v-5M3 16v5h5"
+						stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+				</svg>
+				<!-- restore -->
+				<svg id="icon-restore" class="hidden" width="18" height="18" viewBox="0 0 24 24">
+				  <path d="M8 8h8v8H8zM3 16v5h5M21 8V3h-5"
+						stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+				</svg>
+			  </button>
+			</div>
+
+
         </div>
         <div class="summary-content">
           <div class="summary-scores" id="summary-scores"></div>
@@ -114,28 +154,29 @@
       </div>
     </div>
 
-    <!-- VDR BUILDER VIEW -->
+    <!-- VDR VIEW -->
     <div id="vdr-view" class="hidden">
       <header class="subheader">
         <h2>Venture Development Report (VDR)</h2>
         <p class="subtext">
-          Choose a <strong>goal level</strong> for each category. We’ll assemble the deliverables required to
-          reach those goals from your current assessed levels.
+          Choose a <strong>goal level</strong> for each category. We’ll assemble the deliverables required
+          to reach those goals from your current assessed levels.
         </p>
       </header>
 
-      <!-- Goal selectors -->
+      <!-- Goal cards -->
       <section id="vdr-goals" class="card">
-        <div class="vdr-goals-grid" id="vdr-goals-grid">
+        <!-- New: card grid so each category stays together -->
+        <div class="vdr-card-grid" id="vdr-card-grid">
           <!-- Populated by JS -->
         </div>
         <div class="vdr-actions">
-          <button id="vdr-back" class="btn small" title="Back to Assessment">← Back</button>
-          <button id="vdr-generate" class="btn small" title="Generate VDR">Generate VDR</button>
+          <button id="vdr-back" class="btn small">← Back</button>
+          <button id="vdr-generate" class="btn small">Generate VDR</button>
         </div>
       </section>
 
-      <!-- Generated VDR output -->
+      <!-- Generated VDR -->
       <section id="vdr-output" class="card hidden">
         <div class="vdr-output-header">
           <div>
@@ -147,7 +188,7 @@
             </div>
           </div>
           <div class="vdr-output-actions">
-            <button id="vdr-download-pdf" class="btn small" title="Download VDR as PDF">Download PDF</button>
+            <button id="vdr-download-pdf" class="btn small">Download PDF</button>
           </div>
         </div>
         <div id="vdr-body"></div>
@@ -157,11 +198,45 @@
 
   <div id="panel-overlay" class="panel-overlay"></div>
 
-  <!-- Global data -->
+  <!-- NEW: Modal used by “View levels” -->
+  <div id="vdr-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="vdr-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="vdr-modal-title">Levels</h3>
+        <button id="vdr-modal-close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal-subheader">
+        <div class="badge">Current: <strong id="vdr-modal-current">Level 0</strong></div>
+        <div class="goal-chooser">
+          <label for="vdr-modal-goal">Goal level</label>
+          <select id="vdr-modal-goal"></select>
+        </div>
+      </div>
+
+      <div id="vdr-modal-body" class="modal-body">
+        <!-- Level reference content (definition + deliverables) will render here -->
+      </div>
+
+      <div class="modal-footer">
+        <button id="vdr-modal-prev" class="btn small" type="button">← Prev</button>
+        <button id="vdr-modal-next" class="btn small" type="button">Next →</button>
+        <button id="vdr-modal-apply" class="btn small" type="button">Set goal & Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data + scripts -->
   <script src="data.js"></script>
-  <!-- PDF lib -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <!-- App modules -->
   <script type="module" src="./main.js"></script>
+  <!-- Next-category toast -->
+<div id="next-cat-toast" class="next-toast hidden" aria-live="polite">
+  <button id="next-cat-btn" class="btn next-btn">
+    Next: <span id="next-cat-name">—</span> →
+  </button>
+</div>
+
 </body>
 </html>
