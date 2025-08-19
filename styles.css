@@ -742,4 +742,296 @@ body {
   }
   .venture-name { min-width: 100%; }
 }
+/* ================================
+   VDR Builder
+   ================================ */
+
+.subheader {
+  margin: 8px 0 12px;
+}
+.subheader h2 {
+  margin: 0 0 6px;
+}
+.subheader .subtext {
+  color: #475569; /* slate-600 */
+  font-size: 14px;
+  margin: 0;
+}
+
+/* generic card for sections */
+.card {
+  background: #fff;
+  border: 1px solid #e2e8f0;  /* slate-200 */
+  border-radius: 12px;
+  padding: 16px;
+  margin: 12px 0;
+}
+
+/* Goals grid */
+.vdr-goals-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 10px 12px;
+  align-items: center;
+}
+.vdr-goals-grid .hdr {
+  font-size: 12px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.vdr-goals-grid .row {
+  display: contents; /* let grid control columns */
+}
+.vdr-goals-grid .cat {
+  font-weight: 600;
+}
+.vdr-goals-grid .cur {
+  color: #475569;
+}
+.vdr-goals-grid select {
+  height: 34px;
+  border: 1px solid #cbd5e1; /* slate-300 */
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: #fff;
+}
+
+/* Actions */
+.vdr-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* VDR output */
+.vdr-output-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.vdr-meta {
+  font-size: 13px;
+  color: #475569;
+}
+.vdr-meta .sep { margin: 0 6px; color: #cbd5e1; }
+
+#vdr-body .cat-section {
+  margin-top: 14px;
+}
+#vdr-body .cat-section h4 {
+  margin: 0 0 6px;
+}
+#vdr-body ul {
+  margin: 6px 0 0 18px;
+  padding: 0;
+}
+#vdr-body li { margin: 2px 0; }
+
+/* Hide/show helper already present, but ensure here */
+.hidden { display: none !important; }
+
+/* ================================
+   Topbar / Toolbar polish
+   ================================ */
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  margin-bottom: 10px;
+}
+.brand-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 12px;
+  align-items: end;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+/* Compact health toggle look */
+.health-toggle.compact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.health-toggle.compact .health-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #0f172a;
+}
+.health-toggle.compact input[type="checkbox"] {
+  transform: scale(0.9);
+  accent-color: #6366f1;
+}
+.health-toggle.compact .help-text {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* ================================
+   VDR Goals layout + reference panel
+   ================================ */
+
+/* Two-column card: goals grid (left) + reference panel (right) */
+#vdr-goals {
+  display: grid;
+  grid-template-columns: 1.25fr 0.9fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* Goals grid */
+.vdr-goals-grid {
+  display: grid;
+  grid-template-columns: 1.2fr .9fr .9fr;
+  gap: 8px 12px;
+  align-items: center;
+}
+.vdr-goals-grid .hdr {
+  font-size: 12px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 4px;
+}
+.vdr-row {
+  display: contents; /* grid controls the columns */
+}
+
+/* Category column */
+.vdr-cat {
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vdr-cat .link {
+  font-weight: 500;
+  font-size: 12px;
+  color: #4f46e5;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Current column */
+.vdr-cur .badge {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+}
+.vdr-cur .badge strong { font-weight: 700; }
+
+/* Goal column */
+.vdr-goal label {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+.vdr-goal select {
+  height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: #fff;
+}
+
+/* Reference panel (right side) */
+.vdr-ref {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 220px);
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #ffffff;
+}
+.vdr-ref-empty {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.vdr-ref .ref-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.vdr-ref .ref-title {
+  font-weight: 700;
+  margin: 0;
+}
+.vdr-ref .ref-sub {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* Level reference cards */
+.level-ref {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.level-ref .lvl-title {
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+.level-ref .lvl-def {
+  margin: 0 0 6px;
+  color: #334155;
+}
+.level-ref .lvl-deliv {
+  margin: 0;
+  padding-left: 18px;
+}
+.level-ref .lvl-deliv li { margin: 2px 0; }
+
+/* Highlight the target path (current+1 .. goal) */
+.level-ref.path {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99,102,241,.08);
+}
+
+/* Responsive */
+@media (max-width: 980px) {
+  #vdr-goals { grid-template-columns: 1fr; }
+  .vdr-ref { position: static; max-height: none; }
+}
+
 

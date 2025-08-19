@@ -1,9 +1,7 @@
-// main.js - entry point & event wiring (with Venture meta + PDF export)
+
+// main.js - entry point & event wiring (additions marked NEW)
 import { AppState } from "./state.js";
-import {
-  initializeCategories,
-  updateCategoryDisplay,
-} from "./categories.js";
+import { initializeCategories, updateCategoryDisplay } from "./categories.js";
 import { updateSummary } from "./summary.js";
 import {
   updateIndustrySelectorUI,
@@ -14,11 +12,10 @@ import {
   stampAssessedNow,
 } from "./ui.js";
 
-/* -------------------------
-   Helpers
---------------------------*/
+// NEW: VDR imports
+import { enterVdr, exitVdr, renderVdrGoals, generateVdr, downloadVdrPdf } from "./vdr.js";
 
-// Fixed category order for snapshot output
+
 const CATEGORY_ORDER = [
   "IP",
   "Technology",
@@ -173,6 +170,21 @@ function initializeApp() {
 
 
 function setupEventListeners() {
+	const btnCreateVdr = document.getElementById("btn-create-vdr");
+	if (btnCreateVdr) {
+		btnCreateVdr.addEventListener("click", () => {
+			enterVdr();        // hide main app, show VDR screen
+			renderVdrGoals();  // (redundant but safe if you want to refresh)
+    });
+  }
+  const btnVdrBack = document.getElementById("vdr-back");
+  if (btnVdrBack) btnVdrBack.addEventListener("click", exitVdr);
+
+  const btnVdrGen = document.getElementById("vdr-generate");
+  if (btnVdrGen) btnVdrGen.addEventListener("click", generateVdr);
+
+  const btnVdrPdf = document.getElementById("vdr-download-pdf");
+  if (btnVdrPdf) btnVdrPdf.addEventListener("click", downloadVdrPdf);
   // Health-related toggle
   document.getElementById("health-related").addEventListener("change", (e) => {
     AppState.isHealthRelated = e.target.checked;
