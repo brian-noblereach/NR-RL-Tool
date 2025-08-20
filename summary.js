@@ -1,26 +1,26 @@
-// summary.js - summary panel + venture description
+// summary.js - summary panel + venture description (with ES module import)
 import { AppState } from "./state.js";
+import { readinessData } from "./data.js";
 import { applyHealthTerms } from "./transform.js";
-import { /* ... */ } from "./transform.js";
-import { updateIndustrySelectorUI, /* ... */ } from "./ui.js";
-
 
 export function updateSummary() {
   const categories = Object.keys(readinessData);
   const categoriesToShow = AppState.isHealthRelated ? categories : categories.filter((c) => c !== "Regulatory");
   renderSummaryScores(categoriesToShow);
   updateSummaryHeader(categoriesToShow);
+  
+  // Update the header with proper counts
   const panel = document.getElementById("summary-panel");
-const h = panel?.querySelector(".summary-header h3");
-if (h) {
-  const done = Object.values(AppState.scores || {}).filter(Boolean).length;
-  const total = document.getElementById("health-related")?.checked ? 9 : 8;
-  if (panel.classList.contains("minimized")) {
-    h.textContent = `Summary ${done}/${total}`;
-  } else {
-    h.textContent = `Assessment Summary (${done}/${total})`;
+  const h = panel?.querySelector(".summary-header h3");
+  if (h) {
+    const done = Object.values(AppState.scores || {}).filter(Boolean).length;
+    const total = document.getElementById("health-related")?.checked ? 9 : 8;
+    if (panel.classList.contains("minimized")) {
+      h.textContent = `Summary ${done}/${total}`;
+    } else {
+      h.textContent = `Assessment Summary (${done}/${total})`;
+    }
   }
-}
 }
 
 export function renderSummaryScores(categories) {
@@ -40,7 +40,14 @@ export function updateSummaryHeader(categories) {
   const assessedCount = categories.filter((cat) => AppState.scores[cat] > 0).length;
   const totalCount = categories.length;
   const headerText = document.querySelector(".summary-header h3");
-  if (headerText) headerText.textContent = `Assessment Summary (${assessedCount}/${totalCount})`;
+  if (headerText) {
+    const panel = document.getElementById("summary-panel");
+    if (panel?.classList.contains("minimized")) {
+      headerText.textContent = `Summary ${assessedCount}/${totalCount}`;
+    } else {
+      headerText.textContent = `Assessment Summary (${assessedCount}/${totalCount})`;
+    }
+  }
 }
 
 export function generateVentureDescription() {

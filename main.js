@@ -1,5 +1,6 @@
-// main.js — app entry + wiring (with VDR modal/init, robust readinessData access)
+// main.js – app entry + wiring (with ES module data import and improved event delegation)
 import { AppState } from "./state.js";
+import { readinessData } from "./data.js";
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
 import { updateSummary } from "./summary.js";
 import {
@@ -23,16 +24,6 @@ import {
 } from "./vdr.js";
 
 /* -------------------------
-   Safe readiness data accessor
---------------------------*/
-function RD() {
-  return (typeof window !== "undefined" && window.readinessData) ||
-         (typeof globalThis !== "undefined" && globalThis.readinessData) ||
-         (typeof readinessData !== "undefined" && readinessData) ||
-         null;
-}
-
-/* -------------------------
    Helpers
 --------------------------*/
 const CATEGORY_ORDER = [
@@ -45,18 +36,16 @@ function formatLocalDateTime(d){
   return `${yr}-${mo}-${da} ${hh}:${mm}`;
 }
 
-
 function centerElement(el){
   if(!el) return;
   el.scrollIntoView({ block:"center", behavior:"smooth"});
 }
+
 function categoriesToInclude(){
-  const data = (typeof window !== "undefined" && window.readinessData) ||
-               (typeof globalThis !== "undefined" && globalThis.readinessData) || null;
-  if (!data) return [];
-  const all = Object.keys(data);
+  const all = Object.keys(readinessData);
   return AppState.isHealthRelated ? all : all.filter(c => c !== "Regulatory");
 }
+
 function nextCategoryName(cur){
   const allowed = categoriesToInclude();
   const order = ["IP","Technology","Market","Product","Team","Go-to-Market","Business","Funding","Regulatory"];
@@ -64,6 +53,7 @@ function nextCategoryName(cur){
   const idx = seq.indexOf(cur);
   return idx >= 0 && idx < seq.length - 1 ? seq[idx+1] : null;
 }
+
 function navigateToCategory(cat) {
   if (!cat) return;
   if (AppState.currentCategory === cat) return;
@@ -77,12 +67,11 @@ function navigateToCategory(cat) {
   updateSummary();
   syncSummaryHeaderAndIcons();
 
-  // Scroll after DOM paints
-  requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  // Scroll to top of page
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 /* ---------- Center the selected card inside .assessment-area ---------- */
-
 function centerCardInAssessment(cardEl, retries = 3) {
   const container = document.querySelector(".assessment-area");
   if (!container || !cardEl) return;
@@ -180,7 +169,7 @@ function centerCardSmart(cardEl, retries = 3) {
   }
 }
 
-/* ---------- Toast fade helpers (unchanged API, fade classes already in CSS) ---------- */
+/* ---------- Toast fade helpers ---------- */
 function ensureNextToastDom() {
   if (document.getElementById("next-cat-toast")) return;
   const toast = document.createElement("div");
@@ -193,6 +182,7 @@ function ensureNextToastDom() {
     </button>`;
   document.body.appendChild(toast);
 }
+
 function hideNextToast(immediate = false) {
   const toast = document.getElementById("next-cat-toast");
   if (!toast) return;
@@ -231,26 +221,23 @@ function showNextToast(nextCat) {
   btn.replaceWith(btn.cloneNode(true));
   document.getElementById("next-cat-btn").addEventListener("click", () => {
     hideNextToast();                      // fade out
-    navigateToCategory(nextCat);          // <-- actually switch category
+    navigateToCategory(nextCat);          // actually switch category
   }, { once: true });
 }
-
-
 
 /* -------------------------
    Snapshot PDF
 --------------------------*/
 function buildSnapshotRows(){
-  const data = RD();
-  if (!data) return [];
   const allowed=new Set(categoriesToInclude());
   const rows=[];
   CATEGORY_ORDER.forEach(cat=>{
-    if(!data[cat]||!allowed.has(cat)) return;
+    if(!readinessData[cat]||!allowed.has(cat)) return;
     rows.push({category:cat, level:AppState.scores[cat]||"-"});
   });
   return rows;
 }
+
 function savePdfSnapshot(){
   const jsPDF = window.jspdf && window.jspdf.jsPDF;
   if (!jsPDF) { alert("PDF library failed to load. Please check your network and reload the page."); return; }
@@ -309,10 +296,54 @@ function initializeApp() {
   const minimizeBtn = document.getElementById("minimize-btn");
   if (panel && !panel.classList.contains("maximized")) {
     panel.classList.add("minimized");
-    if (minimizeBtn) minimizeBtn.textContent = "+";
+    syncSummaryHeaderAndIcons(); // Update icons after setting minimized state
   }
 
   initVdrModalListeners();
+}
+
+/* -------------------------
+   Event Delegation Setup
+--------------------------*/
+function setupEventDelegation() {
+  // Single delegated listener for category list clicks
+  const catList = document.getElementById("category-list");
+  if (catList) {
+    // Use event delegation for category item clicks
+    catList.addEventListener("click", (e) => {
+      const item = e.target.closest(".category-item");
+      if (item) {
+        hideNextToast(true); // immediate hide
+        // Note: selectCategory is called by the listener added in renderCategoryList
+      }
+    }, { capture: true });
+
+    // Keyboard navigation for categories
+    catList.addEventListener("keydown", (e) => {
+      if ((e.key === "Enter" || e.key === " ") && e.target.closest(".category-item")) {
+        hideNextToast(true);
+      }
+    }, { capture: true });
+  }
+
+  // Single delegated listener for level selections (using document-level delegation)
+  document.addEventListener("click", (e) => {
+    const selectBtn = e.target.closest?.(".level-select-btn");
+    if (!selectBtn) return;
+
+    // Let the existing select logic run first (re-renders + expands the card)
+    setTimeout(() => {
+      const selectedCard =
+        document.querySelector(".levels-container .level-card.selected") ||
+        selectBtn.closest(".level-card");
+
+      console.log("[auto-center] selection clicked; centering…", { category: AppState.currentCategory });
+      centerCardSmart(selectedCard, 3);
+
+      const nxt = (AppState.currentCategory && nextCategoryName(AppState.currentCategory)) || null;
+      if (nxt) showNextToast(nxt);
+    }, 0);
+  }, { capture: true });
 }
 
 function setupEventListeners() {
@@ -324,47 +355,8 @@ function setupEventListeners() {
     updateIndustrySelectorUI({ forceDefaultOnEnable:true });
     initializeCategories();
     updateSummary();
-	syncSummaryHeaderAndIcons();
+    syncSummaryHeaderAndIcons();
   });
-
-const catList = document.getElementById("category-list");
-if (catList) {
-  // Capture so it runs even if inner handlers stop propagation
-  catList.addEventListener("click", (e) => {
-    if (e.target.closest(".category-item")) {
-      hideNextToast(true); // immediate hide
-    }
-  }, { capture: true });
-
-  // Keyboard navigation (Enter/Space on a category)
-  catList.addEventListener("keydown", (e) => {
-    if ((e.key === "Enter" || e.key === " ") && e.target.closest(".category-item")) {
-      hideNextToast(true);
-    }
-  }, { capture: true });
-}
-
-// Center selected level & show "Next" pill.
-// capture:true so we still run even if the level button stops propagation.
-document.addEventListener("click", (e) => {
-  const selectBtn = e.target.closest?.(".level-select-btn");
-  if (!selectBtn) return;
-
-  // Let your existing select logic run first (re-renders + expands the card)
-  setTimeout(() => {
-    const selectedCard =
-      document.querySelector(".levels-container .level-card.selected") ||
-      selectBtn.closest(".level-card");
-
-    console.log("[auto-center] selection clicked; centering…", { category: AppState.currentCategory });
-    centerCardSmart(selectedCard, 3);
-
-    const nxt = (AppState.currentCategory && nextCategoryName(AppState.currentCategory)) || null;
-    if (nxt) showNextToast(nxt);
-  }, 0);
-}, { capture: true });
-
-
 
   // View toggle
   document.querySelectorAll(".view-btn").forEach((btn)=>{
@@ -394,13 +386,12 @@ document.addEventListener("click", (e) => {
   if (btnPdf) btnPdf.addEventListener("click", savePdfSnapshot);
 
   // VDR buttons
-// In setupEventListeners(), replace the Create VDR handler with:
-const btnCreateVdr = document.getElementById("btn-create-vdr");
-if (btnCreateVdr) {
-  btnCreateVdr.addEventListener("click", () => {
-    enterVdr(); // enterVdr() will call renderVdrCards() internally
-  });
-}
+  const btnCreateVdr = document.getElementById("btn-create-vdr");
+  if (btnCreateVdr) {
+    btnCreateVdr.addEventListener("click", () => {
+      enterVdr(); // enterVdr() will call renderVdrCards() internally
+    });
+  }
 
   document.getElementById("vdr-back").addEventListener("click", exitVdr);
   document.getElementById("vdr-generate").addEventListener("click", generateVdr);
@@ -409,7 +400,7 @@ if (btnCreateVdr) {
 
 document.addEventListener("DOMContentLoaded", () => {
   initializeApp();
-  setupEventListeners();
-  ensureNextToastDom(); // make sure the Next pill exists even if HTML wasn’t added
+  setupEventDelegation(); // Set up delegated listeners
+  setupEventListeners();  // Set up direct listeners
+  ensureNextToastDom();   // Make sure the Next pill exists
 });
-

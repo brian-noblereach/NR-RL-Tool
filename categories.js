@@ -1,8 +1,12 @@
-// categories.js - category rendering & interactions
+// categories.js - category rendering & interactions (with ES module import and improved event delegation)
 import { AppState } from "./state.js";
+import { readinessData } from "./data.js";
 import { maybeHealth, buildHealthContent } from "./transform.js";
-import { updateIndustrySelectorUI, toggleLevel, stampAssessedNow } from "./ui.js";
+import { updateIndustrySelectorUI, toggleLevel, stampAssessedNow, syncSummaryHeaderAndIcons } from "./ui.js";
 import { updateSummary, generateVentureDescription } from "./summary.js";
+
+// Track if event delegation has been set up
+let delegationInitialized = false;
 
 export function initializeCategories() {
   const categories = Object.keys(readinessData);
@@ -42,24 +46,23 @@ export function renderCategoryList(categories) {
     )
     .join("");
 
-  categoryList.querySelectorAll(".category-item").forEach((item) => {
-    item.addEventListener("click", () => selectCategory(item.dataset.category));
-  });
-}
-
-
-// Add this helper anywhere near the other exports
-function scrollCategoryTop() {
-  // Scroll the title into view and reset the levels container scroll
-  const title = document.getElementById("category-title");
-  if (title && title.scrollIntoView) {
-    title.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Set up delegation for category clicks (only once)
+  if (!delegationInitialized) {
+    categoryList.addEventListener("click", (e) => {
+      const item = e.target.closest(".category-item");
+      if (item) {
+        selectCategory(item.dataset.category);
+      }
+    });
+    delegationInitialized = true;
   }
-  const levels = document.getElementById("levels-container");
-  if (levels) levels.scrollTop = 0;
 }
 
-// Update selectCategory to call the helper after updateCategoryDisplay()
+function scrollToTop() {
+  // Scroll to the top of the page smoothly
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 export function selectCategory(category) {
   AppState.currentCategory = category;
   document.getElementById("category-title").textContent = category + " Readiness Levels";
@@ -71,8 +74,8 @@ export function selectCategory(category) {
   updateIndustrySelectorUI();
   updateCategoryDisplay();
 
-  // NEW: ensure we start at Level 1 view for the new category
-  scrollCategoryTop();
+  // Scroll to top of page when switching categories
+  scrollToTop();
 }
 
 export function updateCategoryDisplay() {
@@ -89,7 +92,8 @@ export function updateCategoryDisplay() {
 
   container.innerHTML = categoryData.levels.map((lvl) => createLevelCard(lvl, currentScore, industryVal)).join("");
 
-  setupLevelCardListeners();
+  // Use event delegation instead of individual listeners
+  setupLevelCardDelegation();
 }
 
 export function createLevelCard(level, currentScore, industryVal) {
@@ -156,33 +160,44 @@ export function getIndicators(level, industry) {
   return indicators;
 }
 
-export function setupLevelCardListeners() {
-  document.querySelectorAll(".level-header").forEach((header) => {
-    header.addEventListener("click", (e) => {
-      if (!e.target.classList.contains("level-select-btn")) {
-        const card = header.closest(".level-card");
-        toggleLevel(card);
-      }
-    });
+// Use delegation for level cards to avoid recreating listeners
+let levelsDelegationInitialized = false;
+
+function setupLevelCardDelegation() {
+  const container = document.getElementById("levels-container");
+  if (!container || levelsDelegationInitialized) return;
+
+  // Set up delegation for level card interactions
+  container.addEventListener("click", (e) => {
+    // Handle level header clicks (expand/collapse)
+    const header = e.target.closest(".level-header");
+    if (header && !e.target.classList.contains("level-select-btn")) {
+      const card = header.closest(".level-card");
+      toggleLevel(card);
+      return;
+    }
+
+    // Handle level select button clicks
+    const selectBtn = e.target.closest(".level-select-btn");
+    if (selectBtn) {
+      e.stopPropagation();
+      const level = parseInt(selectBtn.dataset.level, 10);
+      selectLevel(level);
+    }
   });
 
-  document.querySelectorAll(".level-select-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const level = parseInt(btn.dataset.level, 10);
-      selectLevel(level);
-    });
-  });
+  levelsDelegationInitialized = true;
 }
 
 export function selectLevel(level) {
   AppState.scores[AppState.currentCategory] = level;
 
-  // NEW: stamp/refresh the assessment timestamp when any level is chosen
+  // Stamp/refresh the assessment timestamp when any level is chosen
   stampAssessedNow();
 
   updateCategoryDisplay();
   initializeCategories();
   updateSummary();
   generateVentureDescription();
+  syncSummaryHeaderAndIcons();
 }

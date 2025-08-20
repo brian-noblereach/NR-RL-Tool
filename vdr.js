@@ -1,15 +1,7 @@
-// vdr.js — Venture Development Report (cards + modal flow)
+// vdr.js – Venture Development Report (with ES module import and improved event delegation)
 import { AppState } from "./state.js";
+import { readinessData } from "./data.js";
 import { applyHealthTerms, getHealthExtras } from "./transform.js";
-
-/* -----------------------------------
-   Safe readiness data access
------------------------------------ */
-function RD() {
-  return (typeof window !== "undefined" && window.readinessData) ||
-         (typeof globalThis !== "undefined" && globalThis.readinessData) ||
-         null;
-}
 
 /* -----------------------------------
    Constants / helpers
@@ -19,9 +11,7 @@ const CATEGORY_ORDER = [
 ];
 
 function categoriesToInclude() {
-  const data = RD();
-  if (!data) return [];
-  const all = Object.keys(data);
+  const all = Object.keys(readinessData);
   return AppState.isHealthRelated ? all : all.filter((c) => c !== "Regulatory");
 }
 
@@ -37,9 +27,8 @@ function getTrack() {
 
 /* -------- Collect deliverables from baseline (+ health extras) -------- */
 function collectDeliverables(category, fromLevel, toLevel) {
-  const data = RD();
-  if (!data || !data[category]) return [];
-  const levels = data[category].levels || [];
+  if (!readinessData[category]) return [];
+  const levels = readinessData[category].levels || [];
   const track = AppState.isHealthRelated && category === "Technology" ? getTrack() : null;
 
   const out = [];
@@ -74,9 +63,8 @@ function collectDeliverables(category, fromLevel, toLevel) {
 
 /* -------- Level reference (definition + deliverables) -------- */
 function getLevelRefBlocks(category, current, goal) {
-  const data = RD();
   const blocks = [];
-  const levels = data?.[category]?.levels || [];
+  const levels = readinessData[category]?.levels || [];
   const track = AppState.isHealthRelated && category === "Technology" ? getTrack() : null;
 
   for (let L = 1; L <= 9; L++) {
@@ -133,19 +121,20 @@ export function exitVdr() {
 }
 
 /* -------------------------
-   Goal cards (delegated)
+   Goal cards with improved event delegation
 --------------------------*/
+let vdrCardsDelegationInitialized = false;
+
 export function renderVdrCards() {
   const grid = document.getElementById("vdr-card-grid");
   const cats = categoriesToInclude();
   if (!grid) return;
 
-  const data = RD();
-  if (!data) {
+  if (!readinessData || Object.keys(readinessData).length === 0) {
     grid.innerHTML = `
       <div class="vdr-card">
         <div class="row"><div class="title">⚠️ <strong>Readiness data not loaded</strong></div></div>
-        <p>Please ensure <code>data.js</code> is included before <code>main.js</code>.</p>
+        <p>Please ensure data.js is properly imported.</p>
       </div>`;
     return;
   }
@@ -177,20 +166,27 @@ export function renderVdrCards() {
     `;
   }).join("");
 
-  // Delegated listener for "View levels"
-  grid.addEventListener("click", (e) => {
-    const btn = e.target.closest?.(".vdr-view-btn");
-    if (!btn) return;
-    openVdrModal(btn.dataset.category);
-  });
-
-  // Keep modal highlight in sync when a card's goal changes
-  grid.querySelectorAll(".goal-select").forEach((sel) => {
-    sel.addEventListener("change", () => {
-      const s = getModalState();
-      if (s.category === sel.dataset.category && !isModalHidden()) renderVdrModalContent();
+  // Set up event delegation only once
+  if (!vdrCardsDelegationInitialized) {
+    // Delegated listener for "View levels" buttons
+    grid.addEventListener("click", (e) => {
+      const btn = e.target.closest?.(".vdr-view-btn");
+      if (!btn) return;
+      openVdrModal(btn.dataset.category);
     });
-  });
+
+    // Delegated listener for goal select changes
+    grid.addEventListener("change", (e) => {
+      const sel = e.target.closest?.(".goal-select");
+      if (!sel) return;
+      const s = getModalState();
+      if (s.category === sel.dataset.category && !isModalHidden()) {
+        renderVdrModalContent();
+      }
+    });
+
+    vdrCardsDelegationInitialized = true;
+  }
 }
 
 /* -------------------------
@@ -220,7 +216,7 @@ export function generateVdr() {
     const cur = AppState.scores[cat] || 0;
     const goal = goals[cat];
 
-    let section = `<div class="cat-section"><h4>${cat} — Goal: Level ${goal}</h4>`;
+    let section = `<div class="cat-section"><h4>${cat} – Goal: Level ${goal}</h4>`;
     if (goal <= cur) {
       section += `<p>No additional deliverables required (already at Level ${cur}).</p></div>`;
     } else {
@@ -264,7 +260,7 @@ export function downloadVdrPdf() {
     const goal = goals[cat];
     if (y>265){ doc.addPage(); y=16; }
 
-    doc.setFont("helvetica","bold"); doc.text(`${cat} — Goal Level ${goal}`, left, y); y+=lh;
+    doc.setFont("helvetica","bold"); doc.text(`${cat} – Goal Level ${goal}`, left, y); y+=lh;
     doc.setFont("helvetica","normal");
     if (goal<=cur){ doc.text(`No additional deliverables required (already at Level ${cur}).`, left, y); y+=lh; return; }
 
@@ -285,7 +281,7 @@ export function downloadVdrPdf() {
 }
 
 /* =========================
-   Modal logic
+   Modal logic with simplified state management
 ========================= */
 const modalState = { cats: [], idx: 0, category: null };
 
@@ -294,15 +290,16 @@ function setModalState({ category }) {
   modalState.idx = Math.max(0, modalState.cats.indexOf(category));
   modalState.category = modalState.cats[modalState.idx] || null;
 }
+
 function getModalState(){ return modalState; }
+
 function isModalHidden(){
   const m=document.getElementById("vdr-modal");
   return !m || m.classList.contains("hidden");
 }
 
 function openVdrModal(category) {
-  const data = RD();
-  if (!data) { alert("Readiness data not loaded."); return; }
+  if (!readinessData) { alert("Readiness data not loaded."); return; }
 
   setModalState({ category });
 
@@ -317,7 +314,7 @@ function openVdrModal(category) {
   const cardSel = document.querySelector(`.goal-select[data-category="${cat}"]`);
   const seedGoal = cardSel ? parseInt(cardSel.value, 10) : Math.max(cur || 1, 1);
 
-  title.textContent = `${cat} — Levels`;
+  title.textContent = `${cat} – Levels`;
   curEl.textContent = `Level ${cur || 0}`;
   goalSel.innerHTML = Array.from({ length: 9 }, (_, i) => {
     const n = i + 1;
@@ -362,18 +359,19 @@ function saveCurrentGoalToCard() {
   }
 }
 
-/* --- Global modal bindings (called once from main.js) --- */
+/* --- Modal event delegation (called once from main.js) --- */
+let modalDelegationInitialized = false;
+
 export function initVdrModalListeners(){
   const m=document.getElementById("vdr-modal");
-  if(!m) return;
+  if(!m || modalDelegationInitialized) return;
 
+  // Direct listeners for modal controls
   document.getElementById("vdr-modal-close").addEventListener("click", closeVdrModal);
   m.querySelector(".modal-backdrop").addEventListener("click", closeVdrModal);
-
-  // Change highlights when goal dropdown changes
   document.getElementById("vdr-modal-goal").addEventListener("change", renderVdrModalContent);
 
-  // Click a level card to set goal
+  // Delegated listener for level card clicks in modal
   document.getElementById("vdr-modal-body").addEventListener("click", (e)=>{
     const card = e.target.closest(".level-ref");
     if (!card) return;
@@ -385,13 +383,12 @@ export function initVdrModalListeners(){
     }
   });
 
-  // Prev (no auto-save requested)
+  // Navigation buttons
   document.getElementById("vdr-modal-prev").addEventListener("click", ()=>{
     const s=getModalState();
     if(s.idx>0){ setModalState({category:s.cats[s.idx-1]}); openVdrModal(s.category); }
   });
 
-  // Next (auto-save current goal, then move forward)
   document.getElementById("vdr-modal-next").addEventListener("click", ()=>{
     saveCurrentGoalToCard();
     const s=getModalState();
@@ -399,12 +396,13 @@ export function initVdrModalListeners(){
     else { closeVdrModal(); }
   });
 
-  // Apply = save & close
   document.getElementById("vdr-modal-apply").addEventListener("click", ()=>{
     saveCurrentGoalToCard();
     closeVdrModal();
   });
 
-  // ESC key
+  // ESC key handler
   document.addEventListener("keydown",(e)=>{ if(e.key==="Escape" && !isModalHidden()) closeVdrModal(); });
+
+  modalDelegationInitialized = true;
 }

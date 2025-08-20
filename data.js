@@ -1,6 +1,6 @@
-// data.js - Readiness Level Data Structure
+// data.js - Readiness Level Data Structure (ES Module)
 
-const readinessData = {
+export const readinessData = {
     'IP': {
         levels: [
             {
@@ -667,7 +667,6 @@ const readinessData = {
         ]
     }
 };
-// --- Expose for ESM modules (vdr.js, main.js, etc.) ---
-if (typeof window !== "undefined" && !window.readinessData) {
-  window.readinessData = readinessData;
-}
+
+// Default export for convenience
+export default readinessData;
