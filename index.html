@@ -3,58 +3,102 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- NobleReach Brand Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <title>NobleReach Readiness Level Assessment Tool</title>
+  <link href="https://fonts.googleapis.com/css2?family=General+Sans:wght@400;500;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+  <!-- Clash Display via CDN (fontshare alternative) -->
+  <link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
+  
+  <title>RL Assessment | NobleReach</title>
   <link rel="stylesheet" href="styles.css" />
-  <link rel="icon" type="image/svg+xml" href="https://noblereach.org/wp-content/uploads/2024/03/carousel1-decor1.svg" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  
+  <!-- GoatCounter Analytics (free, privacy-friendly) - Replace YOUR_CODE with actual code -->
+  <!-- <script data-goatcounter="https://YOUR_CODE.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script> -->
 </head>
 <body>
+  <!-- Pilot Banner -->
+  <div class="pilot-banner" id="pilot-banner">
+    <div class="pilot-banner-content">
+      <span class="pilot-badge">PILOT</span>
+      <span class="pilot-text">This is an experimental tool. Your feedback helps us improve.</span>
+      <button class="pilot-feedback-btn" id="open-feedback">Share Feedback</button>
+      <button class="pilot-close" id="close-pilot-banner" aria-label="Dismiss banner">×</button>
+    </div>
+  </div>
+
   <div class="container">
 
     <!-- TOPBAR -->
     <div class="topbar">
       <div class="brand">
         <img
-          src="https://noblereach.org/wp-content/uploads/2024/03/carousel1-decor1.svg"
+          src="logo-icon.svg"
           alt="NobleReach logo"
           class="nr-logo"
-          width="28"
-          height="28"
+          width="32"
+          height="32"
           decoding="async"
           loading="eager"
         />
         <span class="brand-title">
           NobleReach<span class="tm">™</span> Readiness Levels
         </span>
+        <span class="version-badge">Pilot</span>
       </div>
 
       <div class="topbar-actions">
+        <button id="btn-help" class="btn small outline" title="Help & Info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </button>
+        <button id="btn-export-json" class="btn small outline">Export</button>
+        <button id="btn-import-json" class="btn small outline">Import</button>
         <button id="btn-export-pdf" class="btn small">Save PDF</button>
-        <button id="btn-create-vdr" class="btn small">Create VDR</button>
+      </div>
+    </div>
+
+    <!-- VENTURE SELECTOR BAR -->
+    <div class="venture-bar">
+      <div class="venture-selector">
+        <label for="venture-select">Assessment:</label>
+        <select id="venture-select">
+          <option value="">Select or create new...</option>
+        </select>
+        <button id="btn-new-venture" class="btn small" title="Start New Assessment">+ New</button>
+        <button id="btn-delete-venture" class="btn small outline danger" title="Delete Current Assessment">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div class="venture-name">
+        <label for="venture-name">Venture Name</label>
+        <input type="text" id="venture-name" placeholder="e.g., NovaThera Biosystems" />
+      </div>
+
+      <div class="timestamp">
+        <span>Last updated:</span>
+        <time id="assessed-at" aria-live="polite">—</time>
       </div>
     </div>
 
     <!-- TOOLBAR -->
     <div class="toolbar">
-      <div class="venture-name">
-        <label for="venture-name">Venture name</label>
-        <input type="text" id="venture-name" placeholder="e.g., NovaThera" />
-      </div>
-
-      <div class="timestamp">
-        <span>Assessed:</span>
-        <time id="assessed-at" aria-live="polite">—</time>
-      </div>
-
       <div class="health-toggle compact">
         <label class="health-label">
           <input type="checkbox" id="health-related" />
           <span>Health-related mode</span>
         </label>
         <small id="health-help-text" class="help-text">
-          Uses patient/clinical language and enables Regulatory.
+          Uses patient/clinical language and enables Regulatory category.
         </small>
         <div id="health-mode-note" class="info-banner hidden" aria-live="polite">
           Health mode ON: using patient-centric definitions.
@@ -107,30 +151,30 @@
       </div>
 
       <!-- Summary Panel -->
-      <div class="summary-panel" id="summary-panel">
+      <div class="summary-panel minimized" id="summary-panel">
         <div class="summary-header">
-          <h3>Assessment Summary (0/8)</h3>
-          <!-- Updated panel controls with proper SVG icons -->
+          <h3>Summary 0/8</h3>
           <div class="panel-controls">
-            <!-- Minimize / Restore-from-min -->
-            <button class="panel-btn" id="minimize-btn" title="Minimize" aria-label="Minimize">
-              <svg class="icon-minimize" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button class="panel-btn" id="minimize-btn" title="Restore" aria-label="Restore">
+              <svg class="icon-minimize hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
-              <svg class="icon-restore hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg class="icon-restore" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2"></rect>
               </svg>
             </button>
-
-            <!-- Maximize / Restore-from-max -->
             <button class="panel-btn" id="maximize-btn" title="Maximize" aria-label="Maximize">
               <svg class="icon-maximize" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-                <line x1="9" y1="3" x2="9" y2="21"></line>
-                <line x1="15" y1="3" x2="15" y2="21"></line>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <polyline points="9 21 3 21 3 15"></polyline>
+                <line x1="21" y1="3" x2="14" y2="10"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
               </svg>
               <svg class="icon-restore-max hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="5" y="5" width="14" height="14" rx="1"></rect>
+                <polyline points="4 14 10 14 10 20"></polyline>
+                <polyline points="20 10 14 10 14 4"></polyline>
+                <line x1="14" y1="10" x2="21" y2="3"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
               </svg>
             </button>
           </div>
@@ -143,75 +187,144 @@
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- VDR VIEW -->
-    <div id="vdr-view" class="hidden">
-      <header class="subheader">
-        <h2>Venture Development Report (VDR)</h2>
-        <p class="subtext">
-          Choose a <strong>goal level</strong> for each category. We'll assemble the deliverables required
-          to reach those goals from your current assessed levels.
-        </p>
-      </header>
+  <!-- Panel Overlay -->
+  <div id="panel-overlay" class="panel-overlay"></div>
 
-      <!-- Goal cards -->
-      <section id="vdr-goals" class="card">
-        <div class="vdr-card-grid" id="vdr-card-grid">
-          <!-- Populated by JS -->
+  <!-- Welcome Modal -->
+  <div id="welcome-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="welcome-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content welcome-modal-content">
+      <div class="modal-header">
+        <h3 id="welcome-modal-title">Welcome to the Readiness Level Assessment Tool</h3>
+        <button id="welcome-modal-close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="welcome-intro">
+          <p>
+            This tool helps <strong>research teams, early-stage ventures, and their advisors</strong> assess 
+            commercialization readiness across 8 key dimensions.
+          </p>
+          <p>
+            Use it to measure progress for <strong>pre-incorporated research projects</strong> or 
+            <strong>very early-stage ventures</strong>—tracking how de-risked an idea becomes as it hits key milestones.
+          </p>
         </div>
-        <div class="vdr-actions">
-          <button id="vdr-back" class="btn small">← Back</button>
-          <button id="vdr-generate" class="btn small">Generate VDR</button>
+        
+        <div class="welcome-features">
+          <h4>How to Use</h4>
+          <ul>
+            <li><strong>Select a category</strong> from the sidebar to begin assessment</li>
+            <li><strong>Choose a readiness level</strong> that best describes your current state</li>
+            <li><strong>Review your summary</strong> in the panel at bottom-right</li>
+            <li><strong>Export or save</strong> your assessment at any time</li>
+          </ul>
         </div>
-      </section>
 
-      <!-- Generated VDR -->
-      <section id="vdr-output" class="card hidden">
-        <div class="vdr-output-header">
-          <div>
-            <h3 id="vdr-title">Venture Development Report</h3>
-            <div class="vdr-meta">
-              <span id="vdr-venture-name">—</span>
-              <span class="sep">•</span>
-              <span id="vdr-date">—</span>
-            </div>
-          </div>
-          <div class="vdr-output-actions">
-            <button id="vdr-download-pdf" class="btn small">Download PDF</button>
-          </div>
+        <div class="welcome-pilot-notice">
+          <p>
+            <strong>This is a pilot release.</strong> We'd love your feedback to improve this tool. 
+            Use the "Share Feedback" button in the banner above.
+          </p>
         </div>
-        <div id="vdr-body"></div>
-      </section>
+      </div>
+      <div class="modal-footer">
+        <label class="dont-show-again">
+          <input type="checkbox" id="dont-show-welcome" />
+          <span>Don't show this again</span>
+        </label>
+        <button id="welcome-get-started" class="btn">Get Started</button>
+      </div>
     </div>
   </div>
 
-  <div id="panel-overlay" class="panel-overlay"></div>
-
-  <!-- Modal used by "View levels" -->
-  <div id="vdr-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="vdr-modal-title">
+  <!-- Feedback Modal -->
+  <div id="feedback-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-modal-title">
     <div class="modal-backdrop"></div>
-    <div class="modal-content">
+    <div class="modal-content feedback-modal-content">
       <div class="modal-header">
-        <h3 id="vdr-modal-title">Levels</h3>
-        <button id="vdr-modal-close" class="icon-btn" aria-label="Close">×</button>
+        <h3 id="feedback-modal-title">Share Your Feedback</h3>
+        <button id="feedback-modal-close" class="icon-btn" aria-label="Close">×</button>
       </div>
+      <div class="modal-body">
+        <p>Your feedback helps us improve this tool. Please share your thoughts, questions, or suggestions.</p>
+        
+        <div class="feedback-options">
+          <a href="https://forms.office.com/placeholder" target="_blank" rel="noopener" class="feedback-link btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            Open Feedback Form
+          </a>
+          <p class="feedback-note">
+            <small>Opens in a new tab. No login required.</small>
+          </p>
+        </div>
 
-      <div class="modal-subheader">
-        <div class="badge">Current: <strong id="vdr-modal-current">Level 0</strong></div>
-        <div class="goal-chooser">
-          <label for="vdr-modal-goal">Goal level</label>
-          <select id="vdr-modal-goal"></select>
+        <div class="feedback-contact">
+          <p>Or contact us directly:</p>
+          <p><strong>Email:</strong> brian.hayt@noblereach.org</p>
         </div>
       </div>
+    </div>
+  </div>
 
-      <div id="vdr-modal-body" class="modal-body">
-        <!-- Level reference content will render here -->
+  <!-- New Venture Modal -->
+  <div id="new-venture-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="new-venture-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content small-modal">
+      <div class="modal-header">
+        <h3 id="new-venture-modal-title">New Assessment</h3>
+        <button id="new-venture-modal-close" class="icon-btn" aria-label="Close">×</button>
       </div>
-
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="new-venture-name">Venture / Project Name</label>
+          <input type="text" id="new-venture-name" placeholder="e.g., Quantum Sensing Platform" />
+        </div>
+      </div>
       <div class="modal-footer">
-        <button id="vdr-modal-prev" class="btn small" type="button">← Prev</button>
-        <button id="vdr-modal-next" class="btn small" type="button">Next →</button>
-        <button id="vdr-modal-apply" class="btn small" type="button">Set goal & Close</button>
+        <button id="new-venture-cancel" class="btn outline">Cancel</button>
+        <button id="new-venture-create" class="btn">Create Assessment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="delete-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content small-modal">
+      <div class="modal-header">
+        <h3 id="delete-modal-title">Delete Assessment</h3>
+        <button id="delete-modal-close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete "<strong id="delete-venture-name">—</strong>"?</p>
+        <p class="warning-text">This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="delete-cancel" class="btn outline">Cancel</button>
+        <button id="delete-confirm" class="btn danger">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Modal -->
+  <div id="import-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content small-modal">
+      <div class="modal-header">
+        <h3 id="import-modal-title">Import Assessment</h3>
+        <button id="import-modal-close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Paste a previously exported assessment JSON below:</p>
+        <textarea id="import-json-input" rows="8" placeholder='{"ventureName": "...", "scores": {...}}'></textarea>
+      </div>
+      <div class="modal-footer">
+        <button id="import-cancel" class="btn outline">Cancel</button>
+        <button id="import-confirm" class="btn">Import</button>
       </div>
     </div>
   </div>
@@ -224,9 +337,9 @@
   </div>
 
   <!-- Data + scripts -->
-  <script type="module" src="./data.js"></script>
+  <script type="module" src="data.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="./main.js"></script>
+  <script type="module" src="main.js"></script>
 
 </body>
 </html>

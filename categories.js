@@ -1,5 +1,5 @@
-// categories.js - category rendering & interactions (with ES module import and improved event delegation)
-import { AppState } from "./state.js";
+// categories.js - category rendering & interactions
+import { AppState, setScore, saveCurrentVenture } from "./state.js";
 import { readinessData } from "./data.js";
 import { maybeHealth, buildHealthContent } from "./transform.js";
 import { updateIndustrySelectorUI, toggleLevel, stampAssessedNow, syncSummaryHeaderAndIcons } from "./ui.js";
@@ -10,12 +10,16 @@ let delegationInitialized = false;
 
 export function initializeCategories() {
   const categories = Object.keys(readinessData);
-  const categoriesToShow = AppState.isHealthRelated ? categories : categories.filter((c) => c !== "Regulatory");
+  const categoriesToShow = AppState.isHealthRelated 
+    ? categories 
+    : categories.filter((c) => c !== "Regulatory");
 
   renderCategoryList(categoriesToShow);
 
   categoriesToShow.forEach((cat) => {
-    if (AppState.scores[cat] === undefined) AppState.scores[cat] = 0;
+    if (AppState.scores[cat] === undefined) {
+      AppState.scores[cat] = 0;
+    }
   });
 
   if (!AppState.currentCategory || !categoriesToShow.includes(AppState.currentCategory)) {
@@ -23,7 +27,8 @@ export function initializeCategories() {
   }
 
   if (AppState.currentCategory) {
-    document.getElementById("category-title").textContent = AppState.currentCategory + " Readiness Levels";
+    document.getElementById("category-title").textContent = 
+      AppState.currentCategory + " Readiness Levels";
     document.querySelectorAll(".category-item").forEach((item) => {
       item.classList.toggle("active", item.dataset.category === AppState.currentCategory);
     });
@@ -35,12 +40,13 @@ export function initializeCategories() {
 
 export function renderCategoryList(categories) {
   const categoryList = document.getElementById("category-list");
+  if (!categoryList) return;
 
   categoryList.innerHTML = categories
     .map(
       (cat) => `
       <li class="category-item ${AppState.currentCategory === cat ? "active" : ""}" data-category="${cat}">
-        <span>${cat}</span>
+        <span class="cat-name">${cat}</span>
         <span class="category-score ${AppState.scores[cat] ? "" : "empty"}">${AppState.scores[cat] || "-"}</span>
       </li>`
     )
@@ -59,7 +65,6 @@ export function renderCategoryList(categories) {
 }
 
 function scrollToTop() {
-  // Scroll to the top of the page smoothly
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -73,8 +78,6 @@ export function selectCategory(category) {
 
   updateIndustrySelectorUI();
   updateCategoryDisplay();
-
-  // Scroll to top of page when switching categories
   scrollToTop();
 }
 
@@ -88,11 +91,12 @@ export function updateCategoryDisplay() {
   }
 
   const currentScore = AppState.scores[AppState.currentCategory] || 0;
-  const industryVal = document.getElementById("industry-select").value;
+  const industryVal = document.getElementById("industry-select")?.value || "general";
 
-  container.innerHTML = categoryData.levels.map((lvl) => createLevelCard(lvl, currentScore, industryVal)).join("");
+  container.innerHTML = categoryData.levels
+    .map((lvl) => createLevelCard(lvl, currentScore, industryVal))
+    .join("");
 
-  // Use event delegation instead of individual listeners
   setupLevelCardDelegation();
 }
 
@@ -102,11 +106,15 @@ export function createLevelCard(level, currentScore, industryVal) {
   const isExpanded = AppState.currentView === "expanded" || isSelected || isIncluded;
 
   const useIndustry =
-    AppState.isHealthRelated && AppState.currentCategory === "Technology" ? "general" : industryVal;
+    AppState.isHealthRelated && AppState.currentCategory === "Technology" 
+      ? "general" 
+      : industryVal;
   const baseIndicators = getIndicators(level, useIndustry);
 
   const healthTrack =
-    AppState.isHealthRelated && AppState.currentCategory === "Technology" ? industryVal : null;
+    AppState.isHealthRelated && AppState.currentCategory === "Technology" 
+      ? industryVal 
+      : null;
 
   const content = AppState.isHealthRelated
     ? buildHealthContent(AppState.currentCategory, level, baseIndicators, healthTrack)
@@ -167,7 +175,6 @@ function setupLevelCardDelegation() {
   const container = document.getElementById("levels-container");
   if (!container || levelsDelegationInitialized) return;
 
-  // Set up delegation for level card interactions
   container.addEventListener("click", (e) => {
     // Handle level header clicks (expand/collapse)
     const header = e.target.closest(".level-header");
@@ -190,7 +197,8 @@ function setupLevelCardDelegation() {
 }
 
 export function selectLevel(level) {
-  AppState.scores[AppState.currentCategory] = level;
+  // Use the new state management that auto-saves
+  setScore(AppState.currentCategory, level);
 
   // Stamp/refresh the assessment timestamp when any level is chosen
   stampAssessedNow();

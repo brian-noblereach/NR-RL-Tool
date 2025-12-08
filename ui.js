@@ -1,42 +1,98 @@
-// ui.js
-import { AppState } from "./state.js";
+// ui.js - UI controls and panel management
+import { AppState, saveCurrentVenture } from "./state.js";
 
 /* -----------------------------
-   Assessed timestamp (MM-DD-YYYY)
+   Assessed timestamp (MM-DD-YYYY HH:MM)
 ------------------------------ */
 export function renderAssessedAt() {
   const el = document.getElementById("assessed-at");
   if (!el) return;
-  const d = AppState.assessedAt || new Date();
+  
+  const d = AppState.assessedAt;
+  if (!d) {
+    el.textContent = "—";
+    return;
+  }
+  
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   const yy = d.getFullYear();
-  el.textContent = `${mm}-${dd}-${yy}`;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  el.textContent = `${mm}-${dd}-${yy} ${hh}:${min}`;
 }
 
 export function stampAssessedNow() {
   AppState.assessedAt = new Date();
   renderAssessedAt();
+  saveCurrentVenture();
 }
 
 /* -------------------------------------------------
-   Summary panel: title + icon state management with SVGs
+   Summary panel state management
 -------------------------------------------------- */
-function syncSummaryUI() {
+const PanelState = {
+  MINIMIZED: "minimized",
+  NORMAL: "normal",
+  MAXIMIZED: "maximized"
+};
+
+let currentPanelState = PanelState.MINIMIZED;
+
+function getPanelState() {
+  const panel = document.getElementById("summary-panel");
+  if (!panel) return PanelState.NORMAL;
+  
+  if (panel.classList.contains("maximized")) return PanelState.MAXIMIZED;
+  if (panel.classList.contains("minimized")) return PanelState.MINIMIZED;
+  return PanelState.NORMAL;
+}
+
+function setPanelState(state) {
+  const panel = document.getElementById("summary-panel");
+  const overlay = document.getElementById("panel-overlay");
+  if (!panel) return;
+
+  // Remove all state classes
+  panel.classList.remove("minimized", "maximized");
+  overlay?.classList.remove("active");
+
+  // Apply new state
+  switch (state) {
+    case PanelState.MINIMIZED:
+      panel.classList.add("minimized");
+      break;
+    case PanelState.MAXIMIZED:
+      panel.classList.add("maximized");
+      overlay?.classList.add("active");
+      break;
+    case PanelState.NORMAL:
+      // No additional classes needed
+      break;
+  }
+
+  currentPanelState = state;
+  syncPanelUI();
+}
+
+function syncPanelUI() {
   const panel = document.getElementById("summary-panel");
   if (!panel) return;
 
-  const isMin = panel.classList.contains("minimized");
-  const isMax = panel.classList.contains("maximized");
-
+  const state = getPanelState();
+  
   // Update title based on state
   const h = panel.querySelector(".summary-header h3");
   if (h) {
     const done = Object.values(AppState.scores || {}).filter(Boolean).length;
-    const total = document.getElementById("health-related")?.checked ? 9 : 8;
-    h.textContent = isMin
-      ? `Summary ${done}/${total}`
-      : `Assessment Summary (${done}/${total})`;
+    const healthEnabled = document.getElementById("health-related")?.checked;
+    const total = healthEnabled ? 9 : 8;
+    
+    if (state === PanelState.MINIMIZED) {
+      h.textContent = `Summary ${done}/${total}`;
+    } else {
+      h.textContent = `Assessment Summary (${done}/${total})`;
+    }
   }
 
   // Update minimize button icons
@@ -46,18 +102,18 @@ function syncSummaryUI() {
     const iconRestore = minBtn.querySelector(".icon-restore");
     
     if (iconMinimize && iconRestore) {
-      if (isMin) {
+      if (state === PanelState.MINIMIZED) {
         // Show restore icon when minimized
         iconMinimize.classList.add("hidden");
         iconRestore.classList.remove("hidden");
-        minBtn.title = "Restore";
-        minBtn.setAttribute("aria-label", "Restore");
+        minBtn.title = "Expand";
+        minBtn.setAttribute("aria-label", "Expand panel");
       } else {
         // Show minimize icon when normal/maximized
         iconMinimize.classList.remove("hidden");
         iconRestore.classList.add("hidden");
         minBtn.title = "Minimize";
-        minBtn.setAttribute("aria-label", "Minimize");
+        minBtn.setAttribute("aria-label", "Minimize panel");
       }
     }
   }
@@ -69,72 +125,70 @@ function syncSummaryUI() {
     const iconRestoreMax = maxBtn.querySelector(".icon-restore-max");
     
     if (iconMaximize && iconRestoreMax) {
-      if (isMax) {
+      if (state === PanelState.MAXIMIZED) {
         // Show restore icon when maximized
         iconMaximize.classList.add("hidden");
         iconRestoreMax.classList.remove("hidden");
         maxBtn.title = "Restore";
-        maxBtn.setAttribute("aria-label", "Restore");
+        maxBtn.setAttribute("aria-label", "Restore panel size");
       } else {
         // Show maximize icon when normal/minimized
         iconMaximize.classList.remove("hidden");
         iconRestoreMax.classList.add("hidden");
-        maxBtn.title = "Maximize";
-        maxBtn.setAttribute("aria-label", "Maximize");
+        maxBtn.title = "Full screen";
+        maxBtn.setAttribute("aria-label", "Full screen panel");
       }
     }
   }
 }
 
 export function toggleMinimizeSummaryPanel() {
-  const panel = document.getElementById("summary-panel");
-  const overlay = document.getElementById("panel-overlay");
-  if (!panel) return;
-
-  if (panel.classList.contains("minimized")) {
-    // Restore from minimized to normal
-    panel.classList.remove("minimized", "maximized");
-    overlay?.classList.remove("active");
+  const state = getPanelState();
+  
+  if (state === PanelState.MINIMIZED) {
+    // Restore to normal
+    setPanelState(PanelState.NORMAL);
   } else {
-    // Minimize from normal or maximized state
-    panel.classList.remove("maximized");
-    panel.classList.add("minimized");
-    overlay?.classList.remove("active");
+    // Minimize from normal or maximized
+    setPanelState(PanelState.MINIMIZED);
   }
-  syncSummaryUI();
 }
 
 export function toggleMaximizeSummaryPanel() {
-  const panel = document.getElementById("summary-panel");
-  const overlay = document.getElementById("panel-overlay");
-  if (!panel) return;
-
-  if (panel.classList.contains("maximized")) {
-    // Restore from maximized to normal
-    panel.classList.remove("maximized", "minimized");
-    overlay?.classList.remove("active");
+  const state = getPanelState();
+  
+  if (state === PanelState.MAXIMIZED) {
+    // Restore to normal
+    setPanelState(PanelState.NORMAL);
   } else {
-    // Maximize from normal or minimized state
-    panel.classList.remove("minimized");
-    panel.classList.add("maximized");
-    overlay?.classList.add("active");
+    // Maximize from normal or minimized
+    setPanelState(PanelState.MAXIMIZED);
   }
-  syncSummaryUI();
 }
 
 export function closeMaximizedPanel() {
+  const state = getPanelState();
+  if (state === PanelState.MAXIMIZED) {
+    setPanelState(PanelState.NORMAL);
+  }
+}
+
+// Allow clicking on minimized panel to expand
+export function setupPanelClickToExpand() {
   const panel = document.getElementById("summary-panel");
   if (!panel) return;
-  if (panel.classList.contains("maximized")) {
-    panel.classList.remove("maximized");
-    document.getElementById("panel-overlay")?.classList.remove("active");
-    syncSummaryUI();
-  }
+  
+  panel.addEventListener("click", (e) => {
+    // Only handle clicks directly on the minimized panel (not on buttons)
+    if (panel.classList.contains("minimized") && !e.target.closest("button")) {
+      toggleMinimizeSummaryPanel();
+    }
+  });
 }
 
 /* Call after updateSummary() and once on init */
 export function syncSummaryHeaderAndIcons() {
-  syncSummaryUI();
+  syncPanelUI();
 }
 
 /* -----------------------------
@@ -143,8 +197,8 @@ export function syncSummaryHeaderAndIcons() {
 export function updateIndustrySelectorUI({ forceDefaultOnEnable = false } = {}) {
   const health = document.getElementById("health-related")?.checked;
   const isTechCategory = AppState.currentCategory === "Technology";
-  const wrap   = document.getElementById("industry-selector");
-  const group  = document.getElementById("health-track-optgroup");
+  const wrap = document.getElementById("industry-selector");
+  const group = document.getElementById("health-track-optgroup");
 
   // Only show selector if we're on Technology category
   if (wrap) {
@@ -172,4 +226,108 @@ export function toggleLevel(cardEl) {
 
 export function closeOverlay() {
   document.getElementById("panel-overlay")?.classList.remove("active");
+}
+
+/* -------------------------------------------------
+   Welcome Modal
+-------------------------------------------------- */
+const WELCOME_DISMISSED_KEY = "nr-rl-welcome-dismissed";
+
+export function checkShowWelcomeModal() {
+  try {
+    const dismissed = localStorage.getItem(WELCOME_DISMISSED_KEY);
+    if (!dismissed) {
+      showWelcomeModal();
+    }
+  } catch (e) {
+    // localStorage not available, show modal
+    showWelcomeModal();
+  }
+}
+
+export function showWelcomeModal() {
+  const modal = document.getElementById("welcome-modal");
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+}
+
+export function hideWelcomeModal() {
+  const modal = document.getElementById("welcome-modal");
+  const dontShow = document.getElementById("dont-show-welcome");
+  
+  if (dontShow?.checked) {
+    try {
+      localStorage.setItem(WELCOME_DISMISSED_KEY, "true");
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+  }
+  
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+/* -------------------------------------------------
+   Feedback Modal
+-------------------------------------------------- */
+export function showFeedbackModal() {
+  const modal = document.getElementById("feedback-modal");
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+}
+
+export function hideFeedbackModal() {
+  const modal = document.getElementById("feedback-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+/* -------------------------------------------------
+   Generic Modal Helpers
+-------------------------------------------------- */
+export function showModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+}
+
+export function hideModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
+/* -------------------------------------------------
+   Pilot Banner
+-------------------------------------------------- */
+const BANNER_DISMISSED_KEY = "nr-rl-pilot-banner-dismissed";
+
+export function checkHidePilotBanner() {
+  try {
+    const dismissed = localStorage.getItem(BANNER_DISMISSED_KEY);
+    if (dismissed) {
+      const banner = document.getElementById("pilot-banner");
+      if (banner) banner.style.display = "none";
+    }
+  } catch (e) {
+    // Ignore
+  }
+}
+
+export function dismissPilotBanner() {
+  const banner = document.getElementById("pilot-banner");
+  if (banner) {
+    banner.style.display = "none";
+    try {
+      localStorage.setItem(BANNER_DISMISSED_KEY, "true");
+    } catch (e) {
+      // Ignore
+    }
+  }
 }
