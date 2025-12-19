@@ -12,11 +12,11 @@
   <link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
   
   <title>RL Assessment | NobleReach</title>
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="assets/styles.css" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   
-  <!-- GoatCounter Analytics (free, privacy-friendly) - Replace YOUR_CODE with actual code -->
-  <!-- <script data-goatcounter="https://nrrls.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script> -->
+  <!-- GoatCounter Analytics -->
+  <script data-goatcounter="https://nrrls.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </head>
 <body>
   <!-- Pilot Banner -->
@@ -35,7 +35,7 @@
     <div class="topbar">
       <div class="brand">
         <img
-          src="logo-icon.svg"
+          src="assets/logo-icon.svg"
           alt="NobleReach logo"
           class="nr-logo"
           width="32"
@@ -145,6 +145,22 @@
             </div>
           </div>
 
+          <!-- Advisor Tip (dismissible) -->
+          <div class="advisor-tip" id="advisor-tip">
+            <div class="advisor-tip-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+            </div>
+            <div class="advisor-tip-content">
+              <strong>Advisor Tip:</strong> Levels are cumulative—selecting a level means all prior levels have been achieved. 
+              Use your judgment when circumstances don't perfectly match a definition.
+            </div>
+            <button class="advisor-tip-dismiss" id="dismiss-advisor-tip" aria-label="Dismiss tip">×</button>
+          </div>
+
           <!-- Levels -->
           <div id="levels-container" class="levels-container"></div>
         </main>
@@ -216,10 +232,24 @@
           <h4>How to Use</h4>
           <ul>
             <li><strong>Select a category</strong> from the sidebar to begin assessment</li>
-            <li><strong>Choose a readiness level</strong> that best describes your current state</li>
+            <li><strong>Choose a readiness level</strong> that best describes the venture's current state</li>
+            <li><strong>Levels are cumulative</strong>—selecting Level 5 means Levels 1-4 have been achieved</li>
             <li><strong>Review your summary</strong> in the panel at bottom-right</li>
             <li><strong>Export or save</strong> your assessment at any time</li>
           </ul>
+        </div>
+
+        <div class="welcome-advisor-note">
+          <h4>For Advisors</h4>
+          <p>
+            Readiness levels provide a structured framework, but every venture is unique. Use your professional 
+            judgment when circumstances don't perfectly match a level definition. The goal is to capture a 
+            meaningful snapshot of where the venture stands today—not to force-fit into rigid criteria.
+          </p>
+          <p>
+            <strong>Deliverables</strong> and <strong>indicators</strong> are suggestions, not requirements. 
+            A venture may demonstrate readiness through equivalent evidence.
+          </p>
         </div>
 
         <div class="welcome-pilot-notice">
@@ -337,9 +367,8 @@
   </div>
 
   <!-- Data + scripts -->
-  <script type="module" src="data.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script type="module" src="main.js"></script>
+  <script type="module" src="src/main.js"></script>
 
 </body>
 </html>
