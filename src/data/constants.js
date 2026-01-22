@@ -2,6 +2,14 @@
 // Health term mapping + level-specific health extras (HX)
 // Updated December 2024 - Aligned with revised definitions
 
+// Portfolio options for Smartsheet integration
+// Add new portfolios here as needed
+export const PORTFOLIOS = [
+  { value: "Penn State", label: "Penn State" },
+  { value: "Northeastern", label: "Northeastern" },
+  { value: "Other", label: "Other" }
+];
+
 export const HEALTH_TERM_MAP = [
   { from: /\busers?\b/gi, to: (m) => (m[0] === m[0].toUpperCase() ? "Patients" : "patients") },
   { from: /\bend[- ]?users?\b/gi, to: (m) => (m[0] === m[0].toUpperCase() ? "Patients" : "patients") },

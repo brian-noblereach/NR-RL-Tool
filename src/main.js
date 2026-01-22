@@ -1,15 +1,19 @@
 // main.js – app entry + wiring
-import { 
-  AppState, 
-  loadVenture, 
-  saveCurrentVenture, 
-  createNewVenture, 
-  deleteVenture, 
+import {
+  AppState,
+  loadVenture,
+  saveCurrentVenture,
+  createNewVenture,
+  deleteVenture,
   getAllVentures,
   exportVenture,
-  importVenture 
+  importVenture,
+  saveAdvisorPreference,
+  loadAdvisorPreference
 } from "./state.js";
 import { readinessData } from "./data/index.js";
+import { PORTFOLIOS } from "./data/constants.js";
+import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture } from "./smartsheet.js";
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
 import { updateSummary } from "./summary.js";
 import {
@@ -222,6 +226,20 @@ function syncUIFromState() {
     healthCheckbox.checked = AppState.isHealthRelated;
     const note = document.getElementById("health-mode-note");
     if (note) note.classList.toggle("hidden", !AppState.isHealthRelated);
+  }
+
+  // Sync advisor name from localStorage preference
+  const advisorInput = document.getElementById("advisor-name");
+  if (advisorInput) {
+    const savedAdvisor = loadAdvisorPreference();
+    advisorInput.value = AppState.advisorName || savedAdvisor;
+    AppState.advisorName = advisorInput.value;
+  }
+
+  // Sync portfolio dropdown
+  const portfolioSelect = document.getElementById("portfolio-select");
+  if (portfolioSelect) {
+    portfolioSelect.value = AppState.portfolio || "";
   }
 
   renderAssessedAt();
@@ -465,13 +483,24 @@ function setupEventListeners() {
     }
   });
 
-  // Venture name binding with auto-save
+  // Venture name binding with auto-save and portfolio auto-fill
   const nameInput = document.getElementById("venture-name");
   if (nameInput) {
+    let previousValue = nameInput.value;
+
     nameInput.addEventListener("input", (e) => {
       AppState.ventureName = e.target.value;
       saveCurrentVenture();
       refreshVentureSelector();
+    });
+
+    // Check for portfolio auto-fill when user selects from datalist or finishes typing
+    nameInput.addEventListener("change", (e) => {
+      const newValue = e.target.value;
+      if (newValue && newValue !== previousValue) {
+        handleVentureNameChange(newValue);
+        previousValue = newValue;
+      }
     });
   }
 
@@ -506,6 +535,35 @@ function setupEventListeners() {
     showModal("import-modal");
     document.getElementById("import-json-input")?.focus();
   });
+
+  // Save to Database button
+  document.getElementById("btn-save-db")?.addEventListener("click", handleSaveToDatabase);
+
+  // Advisor name binding with localStorage persistence (debounced)
+  const advisorInput = document.getElementById("advisor-name");
+  if (advisorInput) {
+    let advisorDebounceTimer;
+    advisorInput.addEventListener("input", (e) => {
+      AppState.advisorName = e.target.value;
+      // Debounce localStorage write to reduce writes on every keystroke
+      clearTimeout(advisorDebounceTimer);
+      advisorDebounceTimer = setTimeout(() => {
+        saveAdvisorPreference(e.target.value);
+      }, 300);
+    });
+  }
+
+  // Portfolio dropdown binding
+  const portfolioSelect = document.getElementById("portfolio-select");
+  if (portfolioSelect) {
+    portfolioSelect.addEventListener("change", (e) => {
+      AppState.portfolio = e.target.value;
+      saveCurrentVenture();
+    });
+  }
+
+  // Settings bar toggle
+  document.getElementById("btn-toggle-settings")?.addEventListener("click", toggleSettingsBar);
 
   // Help button
   document.getElementById("btn-help")?.addEventListener("click", () => {
@@ -578,11 +636,212 @@ function setupEventListeners() {
 }
 
 /* -------------------------
+   Save to Database
+--------------------------*/
+let lastSubmitTime = 0;
+const SUBMIT_COOLDOWN = 5000; // 5 seconds between submissions
+
+async function handleSaveToDatabase() {
+  const btn = document.getElementById("btn-save-db");
+  if (!btn || isCurrentlySubmitting()) return;
+
+  // Rate limiting - prevent rapid submissions
+  const now = Date.now();
+  if (now - lastSubmitTime < SUBMIT_COOLDOWN) {
+    showToast("Please wait before saving again", "info");
+    return;
+  }
+  lastSubmitTime = now;
+
+  // Store original content
+  const originalHTML = btn.innerHTML;
+
+  // Update button state - show loading
+  btn.disabled = true;
+  btn.innerHTML = `
+    <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10" opacity="0.25"></circle>
+      <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
+    </svg>
+    <span>Saving...</span>
+  `;
+
+  try {
+    const result = await submitToSmartsheet();
+
+    if (result.success) {
+      showToast("Assessment saved to database", "success");
+      // Show success state briefly
+      btn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span>Saved!</span>
+      `;
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+      }, 2000);
+    } else {
+      showToast(result.message || "Failed to save", "error");
+      btn.innerHTML = originalHTML;
+      btn.disabled = false;
+    }
+  } catch (error) {
+    showToast("Failed to save: " + error.message, "error");
+    btn.innerHTML = originalHTML;
+    btn.disabled = false;
+  }
+}
+
+/**
+ * Show toast notification
+ */
+function showToast(message, type = "info") {
+  // Create or reuse toast element
+  let toast = document.getElementById("app-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "app-toast";
+    toast.className = "app-toast";
+    document.body.appendChild(toast);
+  }
+
+  toast.textContent = message;
+  toast.className = `app-toast ${type}`;
+
+  // Force reflow then add show class
+  toast.offsetHeight;
+  toast.classList.add("show");
+
+  // Auto-hide after 3 seconds
+  setTimeout(() => {
+    toast.classList.remove("show");
+  }, 3000);
+}
+
+/**
+ * Populate portfolio dropdown from PORTFOLIOS constant
+ */
+function populatePortfolioDropdown() {
+  const select = document.getElementById("portfolio-select");
+  if (!select) return;
+
+  select.innerHTML = '<option value="">Select portfolio...</option>';
+  PORTFOLIOS.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.value;
+    opt.textContent = p.label;
+    select.appendChild(opt);
+  });
+}
+
+/**
+ * Populate venture name autocomplete from both Smartsheets
+ * Also stores portfolio data for auto-fill when a venture is selected
+ */
+async function populateVentureNameAutocomplete() {
+  const datalist = document.getElementById("venture-names-list");
+  if (!datalist) return;
+
+  try {
+    const ventures = await fetchVentureData();
+
+    // Clear existing options
+    datalist.innerHTML = "";
+
+    // Add options for each unique venture (limited to most recent 50 for performance)
+    // Users can still type any name - this just provides suggestions
+    const limitedVentures = ventures.slice(0, 50);
+    limitedVentures.forEach(v => {
+      const opt = document.createElement("option");
+      opt.value = v.name;
+      // Add source hint in the label for context
+      if (v.portfolio) {
+        opt.label = `${v.name} (${v.portfolio})`;
+      }
+      datalist.appendChild(opt);
+    });
+
+    console.log(`[Autocomplete] Loaded ${ventures.length} ventures, showing top ${limitedVentures.length}`);
+  } catch (error) {
+    console.warn("[Autocomplete] Failed to load venture names:", error);
+  }
+}
+
+/**
+ * Handle venture name selection - auto-fill portfolio if available
+ */
+function handleVentureNameChange(ventureName) {
+  if (!ventureName || !ventureName.trim()) return;
+
+  // Look up portfolio from cached data
+  const portfolio = getPortfolioForVenture(ventureName);
+
+  if (portfolio) {
+    // Only auto-fill if portfolio is currently empty
+    const portfolioSelect = document.getElementById("portfolio-select");
+    if (portfolioSelect && !AppState.portfolio) {
+      AppState.portfolio = portfolio;
+      portfolioSelect.value = portfolio;
+      saveCurrentVenture();
+      console.log(`[Autocomplete] Auto-filled portfolio: ${portfolio}`);
+
+      // Show a brief hint that portfolio was auto-filled
+      showToast(`Portfolio set to "${portfolio}"`, "info");
+    }
+  }
+}
+
+/**
+ * Toggle settings bar visibility
+ */
+function toggleSettingsBar() {
+  const settingsBar = document.getElementById("settings-bar");
+  const toggleBtn = document.getElementById("btn-toggle-settings");
+
+  if (!settingsBar || !toggleBtn) return;
+
+  const isCollapsed = settingsBar.classList.contains("collapsed");
+  settingsBar.classList.toggle("collapsed", !isCollapsed);
+  toggleBtn.classList.toggle("active", isCollapsed);
+
+  // Save preference
+  try {
+    localStorage.setItem("nr-rl-settings-expanded", isCollapsed ? "true" : "false");
+  } catch (e) {
+    // Ignore localStorage errors
+  }
+}
+
+/**
+ * Restore settings bar state from localStorage
+ */
+function restoreSettingsBarState() {
+  try {
+    const expanded = localStorage.getItem("nr-rl-settings-expanded");
+    if (expanded === "true") {
+      const settingsBar = document.getElementById("settings-bar");
+      const toggleBtn = document.getElementById("btn-toggle-settings");
+      if (settingsBar) settingsBar.classList.remove("collapsed");
+      if (toggleBtn) toggleBtn.classList.add("active");
+    }
+  } catch (e) {
+    // Ignore localStorage errors
+  }
+}
+
+/* -------------------------
    Boot
 --------------------------*/
 document.addEventListener("DOMContentLoaded", () => {
+  populatePortfolioDropdown();
+  restoreSettingsBarState();
   initializeApp();
   setupEventDelegation();
   setupEventListeners();
   ensureNextToastDom();
+
+  // Load venture name autocomplete in background (non-blocking)
+  populateVentureNameAutocomplete();
 });

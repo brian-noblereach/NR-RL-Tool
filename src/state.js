@@ -2,6 +2,8 @@
 
 const STORAGE_KEY = "nr-rl-assessments";
 const ACTIVE_KEY = "nr-rl-active";
+const ADVISOR_KEY = "nr-rl-advisor-name";
+const ASSESSMENT_HISTORY_KEY = "nr-rl-assessment-history";
 
 // Load saved assessments from localStorage
 function loadAssessments() {
@@ -45,9 +47,73 @@ function saveActiveId(id) {
   }
 }
 
-// Generate unique ID for ventures
+// Generate unique ID for ventures (internal localStorage ID)
 function generateId() {
   return "v_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
+}
+
+// Generate UUID for Smartsheet venture tracking
+export function generateVentureId() {
+  // Use crypto.randomUUID if available, otherwise fallback
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return "rlv_" + crypto.randomUUID();
+  }
+  // Fallback for older browsers
+  return "rlv_" + "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === "x" ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Get next assessment number for a venture (for temporal tracking)
+export function getNextAssessmentNumber(ventureId) {
+  try {
+    const history = JSON.parse(localStorage.getItem(ASSESSMENT_HISTORY_KEY) || "{}");
+    const ventureHistory = history[ventureId] || [];
+    return ventureHistory.length + 1;
+  } catch (e) {
+    return 1;
+  }
+}
+
+// Record assessment submission to history
+// Limits history to last 100 entries per venture to prevent localStorage bloat
+const MAX_HISTORY_PER_VENTURE = 100;
+
+export function recordAssessmentSubmission(ventureId, timestamp) {
+  try {
+    const history = JSON.parse(localStorage.getItem(ASSESSMENT_HISTORY_KEY) || "{}");
+    if (!history[ventureId]) history[ventureId] = [];
+    history[ventureId].push(timestamp);
+
+    // Keep only the last MAX_HISTORY_PER_VENTURE submissions per venture
+    if (history[ventureId].length > MAX_HISTORY_PER_VENTURE) {
+      history[ventureId] = history[ventureId].slice(-MAX_HISTORY_PER_VENTURE);
+    }
+
+    localStorage.setItem(ASSESSMENT_HISTORY_KEY, JSON.stringify(history));
+  } catch (e) {
+    console.warn("Failed to record assessment submission:", e);
+  }
+}
+
+// Advisor name persistence (auto-fills across sessions)
+export function saveAdvisorPreference(name) {
+  try {
+    localStorage.setItem(ADVISOR_KEY, name);
+    AppState.advisorName = name;
+  } catch (e) {
+    console.warn("Failed to save advisor preference:", e);
+  }
+}
+
+export function loadAdvisorPreference() {
+  try {
+    return localStorage.getItem(ADVISOR_KEY) || "";
+  } catch (e) {
+    return "";
+  }
 }
 
 // The main AppState object
@@ -64,6 +130,12 @@ export const AppState = {
   isHealthRelated: false,
   assessedAt: null,
   createdAt: null,
+
+  // Smartsheet integration fields
+  advisorName: "",
+  portfolio: "",
+  ventureId: null,  // UUID for Smartsheet tracking (distinct from activeVentureId)
+  lastSavedToSmartsheet: null,
 
   // All saved ventures
   _savedVentures: loadAssessments(),
@@ -88,6 +160,12 @@ export function loadVenture(id) {
   AppState.assessedAt = venture.assessedAt ? new Date(venture.assessedAt) : null;
   AppState.createdAt = venture.createdAt ? new Date(venture.createdAt) : null;
 
+  // Smartsheet integration fields
+  AppState.ventureId = venture.ventureId || generateVentureId();
+  AppState.portfolio = venture.portfolio || "";
+  AppState.lastSavedToSmartsheet = venture.lastSavedToSmartsheet || null;
+  // Note: advisorName is loaded from localStorage preference, not per-venture
+
   saveActiveId(id);
   return true;
 }
@@ -99,8 +177,14 @@ export function saveCurrentVenture() {
     AppState.createdAt = new Date();
   }
 
+  // Ensure ventureId exists for Smartsheet tracking
+  if (!AppState.ventureId) {
+    AppState.ventureId = generateVentureId();
+  }
+
   AppState._savedVentures[AppState.activeVentureId] = {
     id: AppState.activeVentureId,
+    ventureId: AppState.ventureId,  // Smartsheet tracking ID
     ventureName: AppState.ventureName,
     scores: { ...AppState.scores },
     goalLevels: { ...AppState.goalLevels },
@@ -108,6 +192,8 @@ export function saveCurrentVenture() {
     assessedAt: AppState.assessedAt ? AppState.assessedAt.toISOString() : null,
     createdAt: AppState.createdAt ? AppState.createdAt.toISOString() : null,
     updatedAt: new Date().toISOString(),
+    portfolio: AppState.portfolio,  // Smartsheet field
+    lastSavedToSmartsheet: AppState.lastSavedToSmartsheet,  // Smartsheet tracking
   };
 
   saveAssessments(AppState._savedVentures);

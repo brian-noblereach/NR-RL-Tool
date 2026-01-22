@@ -60,6 +60,14 @@
         <button id="btn-export-json" class="btn small outline">Export</button>
         <button id="btn-import-json" class="btn small outline">Import</button>
         <button id="btn-export-pdf" class="btn small">Save PDF</button>
+        <button id="btn-save-db" class="btn small accent" title="Save to Database">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+          </svg>
+          <span>Save to Database</span>
+        </button>
       </div>
     </div>
 
@@ -81,12 +89,50 @@
 
       <div class="venture-name">
         <label for="venture-name">Venture Name</label>
-        <input type="text" id="venture-name" placeholder="e.g., NovaThera Biosystems" />
+        <input type="text" id="venture-name" placeholder="e.g., NovaThera Biosystems" list="venture-names-list" autocomplete="off" />
+        <datalist id="venture-names-list">
+          <!-- Populated dynamically from Qualification Tool Smartsheet -->
+        </datalist>
       </div>
 
       <div class="timestamp">
         <span>Last updated:</span>
         <time id="assessed-at" aria-live="polite">—</time>
+      </div>
+
+      <button id="btn-toggle-settings" class="btn-settings-toggle" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        <span class="settings-label">Settings</span>
+        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
+    </div>
+
+    <!-- SETTINGS BAR (collapsible) -->
+    <div class="settings-bar collapsed" id="settings-bar">
+      <div class="settings-content">
+        <div class="advisor-name-field">
+          <label for="advisor-name">Advisor Name</label>
+          <input type="text" id="advisor-name" placeholder="Your name" />
+        </div>
+        <div class="portfolio-field">
+          <label for="portfolio-select">Portfolio</label>
+          <select id="portfolio-select">
+            <!-- Populated dynamically from PORTFOLIOS constant -->
+          </select>
+        </div>
+        <div class="settings-hint">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span>These settings are saved for all your assessments</span>
+        </div>
       </div>
     </div>
 

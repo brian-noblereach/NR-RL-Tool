@@ -260,8 +260,8 @@ body {
 /* ---------- Venture Bar ---------- */
 .venture-bar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 20px;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 16px;
   align-items: end;
   background: var(--slate-50);
   border-bottom: 1px solid var(--slate-200);
@@ -334,6 +334,119 @@ body {
 .timestamp span {
   font-size: 12px;
   color: var(--slate-500);
+}
+
+/* ---------- Settings Toggle Button ---------- */
+.btn-settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  height: 38px;
+  background: #fff;
+  border: 1px solid var(--slate-300);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--slate-600);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-settings-toggle:hover {
+  border-color: var(--nr-teal-1);
+  color: var(--nr-teal-1);
+}
+
+.btn-settings-toggle.active {
+  background: var(--slate-100);
+  border-color: var(--nr-teal-1);
+  color: var(--nr-teal-1);
+}
+
+.btn-settings-toggle .chevron {
+  transition: transform 0.2s ease;
+}
+
+.btn-settings-toggle.active .chevron {
+  transform: rotate(180deg);
+}
+
+.btn-settings-toggle .settings-label {
+  display: inline;
+}
+
+/* ---------- Collapsible Settings Bar ---------- */
+.settings-bar {
+  background: var(--slate-100);
+  border-bottom: 1px solid var(--slate-200);
+  overflow: hidden;
+  transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+  max-height: 100px;
+  opacity: 1;
+}
+
+.settings-bar.collapsed {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+  opacity: 0;
+}
+
+.settings-content {
+  display: flex;
+  align-items: end;
+  gap: 20px;
+  padding: 12px 24px;
+}
+
+.settings-bar .advisor-name-field,
+.settings-bar .portfolio-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-bar .advisor-name-field label,
+.settings-bar .portfolio-field label {
+  font-size: 12px;
+  color: var(--slate-500);
+}
+
+.settings-bar .advisor-name-field input,
+.settings-bar .portfolio-field select {
+  height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--slate-300);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+  min-width: 180px;
+}
+
+.settings-bar .advisor-name-field input:focus,
+.settings-bar .portfolio-field select:focus {
+  outline: none;
+  border-color: var(--nr-teal-1);
+  box-shadow: 0 0 0 3px rgba(0, 130, 165, 0.1);
+}
+
+.settings-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--slate-500);
+  margin-left: auto;
+  padding: 8px 12px;
+  background: rgba(0, 130, 165, 0.05);
+  border-radius: 6px;
+}
+
+.settings-hint svg {
+  flex-shrink: 0;
+  color: var(--nr-teal-1);
 }
 
 /* ---------- Toolbar ---------- */
@@ -1232,6 +1345,72 @@ body {
 }
 
 /* =========================================================
+   Smartsheet Integration - Save Button
+   ========================================================= */
+
+/* Save to Database button - accent style */
+.btn.accent {
+  background: var(--nr-purple-2);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn.accent:hover {
+  background: var(--nr-purple-1);
+}
+
+.btn.accent:disabled {
+  background: var(--slate-400);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Spinning animation for loading state */
+.btn .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Toast Notifications */
+.app-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--slate-900);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  z-index: 2000;
+  opacity: 0;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.app-toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.app-toast.success {
+  background: var(--nr-green-2);
+}
+
+.app-toast.error {
+  background: var(--nr-orange-1);
+}
+
+/* =========================================================
    Responsive
    ========================================================= */
 @media (max-width: 1200px) {
@@ -1301,6 +1480,41 @@ body {
 
   .venture-name input {
     min-width: 100%;
+  }
+
+  .btn-settings-toggle {
+    justify-content: center;
+  }
+
+  .btn-settings-toggle .settings-label {
+    display: inline;
+  }
+
+  .settings-content {
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+
+  .settings-bar .advisor-name-field,
+  .settings-bar .portfolio-field {
+    width: 100%;
+  }
+
+  .settings-bar .advisor-name-field input,
+  .settings-bar .portfolio-field select {
+    min-width: 100%;
+    width: 100%;
+  }
+
+  .settings-hint {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .btn.accent span {
+    display: none;
   }
 
   .toolbar {
