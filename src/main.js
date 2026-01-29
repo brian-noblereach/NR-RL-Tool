@@ -834,7 +834,7 @@ function restoreSettingsBarState() {
 /* -------------------------
    Boot
 --------------------------*/
-document.addEventListener("DOMContentLoaded", () => {
+function normalBoot() {
   populatePortfolioDropdown();
   restoreSettingsBarState();
   initializeApp();
@@ -844,4 +844,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Load venture name autocomplete in background (non-blocking)
   populateVentureNameAutocomplete();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  // Check for VDR mode (Associate Mode) via URL parameter
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('vdr') === 'true') {
+    // Import and initialize VDR mode
+    import('./vdr/vdr-main.js').then(({ initializeVDR }) => {
+      initializeVDR();
+    }).catch(err => {
+      console.error('[VDR] Failed to load VDR module:', err);
+      // Fall back to normal mode
+      normalBoot();
+    });
+    return;
+  }
+  
+  // Normal boot
+  normalBoot();
 });
