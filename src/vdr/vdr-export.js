@@ -1,14 +1,61 @@
 // vdr-export.js - Export VDR to DOCX format
-// Uses docx.js library loaded via CDN
+// Dynamically loads docx.js library
+
+// Store the loaded library
+let docxLib = null;
+
+/**
+ * Load the docx library dynamically
+ */
+async function loadDocxLibrary() {
+  if (docxLib) {
+    return docxLib;
+  }
+
+  // Check if already loaded globally
+  if (typeof window.docx !== 'undefined') {
+    docxLib = window.docx;
+    return docxLib;
+  }
+
+  // Try to load via dynamic import from CDN
+  try {
+    console.log('[VDR Export] Loading docx library from CDN...');
+    
+    // Use the ESM version from skypack or esm.sh which provides proper ES module exports
+    const module = await import('https://esm.sh/docx@8.5.0');
+    docxLib = module;
+    console.log('[VDR Export] Library loaded successfully via ESM import');
+    return docxLib;
+  } catch (err) {
+    console.error('[VDR Export] Failed to load via ESM:', err);
+  }
+
+  // Fallback: try unpkg
+  try {
+    const module = await import('https://unpkg.com/docx@8.5.0/build/index.es.js');
+    docxLib = module;
+    console.log('[VDR Export] Library loaded successfully via unpkg');
+    return docxLib;
+  } catch (err) {
+    console.error('[VDR Export] Failed to load via unpkg:', err);
+  }
+
+  throw new Error('Could not load DOCX library. Please check your internet connection.');
+}
 
 /**
  * Generate and download DOCX file
  */
 export async function generateDocx(vdr) {
-  // Ensure docx library is loaded
-  if (typeof docx === 'undefined') {
-    throw new Error('DOCX library not loaded. Please check your internet connection.');
+  // Load the docx library
+  const lib = await loadDocxLibrary();
+  
+  if (!lib) {
+    throw new Error('DOCX library not loaded.');
   }
+
+  console.log('[VDR Export] docx library ready, generating document...');
 
   const {
     Document,
@@ -17,9 +64,8 @@ export async function generateDocx(vdr) {
     TextRun,
     HeadingLevel,
     AlignmentType,
-    LevelFormat,
-    PageBreak
-  } = docx;
+    LevelFormat
+  } = lib;
 
   // Format dates
   const baselineDate = formatDateForDoc(vdr.baselineDate);
@@ -28,6 +74,146 @@ export async function generateDocx(vdr) {
   // Build document filename
   const safeVentureName = vdr.ventureName.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
   const filename = `VDR - ${safeVentureName} - ${generatedDate}.docx`;
+
+  // Build document content
+  const content = [];
+
+  // Title
+  content.push(
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      children: [
+        new TextRun({
+          text: `VDR - ${vdr.ventureName} - ${generatedDate}`,
+          bold: true
+        })
+      ]
+    })
+  );
+
+  // Metadata section
+  const metaParts = [];
+  if (vdr.portfolio) {
+    metaParts.push(`Portfolio: ${vdr.portfolio}`);
+  }
+  metaParts.push(`Baseline Date: ${baselineDate}`);
+  if (vdr.advisorName) {
+    metaParts.push(`Advisor: ${vdr.advisorName}`);
+  }
+  if (vdr.isHealthRelated) {
+    metaParts.push(`Health-Related Venture`);
+  }
+
+  content.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: metaParts.join(' | '),
+          size: 20, // 10pt
+          italics: true
+        })
+      ],
+      spacing: { after: 120 }
+    })
+  );
+
+  // Summary
+  content.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: `${vdr.categoriesWithGaps} categories with advancement goals • ${vdr.totalGap} total levels to advance`,
+          size: 22 // 11pt
+        })
+      ],
+      spacing: { after: 400 }
+    })
+  );
+
+  // Add horizontal line
+  content.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: "─".repeat(80),
+          size: 16,
+          color: "CCCCCC"
+        })
+      ],
+      spacing: { after: 200 }
+    })
+  );
+
+  // Sections
+  for (const section of vdr.sections) {
+    // Category heading
+    content.push(
+      new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        children: [
+          new TextRun({
+            text: `${section.category} (Current: ${section.baselineLevel} → Goal: ${section.goalLevel})`,
+            bold: true
+          })
+        ],
+        spacing: { before: 300, after: 120 }
+      })
+    );
+
+    // Deliverables as bullet list
+    for (const deliverable of section.deliverables) {
+      content.push(
+        new Paragraph({
+          numbering: {
+            reference: "vdr-bullets",
+            level: 0
+          },
+          children: [
+            new TextRun({
+              text: deliverable,
+              size: 24 // 12pt
+            })
+          ],
+          spacing: { after: 80 }
+        })
+      );
+    }
+
+    // Add spacing after section
+    content.push(
+      new Paragraph({
+        children: [],
+        spacing: { after: 200 }
+      })
+    );
+  }
+
+  // Footer
+  content.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: "─".repeat(80),
+          size: 16,
+          color: "CCCCCC"
+        })
+      ],
+      spacing: { before: 400, after: 120 }
+    })
+  );
+
+  content.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: "Generated by NobleReach RL Goals & VDR Companion Tool",
+          size: 18, // 9pt
+          italics: true,
+          color: "666666"
+        })
+      ]
+    })
+  );
 
   // Create document
   const doc = new Document({
@@ -111,160 +297,16 @@ export async function generateDocx(vdr) {
             }
           }
         },
-        children: buildDocumentContent(vdr, baselineDate, generatedDate)
+        children: content
       }
     ]
   });
 
   // Generate and download
+  console.log('[VDR Export] Packing document...');
   const buffer = await Packer.toBlob(doc);
+  console.log('[VDR Export] Downloading file:', filename);
   downloadBlob(buffer, filename);
-}
-
-/**
- * Build the document content array
- */
-function buildDocumentContent(vdr, baselineDate, generatedDate) {
-  const content = [];
-
-  // Title
-  content.push(
-    new docx.Paragraph({
-      heading: docx.HeadingLevel.HEADING_1,
-      children: [
-        new docx.TextRun({
-          text: `VDR - ${vdr.ventureName} - ${generatedDate}`,
-          bold: true
-        })
-      ]
-    })
-  );
-
-  // Metadata section
-  const metaParts = [];
-  if (vdr.portfolio) {
-    metaParts.push(`Portfolio: ${vdr.portfolio}`);
-  }
-  metaParts.push(`Baseline Date: ${baselineDate}`);
-  if (vdr.advisorName) {
-    metaParts.push(`Advisor: ${vdr.advisorName}`);
-  }
-  if (vdr.isHealthRelated) {
-    metaParts.push(`Health-Related Venture`);
-  }
-
-  content.push(
-    new docx.Paragraph({
-      children: [
-        new docx.TextRun({
-          text: metaParts.join(' | '),
-          size: 20, // 10pt
-          italics: true
-        })
-      ],
-      spacing: { after: 120 }
-    })
-  );
-
-  // Summary
-  content.push(
-    new docx.Paragraph({
-      children: [
-        new docx.TextRun({
-          text: `${vdr.categoriesWithGaps} categories with advancement goals • ${vdr.totalGap} total levels to advance`,
-          size: 22 // 11pt
-        })
-      ],
-      spacing: { after: 400 }
-    })
-  );
-
-  // Add horizontal line (simulated with underscores or spacing)
-  content.push(
-    new docx.Paragraph({
-      children: [
-        new docx.TextRun({
-          text: "─".repeat(80),
-          size: 16,
-          color: "CCCCCC"
-        })
-      ],
-      spacing: { after: 200 }
-    })
-  );
-
-  // Sections
-  for (const section of vdr.sections) {
-    // Category heading
-    content.push(
-      new docx.Paragraph({
-        heading: docx.HeadingLevel.HEADING_2,
-        children: [
-          new docx.TextRun({
-            text: `${section.category} (Current: ${section.baselineLevel} → Goal: ${section.goalLevel})`,
-            bold: true
-          })
-        ],
-        spacing: { before: 300, after: 120 }
-      })
-    );
-
-    // Deliverables as bullet list
-    for (const deliverable of section.deliverables) {
-      content.push(
-        new docx.Paragraph({
-          numbering: {
-            reference: "vdr-bullets",
-            level: 0
-          },
-          children: [
-            new docx.TextRun({
-              text: deliverable,
-              size: 24 // 12pt
-            })
-          ],
-          spacing: { after: 80 }
-        })
-      );
-    }
-
-    // Add spacing after section
-    content.push(
-      new docx.Paragraph({
-        children: [],
-        spacing: { after: 200 }
-      })
-    );
-  }
-
-  // Footer
-  content.push(
-    new docx.Paragraph({
-      children: [
-        new docx.TextRun({
-          text: "─".repeat(80),
-          size: 16,
-          color: "CCCCCC"
-        })
-      ],
-      spacing: { before: 400, after: 120 }
-    })
-  );
-
-  content.push(
-    new docx.Paragraph({
-      children: [
-        new docx.TextRun({
-          text: "Generated by NobleReach RL Goals & VDR Companion Tool",
-          size: 18, // 9pt
-          italics: true,
-          color: "666666"
-        })
-      ]
-    })
-  );
-
-  return content;
 }
 
 /**

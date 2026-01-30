@@ -3,10 +3,11 @@
 // Updated December 2024 - Aligned with revised definitions
 
 // Portfolio options for Smartsheet integration
+// Keep aligned with Qualification Tool v02 portfolio dropdown
 // Add new portfolios here as needed
 export const PORTFOLIOS = [
-  { value: "Penn State", label: "Penn State" },
-  { value: "Northeastern", label: "Northeastern" },
+  { value: "Northeastern CRI - 2026", label: "Northeastern CRI - 2026" },
+  { value: "Penn State GAP - 2026", label: "Penn State GAP - 2026" },
   { value: "Other", label: "Other" }
 ];
 
