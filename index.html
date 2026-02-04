@@ -11,7 +11,7 @@
   <!-- Clash Display via CDN (fontshare alternative) -->
   <link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
   
-  <title>RL Assessment | NobleReach</title>
+  <title>BRL Assessment | NobleReach</title>
   <link rel="stylesheet" href="assets/styles.css" />
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   
@@ -44,7 +44,7 @@
           loading="eager"
         />
         <span class="brand-title">
-          NobleReach<span class="tm">™</span> Readiness Levels
+          NobleReach<span class="tm">™</span> Business Readiness Levels
         </span>
         <span class="version-badge">Pilot</span>
       </div>
@@ -57,9 +57,21 @@
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
         </button>
-        <button id="btn-export-json" class="btn small outline">Export</button>
-        <button id="btn-import-json" class="btn small outline">Import</button>
         <button id="btn-export-pdf" class="btn small">Save PDF</button>
+        <button id="btn-load-assessment" class="btn small outline" title="Load a previous assessment to edit">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Load</span>
+        </button>
+        <button id="btn-start-new-assessment" class="btn small accent" disabled title="Start new assessment after venture has progressed">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14"></path>
+          </svg>
+          <span>New Assessment</span>
+        </button>
         <button id="btn-save-db" class="btn small accent" title="Save to Database">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
@@ -95,45 +107,31 @@
         </datalist>
       </div>
 
-      <div class="timestamp">
-        <span>Last updated:</span>
-        <time id="assessed-at" aria-live="polite">—</time>
+      <div class="advisor-name-field">
+        <label for="advisor-name">Advisor Name <span class="required">*</span></label>
+        <input type="text" id="advisor-name" placeholder="Your name" required />
       </div>
 
-      <button id="btn-toggle-settings" class="btn-settings-toggle" title="Settings">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-        </svg>
-        <span class="settings-label">Settings</span>
-        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
-      </button>
-    </div>
+      <div class="portfolio-field">
+        <label for="portfolio-select">Portfolio</label>
+        <select id="portfolio-select">
+          <!-- Populated dynamically from PORTFOLIOS constant -->
+        </select>
+      </div>
 
-    <!-- SETTINGS BAR (collapsible) -->
-    <div class="settings-bar collapsed" id="settings-bar">
-      <div class="settings-content">
-        <div class="advisor-name-field">
-          <label for="advisor-name">Advisor Name</label>
-          <input type="text" id="advisor-name" placeholder="Your name" />
+      <div class="status-group">
+        <div class="timestamp">
+          <span>Last updated:</span>
+          <time id="assessed-at" aria-live="polite">—</time>
         </div>
-        <div class="portfolio-field">
-          <label for="portfolio-select">Portfolio</label>
-          <select id="portfolio-select">
-            <!-- Populated dynamically from PORTFOLIOS constant -->
-          </select>
-        </div>
-        <div class="settings-hint">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        <div class="submission-status" id="submission-status">
+          <svg class="status-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="7" cy="7" r="6"></circle>
           </svg>
-          <span>These settings are saved for all your assessments</span>
+          <span class="status-text">Not submitted</span>
         </div>
       </div>
+
     </div>
 
     <!-- TOOLBAR -->
@@ -386,21 +384,66 @@
     </div>
   </div>
 
-  <!-- Import Modal -->
-  <div id="import-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+  <!-- Start New Assessment Modal -->
+  <div id="start-new-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="start-new-modal-title">
     <div class="modal-backdrop"></div>
     <div class="modal-content small-modal">
       <div class="modal-header">
-        <h3 id="import-modal-title">Import Assessment</h3>
-        <button id="import-modal-close" class="icon-btn" aria-label="Close">×</button>
+        <h3 id="start-new-modal-title">Start New Assessment</h3>
+        <button id="start-new-close" class="icon-btn" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
-        <p>Paste a previously exported assessment JSON below:</p>
-        <textarea id="import-json-input" rows="8" placeholder='{"ventureName": "...", "scores": {...}}'></textarea>
+        <p>This will complete Assessment #<span id="current-num">1</span> and begin Assessment #<span id="next-num">2</span>.</p>
+        <p><strong>Current scores will be cleared</strong> so you can assess the venture's current state after it has progressed.</p>
+        <p class="info-text">Note: You can still view Assessment #<span id="current-num-2">1</span> submission history in the database.</p>
       </div>
       <div class="modal-footer">
-        <button id="import-cancel" class="btn outline">Cancel</button>
-        <button id="import-confirm" class="btn">Import</button>
+        <button id="start-new-cancel" class="btn outline">Cancel</button>
+        <button id="start-new-confirm" class="btn accent">Start Assessment #<span id="next-num-2">2</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load Assessment Modal -->
+  <div id="load-assessment-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="load-assessment-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content load-assessment-modal-content">
+      <div class="modal-header">
+        <h3 id="load-assessment-modal-title">Load Previous Assessment</h3>
+        <button id="load-assessment-modal-close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="load-assessment-intro">Select a previously submitted assessment to edit. Changes will update the existing database entry.</p>
+
+        <div class="load-assessment-search">
+          <input type="text" id="load-assessment-search" placeholder="Search by venture name..." autocomplete="off" />
+        </div>
+
+        <div class="load-assessment-list" id="load-assessment-list">
+          <div class="load-assessment-loading">
+            <div class="spinner"></div>
+            <p>Loading your assessments...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Replace Assessment Warning Modal -->
+  <div id="replace-warning-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="replace-warning-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content small-modal">
+      <div class="modal-header">
+        <h3 id="replace-warning-modal-title">Replace Current Assessment?</h3>
+        <button id="replace-warning-modal-close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Loading this assessment will replace your current work.</p>
+        <p class="warning-text">Any unsaved changes to "<strong id="replace-current-venture">—</strong>" will be lost.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="replace-warning-cancel" class="btn outline">Cancel</button>
+        <button id="replace-warning-confirm" class="btn accent">Load Assessment</button>
       </div>
     </div>
   </div>

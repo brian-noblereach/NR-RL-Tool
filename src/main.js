@@ -6,14 +6,17 @@ import {
   createNewVenture,
   deleteVenture,
   getAllVentures,
-  exportVenture,
-  importVenture,
   saveAdvisorPreference,
-  loadAdvisorPreference
+  loadAdvisorPreference,
+  getCurrentAssessmentNumber,
+  incrementAssessmentNumber,
+  getSubmissionStatus,
+  recordSubmission,
+  generateVentureId
 } from "./state.js";
 import { readinessData } from "./data/index.js";
 import { PORTFOLIOS } from "./data/constants.js";
-import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture } from "./smartsheet.js";
+import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchUserAssessments, clearUserAssessmentsCache } from "./smartsheet.js";
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
 import { updateSummary } from "./summary.js";
 import {
@@ -244,6 +247,8 @@ function syncUIFromState() {
 
   renderAssessedAt();
   refreshVentureSelector();
+  updateSubmissionStatusUI();
+  updateStartNewAssessmentButton();
 }
 
 /* -------------------------
@@ -326,45 +331,324 @@ function savePdfSnapshot() {
 }
 
 /* -------------------------
-   JSON Export/Import
+   Submission Status UI
 --------------------------*/
-function exportCurrentVentureJson() {
-  const json = exportVenture();
-  const ventureName = AppState.ventureName || "assessment";
-  const filename = `${ventureName.replace(/[^\w\-]+/g, "_")}_export.json`;
-  
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+function formatTime(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
 }
 
-function handleImportVenture() {
-  const input = document.getElementById("import-json-input");
-  const json = input?.value?.trim();
-  
-  if (!json) {
-    alert("Please paste a valid JSON export.");
+export function updateSubmissionStatusUI() {
+  const statusEl = document.getElementById("submission-status");
+  if (!statusEl) return;
+
+  const status = getSubmissionStatus();
+  const iconEl = statusEl.querySelector(".status-icon");
+  const textEl = statusEl.querySelector(".status-text");
+
+  statusEl.className = "submission-status";
+
+  if (!status.submitted) {
+    textEl.textContent = "Not submitted";
+    iconEl.innerHTML = '<circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/>';
+  } else if (status.hasChanges) {
+    statusEl.classList.add("modified");
+    textEl.textContent = `Modified since ${formatTime(status.lastSubmitted)}`;
+    iconEl.innerHTML = '<path d="M12 2v20M2 12h20" stroke="currentColor" stroke-width="2"/>';
+  } else {
+    statusEl.classList.add("submitted");
+    textEl.textContent = `Submitted ${formatTime(status.lastSubmitted)}`;
+    iconEl.innerHTML = '<path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" fill="none"/>';
+  }
+
+  updateStartNewAssessmentButton();
+}
+
+function updateStartNewAssessmentButton() {
+  const btn = document.getElementById("btn-start-new-assessment");
+  if (!btn) return;
+
+  const status = getSubmissionStatus();
+
+  if (status.submitted) {
+    btn.disabled = false;
+    btn.title = `Start Assessment #${AppState.currentAssessmentNumber + 1} after venture has progressed`;
+  } else {
+    btn.disabled = true;
+    btn.title = "Submit current assessment before starting new one";
+  }
+}
+
+/* -------------------------
+   Start New Assessment
+--------------------------*/
+function showStartNewAssessmentModal() {
+  const currentNum = AppState.currentAssessmentNumber;
+  const nextNum = currentNum + 1;
+
+  document.getElementById("current-num").textContent = currentNum;
+  document.getElementById("current-num-2").textContent = currentNum;
+  document.getElementById("next-num").textContent = nextNum;
+  document.getElementById("next-num-2").textContent = nextNum;
+
+  showModal("start-new-modal");
+}
+
+function handleStartNewAssessment() {
+  incrementAssessmentNumber();
+
+  // Clear scores for fresh assessment
+  AppState.scores = {};
+  AppState.goalLevels = {};
+  AppState.assessedAt = null;
+  AppState.currentCategory = Object.keys(readinessData)[0];
+
+  saveCurrentVenture();
+  syncUIFromState();
+  initializeCategories();
+  updateSummary();
+  updateSubmissionStatusUI();
+
+  hideModal("start-new-modal");
+  showToast(`Started Assessment #${AppState.currentAssessmentNumber}`, "success");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* -------------------------
+   Load Assessment from Database
+--------------------------*/
+let pendingLoadAssessment = null;  // Store assessment to load after warning confirmation
+
+async function showLoadAssessmentModal() {
+  const advisorName = AppState.advisorName || loadAdvisorPreference();
+
+  if (!advisorName || !advisorName.trim()) {
+    showToast("Please enter your Advisor Name first", "error");
+    document.getElementById("advisor-name")?.focus();
     return;
   }
 
-  const id = importVenture(json);
-  if (id) {
-    loadVenture(id);
-    syncUIFromState();
-    initializeCategories();
-    updateSummary();
-    syncSummaryHeaderAndIcons();
-    hideModal("import-modal");
-    input.value = "";
-  } else {
-    alert("Invalid JSON format. Please check your export file.");
+  showModal("load-assessment-modal");
+  renderLoadAssessmentLoading();
+
+  // Fetch user's assessments
+  const assessments = await fetchUserAssessments(advisorName);
+  renderLoadAssessmentList(assessments);
+
+  // Setup search filter
+  setupLoadAssessmentSearch(assessments);
+}
+
+function renderLoadAssessmentLoading() {
+  const listEl = document.getElementById("load-assessment-list");
+  if (!listEl) return;
+
+  listEl.innerHTML = `
+    <div class="load-assessment-loading">
+      <div class="spinner"></div>
+      <p>Loading your assessments...</p>
+    </div>
+  `;
+}
+
+function renderLoadAssessmentList(assessments) {
+  const listEl = document.getElementById("load-assessment-list");
+  if (!listEl) return;
+
+  if (!assessments || assessments.length === 0) {
+    listEl.innerHTML = `
+      <div class="load-assessment-empty">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <h4>No Assessments Found</h4>
+        <p>You haven't submitted any assessments to the database yet.</p>
+      </div>
+    `;
+    return;
   }
+
+  const html = assessments.map(a => `
+    <div class="load-assessment-card" data-row-id="${a.rowId}">
+      <div class="load-assessment-card-header">
+        <h4>${escapeHtml(a.ventureName)}</h4>
+        ${a.portfolio ? `<span class="load-assessment-badge portfolio">${escapeHtml(a.portfolio)}</span>` : ""}
+        ${a.isHealthRelated ? `<span class="load-assessment-badge health">Health</span>` : ""}
+        ${a.assessmentNumber > 1 ? `<span class="load-assessment-badge assessment-num">#${a.assessmentNumber}</span>` : ""}
+      </div>
+      <div class="load-assessment-card-meta">
+        <span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          ${formatAssessmentDate(a.assessmentDate)}
+        </span>
+      </div>
+      <div class="load-assessment-card-scores">
+        ${formatScoresCompact(a.scores, a.isHealthRelated)}
+      </div>
+    </div>
+  `).join("");
+
+  listEl.innerHTML = html;
+
+  // Add click handlers
+  listEl.querySelectorAll(".load-assessment-card").forEach(card => {
+    card.addEventListener("click", () => {
+      const rowId = card.dataset.rowId;
+      const assessment = assessments.find(a => String(a.rowId) === String(rowId));
+      if (assessment) {
+        handleLoadAssessmentClick(assessment);
+      }
+    });
+  });
+}
+
+function setupLoadAssessmentSearch(allAssessments) {
+  const searchInput = document.getElementById("load-assessment-search");
+  if (!searchInput) return;
+
+  searchInput.value = "";
+  let debounceTimer;
+
+  searchInput.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const searchTerm = searchInput.value.toLowerCase().trim();
+
+      const filtered = allAssessments.filter(a =>
+        !searchTerm || a.ventureName.toLowerCase().includes(searchTerm)
+      );
+
+      renderLoadAssessmentList(filtered);
+    }, 200);
+  });
+}
+
+function handleLoadAssessmentClick(assessment) {
+  // Check if there's current work that would be lost
+  const hasCurrentWork = Object.keys(AppState.scores || {}).length > 0;
+
+  if (hasCurrentWork) {
+    // Show warning modal
+    pendingLoadAssessment = assessment;
+    document.getElementById("replace-current-venture").textContent =
+      AppState.ventureName || "Unnamed Assessment";
+    hideModal("load-assessment-modal");
+    showModal("replace-warning-modal");
+  } else {
+    // Load directly
+    loadAssessmentIntoState(assessment);
+    hideModal("load-assessment-modal");
+  }
+}
+
+function confirmLoadAssessment() {
+  if (pendingLoadAssessment) {
+    loadAssessmentIntoState(pendingLoadAssessment);
+    pendingLoadAssessment = null;
+  }
+  hideModal("replace-warning-modal");
+}
+
+function loadAssessmentIntoState(assessment) {
+  // Create a new local venture entry for this loaded assessment
+  AppState.activeVentureId = generateId();
+  AppState.ventureName = assessment.ventureName;
+  AppState.scores = { ...assessment.scores };
+  AppState.goalLevels = {};
+  AppState.isHealthRelated = assessment.isHealthRelated;
+  AppState.assessedAt = assessment.assessmentDate ? new Date(assessment.assessmentDate) : new Date();
+  AppState.createdAt = new Date();
+  AppState.currentCategory = "IP";
+
+  // Smartsheet integration fields
+  AppState.ventureId = assessment.ventureId || generateVentureId();
+  AppState.portfolio = assessment.portfolio || "";
+
+  // Edit mode tracking - this is key for UPDATE operations
+  AppState.smartsheetRowId = assessment.rowId;
+  AppState.isEditingExisting = true;
+  AppState.originalAssessment = { ...assessment };
+
+  // Assessment tracking
+  AppState.currentAssessmentNumber = assessment.assessmentNumber || 1;
+  AppState.lastSubmissionTimestamp = assessment.assessmentDate;
+  AppState.lastSubmittedStateHash = null;  // Will be recalculated
+
+  saveCurrentVenture();
+  syncUIFromState();
+  initializeCategories();
+  updateSummary();
+  syncSummaryHeaderAndIcons();
+  updateSubmissionStatusUI();
+  updateEditModeIndicator();
+
+  showToast(`Loaded "${assessment.ventureName}" for editing`, "success");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function updateEditModeIndicator() {
+  // Update UI to show we're in edit mode
+  const saveBtn = document.getElementById("btn-save-db");
+  if (saveBtn && AppState.isEditingExisting) {
+    saveBtn.title = "Update existing assessment in database";
+  } else if (saveBtn) {
+    saveBtn.title = "Save to Database";
+  }
+}
+
+// Helper functions for load assessment modal
+function formatAssessmentDate(dateStr) {
+  if (!dateStr) return "Unknown date";
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
+  } catch {
+    return dateStr.split("T")[0];
+  }
+}
+
+function formatScoresCompact(scores, isHealthRelated) {
+  const cats = ["IP", "Technology", "Market", "Product", "Team", "Go-to-Market", "Business", "Funding"];
+  if (isHealthRelated) cats.push("Regulatory");
+
+  return cats.map(c => {
+    const abbrev = c === "Go-to-Market" ? "GTM" : c === "Technology" ? "Tech" : c.substring(0, 3);
+    return `${abbrev}:${scores[c] || 0}`;
+  }).join(" ");
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Generate internal ID (copied from state.js for local use)
+function generateId() {
+  return "v_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
 }
 
 /* -------------------------
@@ -479,7 +763,9 @@ function setupEventListeners() {
       hideModal("feedback-modal");
       hideModal("new-venture-modal");
       hideModal("delete-modal");
-      hideModal("import-modal");
+      hideModal("start-new-modal");
+      hideModal("load-assessment-modal");
+      hideModal("replace-warning-modal");
     }
   });
 
@@ -529,12 +815,23 @@ function setupEventListeners() {
   // PDF export
   document.getElementById("btn-export-pdf")?.addEventListener("click", savePdfSnapshot);
 
-  // JSON export/import
-  document.getElementById("btn-export-json")?.addEventListener("click", exportCurrentVentureJson);
-  document.getElementById("btn-import-json")?.addEventListener("click", () => {
-    showModal("import-modal");
-    document.getElementById("import-json-input")?.focus();
-  });
+  // Start New Assessment
+  document.getElementById("btn-start-new-assessment")?.addEventListener("click", showStartNewAssessmentModal);
+  document.getElementById("start-new-confirm")?.addEventListener("click", handleStartNewAssessment);
+  document.getElementById("start-new-cancel")?.addEventListener("click", () => hideModal("start-new-modal"));
+  document.getElementById("start-new-close")?.addEventListener("click", () => hideModal("start-new-modal"));
+  document.querySelector("#start-new-modal .modal-backdrop")?.addEventListener("click", () => hideModal("start-new-modal"));
+
+  // Load Assessment Modal
+  document.getElementById("btn-load-assessment")?.addEventListener("click", showLoadAssessmentModal);
+  document.getElementById("load-assessment-modal-close")?.addEventListener("click", () => hideModal("load-assessment-modal"));
+  document.querySelector("#load-assessment-modal .modal-backdrop")?.addEventListener("click", () => hideModal("load-assessment-modal"));
+
+  // Replace Warning Modal
+  document.getElementById("replace-warning-modal-close")?.addEventListener("click", () => hideModal("replace-warning-modal"));
+  document.getElementById("replace-warning-cancel")?.addEventListener("click", () => hideModal("replace-warning-modal"));
+  document.querySelector("#replace-warning-modal .modal-backdrop")?.addEventListener("click", () => hideModal("replace-warning-modal"));
+  document.getElementById("replace-warning-confirm")?.addEventListener("click", confirmLoadAssessment);
 
   // Save to Database button
   document.getElementById("btn-save-db")?.addEventListener("click", handleSaveToDatabase);
@@ -561,9 +858,6 @@ function setupEventListeners() {
       saveCurrentVenture();
     });
   }
-
-  // Settings bar toggle
-  document.getElementById("btn-toggle-settings")?.addEventListener("click", toggleSettingsBar);
 
   // Help button
   document.getElementById("btn-help")?.addEventListener("click", () => {
@@ -627,12 +921,6 @@ function setupEventListeners() {
     syncSummaryHeaderAndIcons();
     hideModal("delete-modal");
   });
-
-  // Import modal
-  document.getElementById("import-modal-close")?.addEventListener("click", () => hideModal("import-modal"));
-  document.getElementById("import-cancel")?.addEventListener("click", () => hideModal("import-modal"));
-  document.querySelector("#import-modal .modal-backdrop")?.addEventListener("click", () => hideModal("import-modal"));
-  document.getElementById("import-confirm")?.addEventListener("click", handleImportVenture);
 }
 
 /* -------------------------
@@ -671,6 +959,7 @@ async function handleSaveToDatabase() {
 
     if (result.success) {
       showToast("Assessment saved to database", "success");
+      updateSubmissionStatusUI();  // Update status indicator
       // Show success state briefly
       btn.innerHTML = `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -793,50 +1082,11 @@ function handleVentureNameChange(ventureName) {
   }
 }
 
-/**
- * Toggle settings bar visibility
- */
-function toggleSettingsBar() {
-  const settingsBar = document.getElementById("settings-bar");
-  const toggleBtn = document.getElementById("btn-toggle-settings");
-
-  if (!settingsBar || !toggleBtn) return;
-
-  const isCollapsed = settingsBar.classList.contains("collapsed");
-  settingsBar.classList.toggle("collapsed", !isCollapsed);
-  toggleBtn.classList.toggle("active", isCollapsed);
-
-  // Save preference
-  try {
-    localStorage.setItem("nr-rl-settings-expanded", isCollapsed ? "true" : "false");
-  } catch (e) {
-    // Ignore localStorage errors
-  }
-}
-
-/**
- * Restore settings bar state from localStorage
- */
-function restoreSettingsBarState() {
-  try {
-    const expanded = localStorage.getItem("nr-rl-settings-expanded");
-    if (expanded === "true") {
-      const settingsBar = document.getElementById("settings-bar");
-      const toggleBtn = document.getElementById("btn-toggle-settings");
-      if (settingsBar) settingsBar.classList.remove("collapsed");
-      if (toggleBtn) toggleBtn.classList.add("active");
-    }
-  } catch (e) {
-    // Ignore localStorage errors
-  }
-}
-
 /* -------------------------
    Boot
 --------------------------*/
 function normalBoot() {
   populatePortfolioDropdown();
-  restoreSettingsBarState();
   initializeApp();
   setupEventDelegation();
   setupEventListeners();

@@ -259,13 +259,18 @@ body {
 
 /* ---------- Venture Bar ---------- */
 .venture-bar {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   align-items: end;
   background: var(--slate-50);
   border-bottom: 1px solid var(--slate-200);
   padding: 14px 24px;
+}
+
+.venture-bar .venture-name {
+  flex: 1;
+  min-width: 200px;
 }
 
 .venture-selector {
@@ -318,22 +323,137 @@ body {
   box-shadow: 0 0 0 3px rgba(0,130,165,0.1);
 }
 
+.venture-bar .advisor-name-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.venture-bar .advisor-name-field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--slate-600);
+}
+
+.venture-bar .advisor-name-field .required {
+  color: var(--nr-red-1);
+  font-weight: 600;
+}
+
+.venture-bar .advisor-name-field input {
+  height: 38px;
+  min-width: 160px;
+  padding: 8px 12px;
+  border: 1px solid var(--slate-300);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.venture-bar .advisor-name-field input:focus {
+  outline: none;
+  border-color: var(--nr-teal-1);
+  box-shadow: 0 0 0 3px rgba(0,130,165,0.1);
+}
+
+.venture-bar .portfolio-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.venture-bar .portfolio-field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--slate-600);
+}
+
+.venture-bar .portfolio-field select {
+  height: 38px;
+  min-width: 160px;
+  padding: 8px 12px;
+  border: 1px solid var(--slate-300);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  font-family: inherit;
+}
+
+.venture-bar .portfolio-field select:focus {
+  outline: none;
+  border-color: var(--nr-teal-1);
+  box-shadow: 0 0 0 3px rgba(0,130,165,0.1);
+}
+
+.status-group {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  align-items: center;
+}
+
 .timestamp {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
   height: 38px;
-  border: 1px dashed var(--slate-300);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--slate-700);
+  border: 1px solid var(--slate-300);
+  border-radius: 8px 0 0 8px;
+  border-right: none;
+  font-size: 12px;
+  color: var(--slate-600);
   background: #fff;
 }
 
 .timestamp span {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--slate-500);
+}
+
+.timestamp time {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--slate-700);
+}
+
+.submission-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  height: 38px;
+  border: 1px solid var(--slate-300);
+  border-radius: 0 8px 8px 0;
+  font-size: 12px;
+  background: #fff;
+  white-space: nowrap;
+}
+
+.submission-status.submitted {
+  border-color: var(--nr-green-2);
+  background: rgba(16, 185, 129, 0.08);
+  color: var(--nr-green-2);
+}
+
+.submission-status.submitted + .timestamp,
+.status-group:has(.submission-status.submitted) .timestamp {
+  border-color: var(--nr-green-2);
+}
+
+.submission-status.modified {
+  border-color: var(--nr-orange-1);
+  background: rgba(255, 81, 0, 0.08);
+  color: var(--nr-orange-1);
+}
+
+.status-group:has(.submission-status.modified) .timestamp {
+  border-color: var(--nr-orange-1);
+}
+
+.status-icon {
+  flex-shrink: 0;
 }
 
 /* ---------- Settings Toggle Button ---------- */
@@ -1300,10 +1420,156 @@ body {
   font-size: 13px;
 }
 
-#import-json-input {
-  font-family: 'Space Mono', monospace;
+.info-text {
+  color: var(--slate-500);
+  font-size: 13px;
+}
+
+/* Load Assessment Modal */
+.load-assessment-modal-content {
+  width: min(640px, 92vw);
+  max-height: min(80vh, 650px);
+}
+
+.load-assessment-intro {
+  font-size: 14px;
+  color: var(--slate-600);
+  margin-bottom: 16px;
+}
+
+.load-assessment-search {
+  margin-bottom: 16px;
+}
+
+.load-assessment-search input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--slate-300);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.load-assessment-search input:focus {
+  outline: none;
+  border-color: var(--nr-teal-1);
+  box-shadow: 0 0 0 3px rgba(0,130,165,0.1);
+}
+
+.load-assessment-list {
+  max-height: 400px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.load-assessment-loading {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--slate-500);
+}
+
+.load-assessment-loading .spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--slate-200);
+  border-top-color: var(--nr-teal-1);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 12px;
+}
+
+.load-assessment-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--slate-500);
+}
+
+.load-assessment-empty svg {
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.load-assessment-empty h4 {
+  margin: 0 0 8px;
+  color: var(--slate-700);
+  font-size: 15px;
+}
+
+.load-assessment-card {
+  background: var(--slate-50);
+  border: 1px solid var(--slate-200);
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.load-assessment-card:hover {
+  border-color: var(--nr-teal-1);
+  background: rgba(0,130,165,0.03);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.load-assessment-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.load-assessment-card-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--slate-900);
+}
+
+.load-assessment-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.load-assessment-badge.portfolio {
+  background: rgba(0,130,165,0.1);
+  color: var(--nr-teal-2);
+}
+
+.load-assessment-badge.health {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.load-assessment-badge.assessment-num {
+  background: var(--slate-200);
+  color: var(--slate-600);
+}
+
+.load-assessment-card-meta {
+  display: flex;
+  gap: 16px;
   font-size: 12px;
-  resize: vertical;
+  color: var(--slate-500);
+  margin-bottom: 8px;
+}
+
+.load-assessment-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.load-assessment-card-scores {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--slate-500);
+  background: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--slate-200);
 }
 
 /* =========================================================
@@ -1452,6 +1718,79 @@ body {
   }
 }
 
+@media (max-width: 1200px) {
+  .venture-bar {
+    gap: 12px;
+  }
+
+  .venture-bar .venture-name {
+    min-width: 180px;
+  }
+
+  .venture-bar .portfolio-field select {
+    min-width: 120px;
+  }
+
+  .venture-bar .advisor-name-field input {
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .venture-bar {
+    gap: 10px;
+  }
+
+  .venture-bar .venture-name {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  .venture-bar .venture-selector {
+    order: 0;
+  }
+
+  .venture-bar .advisor-name-field {
+    order: 2;
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .venture-bar .advisor-name-field input {
+    min-width: 100%;
+  }
+
+  .venture-bar .portfolio-field {
+    order: 3;
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .venture-bar .portfolio-field select {
+    min-width: 100%;
+  }
+
+  .venture-bar .status-group {
+    order: 4;
+    flex: 1 1 100%;
+  }
+
+  .status-group {
+    flex-direction: row;
+    gap: 0;
+    justify-content: flex-end;
+  }
+
+  .timestamp {
+    border-radius: 8px 0 0 8px;
+    border-right: none;
+  }
+
+  .submission-status {
+    border-radius: 0 8px 8px 0;
+  }
+}
+
 @media (max-width: 768px) {
   .pilot-banner-content {
     flex-wrap: wrap;
@@ -1466,8 +1805,14 @@ body {
   }
 
   .venture-bar {
-    grid-template-columns: 1fr;
+    flex-direction: column;
     gap: 12px;
+  }
+
+  .venture-bar > * {
+    order: initial;
+    flex: initial;
+    width: 100%;
   }
 
   .venture-selector {
@@ -1476,41 +1821,51 @@ body {
 
   .venture-selector select {
     min-width: 100%;
+    flex: 1;
+  }
+
+  .venture-bar .venture-name {
+    min-width: 100%;
   }
 
   .venture-name input {
     min-width: 100%;
   }
 
-  .btn-settings-toggle {
-    justify-content: center;
-  }
-
-  .btn-settings-toggle .settings-label {
-    display: inline;
-  }
-
-  .settings-content {
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px 16px;
-  }
-
-  .settings-bar .advisor-name-field,
-  .settings-bar .portfolio-field {
+  .venture-bar .advisor-name-field {
     width: 100%;
   }
 
-  .settings-bar .advisor-name-field input,
-  .settings-bar .portfolio-field select {
+  .venture-bar .advisor-name-field input {
+    width: 100%;
     min-width: 100%;
+  }
+
+  .venture-bar .portfolio-field {
+    display: flex;
     width: 100%;
   }
 
-  .settings-hint {
-    margin-left: 0;
+  .venture-bar .portfolio-field select {
     width: 100%;
-    justify-content: center;
+    min-width: 100%;
+  }
+
+  .status-group {
+    width: 100%;
+    flex-direction: row;
+    gap: 0;
+    align-items: center;
+  }
+
+  .timestamp {
+    flex: 1;
+    border-radius: 8px 0 0 8px;
+    border-right: none;
+  }
+
+  .submission-status {
+    border-radius: 0 8px 8px 0;
   }
 
   .btn.accent span {

@@ -5,8 +5,8 @@
 import {
   AppState,
   saveCurrentVenture,
-  getNextAssessmentNumber,
-  recordAssessmentSubmission
+  getCurrentAssessmentNumber,
+  recordSubmission
 } from "./state.js";
 
 // Google Apps Script Web App URL (same proxy as Qual Tool)
@@ -50,25 +50,42 @@ export async function submitToSmartsheet() {
 
   try {
     const payload = buildPayload();
+
+    // Determine action based on edit mode
+    const isUpdate = AppState.isEditingExisting && AppState.smartsheetRowId;
+    const action = isUpdate ? "smartsheet_rl_update" : "smartsheet_rl";
+
     const requestData = {
-      action: "smartsheet_rl",  // New action type for RL assessments
+      action: action,
+      ...(isUpdate && { rowId: AppState.smartsheetRowId }),
       ...payload
     };
 
-    console.log("[Smartsheet] Submitting assessment:", requestData);
+    console.log(`[Smartsheet] ${isUpdate ? "Updating" : "Creating"} assessment:`, requestData);
 
     // Try submission with retry logic
     const result = await submitWithRetry(requestData);
 
     if (result.success) {
+      // Store rowId for future updates (if this was a new insert)
+      if (result.rowId && !AppState.smartsheetRowId) {
+        AppState.smartsheetRowId = result.rowId;
+        AppState.isEditingExisting = true;
+        console.log("[Smartsheet] Stored rowId for future updates:", result.rowId);
+      }
+
       // Record submission
       const timestamp = new Date().toISOString();
       AppState.lastSavedToSmartsheet = timestamp;
-      recordAssessmentSubmission(AppState.ventureId, timestamp);
+      recordSubmission();  // Records timestamp and state hash for re-submission tracking
       saveCurrentVenture();
 
-      console.log("[Smartsheet] Submission successful");
-      return { success: true, message: "Assessment saved to database" };
+      // Clear user assessments cache so next load shows updated data
+      clearUserAssessmentsCache();
+
+      const actionMsg = isUpdate ? "updated" : "saved";
+      console.log(`[Smartsheet] Assessment ${actionMsg} successfully`);
+      return { success: true, message: `Assessment ${actionMsg} to database` };
     } else {
       throw new Error(result.error || "Submission failed");
     }
@@ -109,7 +126,7 @@ function validateSubmission() {
  * @returns {Object} Payload object matching Smartsheet column structure
  */
 function buildPayload() {
-  const assessmentNumber = getNextAssessmentNumber(AppState.ventureId);
+  const assessmentNumber = getCurrentAssessmentNumber();
   const assessmentDate = AppState.assessedAt
     ? AppState.assessedAt.toISOString()
     : new Date().toISOString();
@@ -510,4 +527,150 @@ export function getPortfolioForVenture(ventureName) {
 export function clearVentureDataCache() {
   ventureDataCache = null;
   ventureDataCacheTime = 0;
+}
+
+// ============================================
+// FETCH USER'S SUBMITTED ASSESSMENTS
+// ============================================
+
+// Cache for user's assessments
+let userAssessmentsCache = null;
+let userAssessmentsCacheTime = 0;
+const USER_ASSESSMENTS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+
+/**
+ * Fetch all RL assessments submitted by a specific advisor
+ * Used for "Load from Database" feature to edit previously submitted assessments
+ * @param {string} advisorName - Advisor name to filter by
+ * @returns {Promise<Array<{rowId, ventureId, ventureName, advisorName, portfolio, assessmentNumber, assessmentDate, isHealthRelated, scores}>>}
+ */
+export async function fetchUserAssessments(advisorName) {
+  if (!advisorName || !advisorName.trim()) {
+    console.warn("[Smartsheet] No advisor name provided for fetch");
+    return [];
+  }
+
+  const normalizedAdvisor = advisorName.trim().toLowerCase();
+
+  // Check cache
+  const now = Date.now();
+  if (userAssessmentsCache && (now - userAssessmentsCacheTime < USER_ASSESSMENTS_CACHE_TTL)) {
+    console.log("[Smartsheet] Returning cached user assessments");
+    return userAssessmentsCache.filter(a =>
+      a.advisorName && a.advisorName.toLowerCase() === normalizedAdvisor
+    );
+  }
+
+  console.log("[Smartsheet] Fetching user assessments from database...");
+
+  return new Promise((resolve) => {
+    const timeoutMs = 10000;
+    let completed = false;
+    const callbackName = "userAssessmentsCallback_" + Date.now();
+
+    const requestData = {
+      action: "smartsheet_rl_list",
+      limit: 500  // Get all assessments, filter client-side
+    };
+
+    const encodedData = encodeURIComponent(JSON.stringify(requestData));
+    const url = `${PROXY_URL}?data=${encodedData}&callback=${callbackName}`;
+
+    window[callbackName] = (response) => {
+      if (completed) return;
+      completed = true;
+      cleanup();
+
+      if (response && response.success && response.assessments) {
+        // Process and cache all assessments
+        const allAssessments = processRLAssessments(response.assessments);
+        userAssessmentsCache = allAssessments;
+        userAssessmentsCacheTime = Date.now();
+
+        // Filter by advisor name
+        const userAssessments = allAssessments.filter(a =>
+          a.advisorName && a.advisorName.toLowerCase() === normalizedAdvisor
+        );
+
+        console.log(`[Smartsheet] Found ${userAssessments.length} assessments for ${advisorName}`);
+        resolve(userAssessments);
+      } else {
+        console.warn("[Smartsheet] Failed to fetch assessments:", response);
+        resolve([]);
+      }
+    };
+
+    const script = document.createElement("script");
+    script.src = url;
+    script.async = true;
+
+    const cleanup = () => {
+      delete window[callbackName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+
+    script.onerror = () => {
+      if (completed) return;
+      completed = true;
+      cleanup();
+      console.error("[Smartsheet] Script error fetching assessments");
+      resolve([]);
+    };
+
+    setTimeout(() => {
+      if (!completed) {
+        completed = true;
+        cleanup();
+        console.warn("[Smartsheet] Timeout fetching assessments");
+        resolve([]);
+      }
+    }, timeoutMs);
+
+    document.body.appendChild(script);
+  });
+}
+
+/**
+ * Process raw assessments into a cleaner format
+ * @param {Array} raw - Raw assessment data from Smartsheet
+ * @returns {Array} Processed assessment objects
+ */
+function processRLAssessments(raw) {
+  return raw
+    .filter(a => a.ventureName && a.ventureName.trim())
+    .map(a => ({
+      rowId: a.rowId,
+      ventureId: a.ventureId || "",
+      ventureName: a.ventureName.trim(),
+      advisorName: a.advisorName || "",
+      portfolio: a.portfolio || "",
+      assessmentNumber: parseInt(a.assessmentNumber, 10) || 1,
+      assessmentDate: a.assessmentDate || a.submissionTimestamp || "",
+      isHealthRelated: a.isHealthRelated === true || a.isHealthRelated === "true",
+      scores: {
+        IP: parseInt(a.RL_IP, 10) || 0,
+        Technology: parseInt(a.RL_Technology, 10) || 0,
+        Market: parseInt(a.RL_Market, 10) || 0,
+        Product: parseInt(a.RL_Product, 10) || 0,
+        Team: parseInt(a.RL_Team, 10) || 0,
+        "Go-to-Market": parseInt(a.RL_GTM, 10) || 0,
+        Business: parseInt(a.RL_Business, 10) || 0,
+        Funding: parseInt(a.RL_Funding, 10) || 0,
+        Regulatory: parseInt(a.RL_Regulatory, 10) || 0
+      }
+    }))
+    .sort((a, b) => {
+      // Sort by date descending (most recent first)
+      const dateA = a.assessmentDate || "";
+      const dateB = b.assessmentDate || "";
+      return dateB.localeCompare(dateA);
+    });
+}
+
+/**
+ * Clear user assessments cache (call after saving)
+ */
+export function clearUserAssessmentsCache() {
+  userAssessmentsCache = null;
+  userAssessmentsCacheTime = 0;
 }

@@ -5,6 +5,7 @@ import { readinessData } from "./data/index.js";
 import { maybeHealth, buildHealthContent } from "./transform.js";
 import { updateIndustrySelectorUI, toggleLevel, stampAssessedNow, syncSummaryHeaderAndIcons } from "./ui.js";
 import { updateSummary, generateVentureDescription } from "./summary.js";
+import { updateSubmissionStatusUI } from "./main.js";
 
 // Track if event delegation has been set up
 let delegationInitialized = false;
@@ -219,4 +220,5 @@ export function selectLevel(level) {
   updateSummary();
   generateVentureDescription();
   syncSummaryHeaderAndIcons();
+  updateSubmissionStatusUI();  // Update submission status when scores change
 }

@@ -59,7 +59,7 @@ function updateTopbarForVDR() {
   }
 
   // Hide some toolbar actions that aren't relevant in VDR mode
-  const actionsToHide = ['btn-export-json', 'btn-import-json', 'btn-export-pdf', 'btn-save-db'];
+  const actionsToHide = ['btn-export-pdf', 'btn-save-db', 'btn-start-new-assessment'];
   actionsToHide.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
