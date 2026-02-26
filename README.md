@@ -1,165 +1,105 @@
-# NobleReach Readiness Level Assessment Tool
+# Business Readiness Level (BRL) Assessment Tool
 
-A browser-based assessment tool for evaluating commercialization readiness across 8 key dimensions for early-stage ventures and research commercialization projects.
+A web-based assessment tool for evaluating science-based venture readiness across nine business dimensions. Built for [NobleReach Foundation](https://noblereach.org)'s Science-to-Venture advisors to track and submit structured readiness level assessments.
 
 ## Overview
 
-The Readiness Level Assessment Tool helps research teams, early-stage ventures, and their advisors measure progress toward commercialization. It provides a structured framework for assessing de-risking milestones across multiple dimensions, with cloud persistence via Smartsheet integration.
+Advisors use this tool to score ventures on a 0–9 scale across nine categories, generating narrative summaries and persisting results to a central Smartsheet database via a Google Apps Script proxy.
+
+### Assessment Categories
+
+| Category | Description |
+|----------|-------------|
+| IP | Intellectual property strategy and protection |
+| Technology | Technical development and validation |
+| Market | Market research, sizing, and validation |
+| Product | Product definition and development |
+| Team | Team composition and capabilities |
+| Go-to-Market | Distribution, sales, and channel strategy |
+| Business | Business model, legal structure, and operations |
+| Funding | Funding strategy, fundraising, and financial planning |
+| Regulatory | Regulatory pathway and compliance (health ventures only) |
+
+Each level (0–9) includes a definition, deliverables, and progress indicators. Level 0 represents a deliberate "Not Started" assessment, distinct from categories that have not yet been evaluated.
+
+### Health Mode
+
+Toggling "Health-Related Venture" activates the Regulatory category and applies health-specific terminology and indicators across all categories (e.g., "users" becomes "patients," "MVP" becomes "clinical prototype").
 
 ## Features
 
-### Assessment Capabilities
-- **8 Readiness Categories**: IP, Technology, Market, Product, Team, Go-to-Market, Business, Funding
-- **9th Regulatory Category**: Enabled via Health-related mode for medical devices and pharmaceuticals
-- **Health-Related Mode**: Transforms terminology for clinical/patient-centric language
-- **Technology Subtracks**: General, Software, Hardware, Medical Device, Pharmaceuticals
-- **Cumulative Levels**: Selecting a level indicates all prior levels achieved
-- **Auto-generated Descriptions**: Dynamic narrative summaries based on scores
+- **Password-protected access** — Token-based authentication with periodic rotation
+- **Multi-venture management** — Create, switch between, and delete venture assessments
+- **Auto-save** — All scores persist to localStorage automatically
+- **Smartsheet integration** — Submit assessments to a central database; supports both new submissions and updates to existing rows
+- **Assessment versioning** — Track multiple assessment rounds per venture
+- **Narrative summary** — Auto-generated plain-language description of the venture's readiness profile
+- **Portfolio tagging** — Assign ventures to program portfolios (fetched from backend)
+- **Venture name autocomplete** — Pre-populates from existing database entries
+- **Export** — Copy summary text or download assessment data
+- **Responsive layout** — Works on desktop and tablet screens
 
-### Data Management
-- **Smartsheet Integration**: Save assessments to a central database for team tracking
-- **Temporal Tracking**: Each save creates a new record, enabling progress tracking over time
-- **Multi-Venture Support**: Create, save, and manage multiple assessments locally
-- **Venture Name Autocomplete**: Suggests existing ventures from both the Qualification Tool and previous RL assessments
-- **Portfolio Auto-fill**: Automatically sets portfolio based on Qualification Tool records
-- **PDF Export**: Save assessment snapshots as PDF documents
-- **JSON Import/Export**: Backup and transfer assessments between devices
+### VDR Companion Mode
 
-### User Experience
-- **Collapsible Settings Bar**: Advisor name and portfolio settings tucked away for a cleaner interface
-- **Persistent Preferences**: Advisor name remembered across sessions
-- **Toast Notifications**: Feedback on saves and auto-fill actions
+Accessed via `?vdr=true`, this mode lets associates load a baseline RL assessment from the database and set engagement goals per category, producing a Venture Development Roadmap (VDR) document.
 
-## File Structure
+## Project Structure
 
 ```
-rl-tool-v05/
-├── index.html              # Main application entry point
-├── README.md               # This documentation file
-│
+rl-tool-v06/
+├── index.html              # Single-page application shell
 ├── assets/
-│   ├── favicon.svg         # Browser tab icon
-│   ├── logo-icon.svg       # NobleReach logo
-│   └── styles.css          # All application styles
-│
-└── src/
-    ├── main.js             # Application entry and event wiring
-    ├── state.js            # State management and localStorage
-    ├── smartsheet.js       # Smartsheet integration module
-    ├── ui.js               # UI controls and panel management
-    ├── categories.js       # Category rendering and interactions
-    ├── summary.js          # Summary panel and description generator
-    ├── transform.js        # Health mode transformations
-    │
-    └── data/
-        ├── index.js            # Re-exports all data modules
-        ├── readiness-levels.js # Category definitions and levels
-        └── constants.js        # Health term mappings, extras, portfolios
+│   ├── styles.css          # All styling (responsive, auth, level cards, VDR)
+│   ├── favicon.svg
+│   └── logo-icon.svg
+├── src/
+│   ├── main.js             # App entry point, boot sequence, event wiring
+│   ├── auth.js             # Password authentication module
+│   ├── state.js            # Central AppState, localStorage persistence, venture CRUD
+│   ├── categories.js       # Category grid and level card rendering
+│   ├── summary.js          # VentureDescriptionGenerator (narrative output)
+│   ├── smartsheet.js       # Smartsheet submission via JSONP through GAS proxy
+│   ├── ui.js               # Panel controls, view toggles, print/export
+│   ├── transform.js        # Health term mapping transform
+│   └── data/
+│       ├── index.js         # Data barrel export
+│       ├── readiness-levels.js  # Level definitions for all 9 categories (0–9)
+│       └── constants.js     # Health extras, term mappings, portfolio list
+├── src/vdr/                # VDR Companion Mode modules
+│   ├── vdr-main.js         # VDR boot and navigation
+│   ├── vdr-state.js        # VDR-specific state management
+│   ├── baseline-loader.js  # Fetch and select baseline assessments
+│   ├── goal-setting.js     # Per-category goal level selection
+│   ├── vdr-generator.js    # VDR document generation
+│   └── vdr-export.js       # VDR export (copy/download)
+└── proxy-update/
+    └── Code.gs             # Google Apps Script proxy source (deployed separately)
 ```
 
-## Usage
+## Architecture
 
-### Running Locally
+The tool is a static single-page application with no build step. All JavaScript uses ES modules loaded directly by the browser.
 
-1. Open `index.html` in a modern web browser
-2. No build step or server required - runs entirely in the browser
-3. Local data is persisted in browser localStorage
-4. Cloud saves require network connectivity
+**Data flow:**
+1. Advisor authenticates (token stored in localStorage, shared with Qualification Tool)
+2. Scores are saved to `AppState` and auto-persisted to localStorage
+3. On "Save to Database," scores are submitted to Smartsheet via JSONP through the GAS proxy
+4. Portfolio options and venture names are fetched from the GAS proxy on load
 
-### For Advisors
+**Backend:** The Google Apps Script proxy (`proxy-update/Code.gs`) handles authentication, Smartsheet read/write operations, and portfolio management. It is deployed as a web app and shared across NobleReach tools.
 
-- **Enter your name**: Click the Settings gear icon to expand the settings bar
-- **Select portfolio**: Choose your portfolio affiliation (auto-fills for known ventures)
-- **Levels are cumulative**: Selecting Level 5 means Levels 1-4 have been achieved
-- **Use judgment**: Definitions are guidelines, not rigid requirements
-- **Deliverables and indicators are suggestions**: Ventures may demonstrate readiness through equivalent evidence
-- **Save to Database**: Click to save the current assessment to Smartsheet for team visibility
+## Deployment
 
-### Venture Name Autocomplete
+This is a static site. Deploy the root directory to any static host (GitHub Pages, Netlify, S3, SharePoint, etc.). No build step required.
 
-When you start typing a venture name, the tool suggests ventures from:
-- Previous Qualification Tool assessments
-- Previous Readiness Level assessments
+The GAS proxy must be deployed separately as a Google Apps Script web app. See `proxy-update/Code.gs` for the current source.
 
-Selecting an existing venture will auto-fill the portfolio if it's known.
+## Configuration
 
-### Health-Related Mode
+- **Proxy URL** — Hardcoded in `src/auth.js`, `src/main.js`, `src/smartsheet.js`, and `src/vdr/baseline-loader.js`. Update all references if the GAS deployment changes.
+- **Portfolios** — Fetched from the GAS proxy at runtime. The local fallback list is in `src/data/constants.js`.
+- **Password rotation** — Managed server-side in the GAS proxy. Rotating the password invalidates existing tokens after their expiry window.
 
-Enable "Health-related mode" in the toolbar to:
-- Transform terminology (users → patients, MVP → clinical prototype, etc.)
-- Enable the Regulatory category
-- Access Medical Device and Pharmaceuticals technology subtracks
+## Browser Support
 
-## Data Persistence
-
-### Local Storage
-Assessment data is stored in browser localStorage:
-- `nr-rl-assessments` - All saved ventures
-- `nr-rl-active` - Current active venture ID
-- `nr-rl-advisor-name` - Your advisor name preference
-- `nr-rl-assessment-history` - Submission tracking per venture
-- `nr-rl-settings-expanded` - Settings bar visibility preference
-- `nr-rl-welcome-dismissed` - Welcome modal preference
-- `nr-rl-pilot-banner-dismissed` - Pilot banner preference
-- `nr-rl-advisor-tip-dismissed` - Advisor tip preference
-
-### Smartsheet Integration
-Cloud saves are written to a dedicated Smartsheet via a Google Apps Script proxy. Each save creates a new row with:
-- Venture identification (name, ID, portfolio)
-- Advisor name and assessment date
-- All readiness level scores
-- Assessment number (for temporal tracking)
-
-## Development
-
-### Technologies Used
-
-- Vanilla JavaScript (ES6 modules)
-- CSS3 with custom properties
-- jsPDF library for PDF generation
-- JSONP/Image beacon for cross-origin Smartsheet submission
-- No build tools or dependencies required
-
-### Modifying Definitions
-
-Category definitions are located in `src/data/readiness-levels.js`. Each level includes:
-- `level` - Numeric level (1-9)
-- `title` - Short descriptive title
-- `definition` - What this level represents
-- `deliverables` - Expected outputs at this level
-- `indicators` - Signs that suggest this level has been reached
-
-### Health Mode Extensions
-
-Health-specific additions are in `src/data/constants.js`:
-- `HEALTH_TERM_MAP` - Text substitutions for clinical terminology
-- `HX` - Level-specific deliverables and indicators for health ventures
-
-### Adding Portfolios
-
-Portfolio options are defined in `src/data/constants.js`:
-```javascript
-export const PORTFOLIOS = [
-  { value: "Penn State", label: "Penn State" },
-  { value: "Northeastern", label: "Northeastern" },
-  { value: "Other", label: "Other" }
-];
-```
-Add new portfolios by extending this array.
-
-## Version History
-
-- **v0.6** (January 2025) - Smartsheet integration, venture autocomplete, portfolio auto-fill, collapsible settings bar
-- **v0.5** (December 2024) - Pilot release with revised definitions, file restructuring
-- **v0.4** - Multi-venture support, import/export
-- **v0.3** - Summary panel maximize/minimize
-- **v0.2** - Health-related mode toggle
-- **v0.1** - Initial prototype
-
-## Contact
-
-For feedback or questions: brian.hayt@noblereach.org
-
----
-
-© NobleReach Foundation
+Requires a modern browser with ES module support (Chrome, Firefox, Safari, Edge). No IE11 support.

@@ -219,6 +219,16 @@ export function loadVenture(id) {
   const venture = AppState._savedVentures[id];
   if (!venture) return false;
 
+  // Migrate old schema: score 0 meant "unassessed", now null means "unassessed" and 0 = Level 0
+  if (!venture._schemaVersion || venture._schemaVersion < 2) {
+    Object.keys(venture.scores || {}).forEach(cat => {
+      if (venture.scores[cat] === 0) {
+        venture.scores[cat] = null;
+      }
+    });
+    venture._schemaVersion = 2;
+  }
+
   AppState.activeVentureId = id;
   AppState.ventureName = venture.ventureName || "";
   AppState.scores = { ...venture.scores } || {};
@@ -260,6 +270,7 @@ export function saveCurrentVenture() {
   }
 
   AppState._savedVentures[AppState.activeVentureId] = {
+    _schemaVersion: 2,
     id: AppState.activeVentureId,
     ventureId: AppState.ventureId,  // Smartsheet tracking ID
     ventureName: AppState.ventureName,

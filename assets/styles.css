@@ -70,6 +70,105 @@ body {
 /* ---------- Utilities ---------- */
 .hidden { display: none !important; }
 
+/* ---------- Access Control Overlay ---------- */
+
+.auth-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: linear-gradient(135deg, var(--nr-navy-1) 0%, var(--nr-teal-2) 100%);
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-overlay.active {
+  display: flex;
+}
+
+.auth-card {
+  text-align: center;
+  background: white;
+  border-radius: var(--radius-lg);
+  padding: 48px 40px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  max-width: 380px;
+  width: 100%;
+}
+
+.auth-card img {
+  margin-bottom: 4px;
+}
+
+.auth-card h2 {
+  font-family: 'Clash Display', sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--slate-900);
+  margin: 16px 0 4px;
+}
+
+.auth-subtitle {
+  font-size: 13px;
+  color: var(--slate-500);
+  margin-bottom: 24px;
+}
+
+.auth-form {
+  display: flex;
+  gap: 8px;
+}
+
+.auth-form input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--slate-300);
+  border-radius: var(--radius);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.auth-form input:focus {
+  border-color: var(--nr-teal-1);
+  box-shadow: 0 0 0 3px rgba(0, 130, 165, 0.1);
+}
+
+.auth-form button {
+  padding: 10px 20px;
+  white-space: nowrap;
+  background: var(--nr-teal-1);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.auth-form button:hover {
+  background: var(--nr-teal-2);
+}
+
+.auth-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-error {
+  color: #dc2626;
+  font-size: 13px;
+  min-height: 20px;
+  margin-top: 12px;
+}
+
+.auth-note {
+  font-size: 11px;
+  color: var(--slate-400);
+  margin-top: 20px;
+}
+
 /* ---------- Pilot Banner ---------- */
 .pilot-banner {
   background: linear-gradient(90deg, var(--nr-orange-1), var(--nr-orange-2));
@@ -260,12 +359,31 @@ body {
 /* ---------- Venture Bar ---------- */
 .venture-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: end;
+  flex-direction: column;
+  gap: 10px;
   background: var(--slate-50);
   border-bottom: 1px solid var(--slate-200);
   padding: 14px 24px;
+}
+
+.venture-bar-primary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: end;
+}
+
+.venture-bar-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: end;
+}
+
+.venture-bar-secondary .advisor-name-field input,
+.venture-bar-secondary .portfolio-field select {
+  height: 34px;
+  font-size: 13px;
 }
 
 .venture-bar .venture-name {
@@ -906,6 +1024,24 @@ body {
   background: linear-gradient(135deg, var(--nr-teal-1), var(--nr-purple-2));
   color: #fff;
   border-color: var(--nr-teal-1);
+}
+
+/* Level 0 - muted "Not Started" styling */
+.level-card[data-level="0"] .level-number {
+  background: var(--slate-100);
+  border-color: var(--slate-300);
+  color: var(--slate-500);
+  font-size: 0.9rem;
+}
+
+.level-card[data-level="0"].selected .level-number {
+  background: var(--slate-500);
+  color: #fff;
+  border-color: var(--slate-500);
+}
+
+.level-card[data-level="0"] .level-title {
+  color: var(--slate-500);
 }
 
 .level-title {
@@ -1720,7 +1856,7 @@ body {
 
 @media (max-width: 1200px) {
   .venture-bar {
-    gap: 12px;
+    gap: 8px;
   }
 
   .venture-bar .venture-name {
@@ -1738,22 +1874,26 @@ body {
 
 @media (max-width: 1024px) {
   .venture-bar {
+    gap: 8px;
+  }
+
+  .venture-bar-primary {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .venture-bar-secondary {
+    flex-direction: column;
     gap: 10px;
   }
 
   .venture-bar .venture-name {
     flex: 1 1 100%;
-    order: 1;
-  }
-
-  .venture-bar .venture-selector {
-    order: 0;
   }
 
   .venture-bar .advisor-name-field {
-    order: 2;
     flex: 1;
-    min-width: 140px;
+    width: 100%;
   }
 
   .venture-bar .advisor-name-field input {
@@ -1761,9 +1901,8 @@ body {
   }
 
   .venture-bar .portfolio-field {
-    order: 3;
     flex: 1;
-    min-width: 140px;
+    width: 100%;
   }
 
   .venture-bar .portfolio-field select {
@@ -1771,7 +1910,6 @@ body {
   }
 
   .venture-bar .status-group {
-    order: 4;
     flex: 1 1 100%;
   }
 
@@ -1805,14 +1943,20 @@ body {
   }
 
   .venture-bar {
-    flex-direction: column;
-    gap: 12px;
+    gap: 8px;
+    padding: 10px 16px;
   }
 
-  .venture-bar > * {
-    order: initial;
-    flex: initial;
+  .venture-bar-primary,
+  .venture-bar-secondary {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .venture-bar-primary > *,
+  .venture-bar-secondary > * {
     width: 100%;
+    flex: initial;
   }
 
   .venture-selector {
@@ -1824,29 +1968,21 @@ body {
     flex: 1;
   }
 
-  .venture-bar .venture-name {
-    min-width: 100%;
-  }
-
   .venture-name input {
     min-width: 100%;
   }
 
-  .venture-bar .advisor-name-field {
-    width: 100%;
-  }
-
-  .venture-bar .advisor-name-field input {
+  .advisor-name-field input {
     width: 100%;
     min-width: 100%;
   }
 
-  .venture-bar .portfolio-field {
+  .portfolio-field {
     display: flex;
     width: 100%;
   }
 
-  .venture-bar .portfolio-field select {
+  .portfolio-field select {
     width: 100%;
     min-width: 100%;
   }

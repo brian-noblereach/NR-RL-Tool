@@ -5,6 +5,13 @@ export const readinessData = {
     'IP': {
         levels: [
             {
+                level: 0,
+                title: "No IP Awareness",
+                definition: "No intellectual property strategy exists. The venture has not assessed whether its work may be patentable or protectable, and no IP landscape review has been conducted.",
+                deliverables: ["None"],
+                indicators: ["No awareness of IP landscape", "No invention disclosures or documentation", "No engagement with patent counsel or tech transfer"]
+            },
+            {
                 level: 1,
                 title: "Initial IP Strategy",
                 definition: "Initial IP strategy development with basic understanding of IP positioning and relevant patent landscapes.",
@@ -72,6 +79,19 @@ export const readinessData = {
     
     'Technology': {
         levels: [
+            {
+                level: 0,
+                title: "No Technical Activity",
+                definition: "No scientific or technical work has begun. The venture has not identified underlying principles or documented any research observations.",
+                deliverables: ["None"],
+                indicators: {
+                    general: ["No scientific principles explored", "No research activity initiated"],
+                    pharma: ["No target identification or literature review", "No preclinical hypothesis formed"],
+                    meddevice: ["No clinical need identified", "No device concept proposed"],
+                    hardware: ["No physical principles explored", "No concept designs considered"],
+                    software: ["No algorithms or architecture considered", "No technical feasibility explored"]
+                }
+            },
             {
                 level: 1,
                 title: "Basic Principles",
@@ -195,6 +215,13 @@ export const readinessData = {
     'Market': {
         levels: [
             {
+                level: 0,
+                title: "No Market Awareness",
+                definition: "No market research or analysis has been conducted. The venture has not identified target markets, applications, or potential customers.",
+                deliverables: ["None"],
+                indicators: ["No target market identified", "No competitive landscape awareness", "No customer or application hypotheses"]
+            },
+            {
                 level: 1,
                 title: "Initial Market Understanding",
                 definition: "High-level understanding of initial target market and applications.",
@@ -262,6 +289,13 @@ export const readinessData = {
     
     'Product': {
         levels: [
+            {
+                level: 0,
+                title: "No Product Vision",
+                definition: "No product concept or vision exists. The venture has not identified a specific market need to address or begun thinking about a product form factor.",
+                deliverables: ["None"],
+                indicators: ["No market need targeted for product development", "No product concept or vision articulated"]
+            },
             {
                 level: 1,
                 title: "Market Need Identified",
@@ -331,6 +365,13 @@ export const readinessData = {
     'Team': {
         levels: [
             {
+                level: 0,
+                title: "No Team Formed",
+                definition: "No team exists beyond an individual or idea. No co-founders or collaborators have been identified, and no roles have been defined.",
+                deliverables: ["None"],
+                indicators: ["No co-founders or collaborators identified", "No roles or responsibilities defined", "No commitment to venture formation"]
+            },
+            {
                 level: 1,
                 title: "Founding Team",
                 definition: "Initial founding team with commitment to the venture and complementary skills identified.",
@@ -398,6 +439,13 @@ export const readinessData = {
     
     'Go-to-Market': {
         levels: [
+            {
+                level: 0,
+                title: "No GTM Thinking",
+                definition: "No go-to-market strategy or thinking has begun. The venture has not considered how it would reach customers or what channels might be relevant.",
+                deliverables: ["None"],
+                indicators: ["No distribution channels considered", "No messaging or positioning explored", "No customer acquisition approach identified"]
+            },
             {
                 level: 1,
                 title: "GTM Concept",
@@ -467,6 +515,13 @@ export const readinessData = {
     'Business': {
         levels: [
             {
+                level: 0,
+                title: "No Business Planning",
+                definition: "No business model or planning has been initiated. The venture has not considered revenue models, cost structures, or entity formation.",
+                deliverables: ["None"],
+                indicators: ["No business model considered", "No revenue or cost structure explored", "No legal entity considerations"]
+            },
+            {
                 level: 1,
                 title: "Business Concept",
                 definition: "Initial business concept with basic value proposition identified.",
@@ -535,6 +590,13 @@ export const readinessData = {
     'Funding': {
         levels: [
             {
+                level: 0,
+                title: "No Funding Awareness",
+                definition: "No funding strategy or awareness exists. The venture has not explored funding options, financial requirements, or investor landscape.",
+                deliverables: ["None"],
+                indicators: ["No awareness of funding options", "No financial planning initiated", "No corporate structure considerations"]
+            },
+            {
                 level: 1,
                 title: "Funding Recognition",
                 definition: "Company recognizes need for external funding and begins understanding funding landscape and requirements.",
@@ -602,6 +664,13 @@ export const readinessData = {
     
     'Regulatory': {
         levels: [
+            {
+                level: 0,
+                title: "No Regulatory Awareness",
+                definition: "No regulatory considerations have been identified. The venture has not assessed whether regulatory pathways or compliance requirements apply.",
+                deliverables: ["None"],
+                indicators: ["No regulatory requirements identified", "No pathway awareness", "No compliance considerations"]
+            },
             {
                 level: 1,
                 title: "Regulatory Landscape",

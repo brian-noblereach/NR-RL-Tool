@@ -19,6 +19,7 @@ import { PORTFOLIOS } from "./data/constants.js";
 import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchUserAssessments, clearUserAssessmentsCache } from "./smartsheet.js";
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
 import { updateSummary } from "./summary.js";
+import { Auth } from "./auth.js";
 import {
   updateIndustrySelectorUI,
   toggleMinimizeSummaryPanel,
@@ -259,7 +260,7 @@ function buildSnapshotRows() {
   const rows = [];
   CATEGORY_ORDER.forEach(cat => {
     if (!readinessData[cat] || !allowed.has(cat)) return;
-    rows.push({ category: cat, level: AppState.scores[cat] || "-" });
+    rows.push({ category: cat, level: AppState.scores[cat] != null ? AppState.scores[cat] : "-" });
   });
   return rows;
 }
@@ -540,7 +541,7 @@ function setupLoadAssessmentSearch(allAssessments) {
 
 function handleLoadAssessmentClick(assessment) {
   // Check if there's current work that would be lost
-  const hasCurrentWork = Object.keys(AppState.scores || {}).length > 0;
+  const hasCurrentWork = Object.values(AppState.scores || {}).some(s => s != null);
 
   if (hasCurrentWork) {
     // Show warning modal
@@ -632,7 +633,7 @@ function formatScoresCompact(scores, isHealthRelated) {
 
   return cats.map(c => {
     const abbrev = c === "Go-to-Market" ? "GTM" : c === "Technology" ? "Tech" : c.substring(0, 3);
-    return `${abbrev}:${scores[c] || 0}`;
+    return `${abbrev}:${scores[c] != null ? scores[c] : "-"}`;
   }).join(" ");
 }
 
@@ -1010,19 +1011,43 @@ function showToast(message, type = "info") {
 }
 
 /**
- * Populate portfolio dropdown from PORTFOLIOS constant
+ * Populate portfolio dropdown from GAS proxy (single source of truth).
+ * Falls back to local PORTFOLIOS constant if proxy is unavailable.
  */
-function populatePortfolioDropdown() {
+async function populatePortfolioDropdown() {
   const select = document.getElementById("portfolio-select");
   if (!select) return;
 
+  let portfolios = PORTFOLIOS; // fallback
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const resp = await fetch(
+      "https://script.google.com/macros/s/AKfycbzt7wElvzQv0CNs-icg7QWpxjf4E5FGqWa6KpCY4zSa_thccGNWhw-THLTpnn8GJa2W/exec?action=portfolios",
+      { signal: controller.signal }
+    );
+    clearTimeout(timeoutId);
+    const data = await resp.json();
+    if (data.success && Array.isArray(data.portfolios)) {
+      portfolios = data.portfolios;
+    }
+  } catch (e) {
+    console.warn("[RL] Could not fetch portfolios from proxy, using local fallback:", e.message);
+  }
+
   select.innerHTML = '<option value="">Select portfolio...</option>';
-  PORTFOLIOS.forEach(p => {
+  portfolios.forEach(p => {
     const opt = document.createElement("option");
     opt.value = p.value;
     opt.textContent = p.label;
     select.appendChild(opt);
   });
+
+  // Re-sync current portfolio value after options are loaded
+  if (AppState.portfolio) {
+    select.value = AppState.portfolio;
+  }
 }
 
 /**
@@ -1096,21 +1121,32 @@ function normalBoot() {
   populateVentureNameAutocomplete();
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  // Check for VDR mode (Associate Mode) via URL parameter
+document.addEventListener("DOMContentLoaded", async () => {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('vdr') === 'true') {
-    // Import and initialize VDR mode
-    import('./vdr/vdr-main.js').then(({ initializeVDR }) => {
-      initializeVDR();
-    }).catch(err => {
-      console.error('[VDR] Failed to load VDR module:', err);
-      // Fall back to normal mode
+  const isVDR = params.get('vdr') === 'true';
+
+  // Boot function based on mode
+  function boot() {
+    if (isVDR) {
+      import('./vdr/vdr-main.js').then(({ initializeVDR }) => {
+        initializeVDR();
+      }).catch(err => {
+        console.error('[VDR] Failed to load VDR module:', err);
+        normalBoot();
+      });
+    } else {
       normalBoot();
-    });
-    return;
+    }
   }
-  
-  // Normal boot
-  normalBoot();
+
+  // Auth gate — both normal and VDR modes require authentication
+  Auth.initLoginForm(boot);
+
+  const hasAccess = await Auth.checkAccess();
+  if (hasAccess) {
+    Auth.hideLoginOverlay();
+    boot();
+  } else {
+    Auth.showLoginOverlay();
+  }
 });

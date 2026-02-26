@@ -19,6 +19,21 @@
   <script data-goatcounter="https://nrrls.goatcounter.com/count" async src="//nrf.sharepoint.us///gc.zgo.at/count.js"></script>
 </head>
 <body>
+  <!-- Access Control Overlay -->
+  <div id="auth-overlay" class="auth-overlay">
+    <div class="auth-card">
+      <img src="assets/logo-icon.svg" alt="NobleReach" width="48" height="48">
+      <h2>Business Readiness Levels</h2>
+      <p class="auth-subtitle">Enter your access code to continue</p>
+      <form id="auth-form" class="auth-form">
+        <input type="password" id="auth-password" placeholder="Access code" autocomplete="off" required>
+        <button type="submit" id="auth-submit" class="btn primary">Enter</button>
+      </form>
+      <div id="auth-error" class="auth-error"></div>
+      <p class="auth-note">Contact your NobleReach administrator for access.</p>
+    </div>
+  </div>
+
   <!-- Pilot Banner -->
   <div class="pilot-banner" id="pilot-banner">
     <div class="pilot-banner-content">
@@ -85,53 +100,56 @@
 
     <!-- VENTURE SELECTOR BAR -->
     <div class="venture-bar">
-      <div class="venture-selector">
-        <label for="venture-select">Assessment:</label>
-        <select id="venture-select">
-          <option value="">Select or create new...</option>
-        </select>
-        <button id="btn-new-venture" class="btn small" title="Start New Assessment">+ New</button>
-        <button id="btn-delete-venture" class="btn small outline danger" title="Delete Current Assessment">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          </svg>
-        </button>
-      </div>
-
-      <div class="venture-name">
-        <label for="venture-name">Venture Name</label>
-        <input type="text" id="venture-name" placeholder="e.g., NovaThera Biosystems" list="venture-names-list" autocomplete="off" />
-        <datalist id="venture-names-list">
-          <!-- Populated dynamically from Qualification Tool Smartsheet -->
-        </datalist>
-      </div>
-
-      <div class="advisor-name-field">
-        <label for="advisor-name">Advisor Name <span class="required">*</span></label>
-        <input type="text" id="advisor-name" placeholder="Your name" required />
-      </div>
-
-      <div class="portfolio-field">
-        <label for="portfolio-select">Portfolio</label>
-        <select id="portfolio-select">
-          <!-- Populated dynamically from PORTFOLIOS constant -->
-        </select>
-      </div>
-
-      <div class="status-group">
-        <div class="timestamp">
-          <span>Last updated:</span>
-          <time id="assessed-at" aria-live="polite">—</time>
+      <div class="venture-bar-primary">
+        <div class="venture-selector">
+          <label for="venture-select">Assessment:</label>
+          <select id="venture-select">
+            <option value="">Select or create new...</option>
+          </select>
+          <button id="btn-new-venture" class="btn small" title="Start New Assessment">+ New</button>
+          <button id="btn-delete-venture" class="btn small outline danger" title="Delete Current Assessment">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
         </div>
-        <div class="submission-status" id="submission-status">
-          <svg class="status-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="7" cy="7" r="6"></circle>
-          </svg>
-          <span class="status-text">Not submitted</span>
+
+        <div class="venture-name">
+          <label for="venture-name">Venture Name</label>
+          <input type="text" id="venture-name" placeholder="e.g., NovaThera Biosystems" list="venture-names-list" autocomplete="off" />
+          <datalist id="venture-names-list">
+            <!-- Populated dynamically from Qualification Tool Smartsheet -->
+          </datalist>
         </div>
       </div>
 
+      <div class="venture-bar-secondary">
+        <div class="advisor-name-field">
+          <label for="advisor-name">Advisor Name <span class="required">*</span></label>
+          <input type="text" id="advisor-name" placeholder="Your name" required />
+        </div>
+
+        <div class="portfolio-field">
+          <label for="portfolio-select">Portfolio</label>
+          <select id="portfolio-select">
+            <!-- Populated dynamically from PORTFOLIOS constant -->
+          </select>
+        </div>
+
+        <div class="status-group">
+          <div class="timestamp">
+            <span>Last updated:</span>
+            <time id="assessed-at" aria-live="polite">—</time>
+          </div>
+          <div class="submission-status" id="submission-status">
+            <svg class="status-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="7" cy="7" r="6"></circle>
+            </svg>
+            <span class="status-text">Not submitted</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- TOOLBAR -->

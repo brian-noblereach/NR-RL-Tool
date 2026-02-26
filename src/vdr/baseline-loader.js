@@ -147,7 +147,7 @@ function formatScoresCompact(scores, isHealthRelated) {
   
   return cats.map(c => {
     const abbrev = c === 'Go-to-Market' ? 'GTM' : c === 'Technology' ? 'Tech' : c.substring(0, 3);
-    return `${abbrev}:${scores[c] || 0}`;
+    return `${abbrev}:${scores[c] != null ? scores[c] : "-"}`;
   }).join(' ');
 }
 

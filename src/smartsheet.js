@@ -112,7 +112,7 @@ function validateSubmission() {
   }
 
   // Check if at least one score exists
-  const hasScores = Object.values(AppState.scores).some(s => s > 0);
+  const hasScores = Object.values(AppState.scores).some(s => s != null);
   if (!hasScores) {
     return { valid: false, message: "Please assess at least one category before saving" };
   }
@@ -165,7 +165,9 @@ function buildPayload() {
  * @returns {number} Score clamped to 0-9 range
  */
 function clampScore(score) {
-  const num = parseInt(score, 10) || 0;
+  if (score == null) return null;
+  const num = parseInt(score, 10);
+  if (isNaN(num)) return null;
   return Math.max(0, Math.min(9, num));
 }
 

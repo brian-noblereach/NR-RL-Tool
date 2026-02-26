@@ -24,14 +24,14 @@ export function renderSummaryScores(categories) {
       (cat) => `
       <div class="summary-score-item">
         <div class="score-label">${cat}</div>
-        <div class="score-value">${AppState.scores[cat] || "-"}</div>
+        <div class="score-value">${AppState.scores[cat] != null ? AppState.scores[cat] : "-"}</div>
       </div>`
     )
     .join("");
 }
 
 export function updateSummaryHeader(categories) {
-  const assessedCount = categories.filter((cat) => AppState.scores[cat] > 0).length;
+  const assessedCount = categories.filter((cat) => AppState.scores[cat] != null).length;
   const totalCount = categories.length;
   const headerText = document.querySelector(".summary-header h3");
   
@@ -70,7 +70,7 @@ export class VentureDescriptionGenerator {
 
   getAssessedCategories() {
     return Object.entries(this.scores).filter(
-      ([cat, score]) => score > 0 && (this.isHealthRelated || cat !== "Regulatory")
+      ([cat, score]) => score != null && (this.isHealthRelated || cat !== "Regulatory")
     );
   }
 
@@ -266,22 +266,22 @@ export class VentureDescriptionGenerator {
     if ((this.scores["Funding"] || 0) >= 5) strengths.push("fundraising readiness");
     if ((this.scores["IP"] || 0) >= 5) strengths.push("IP protection");
 
-    // Identify gaps (score <= 2 but > 0)
-    const tech = this.scores["Technology"] || 0;
-    const market = this.scores["Market"] || 0;
-    const product = this.scores["Product"] || 0;
-    const team = this.scores["Team"] || 0;
-    const gtm = this.scores["Go-to-Market"] || 0;
-    const biz = this.scores["Business"] || 0;
-    const funding = this.scores["Funding"] || 0;
+    // Identify gaps (assessed and score <= 2, including Level 0)
+    const tech = this.scores["Technology"];
+    const market = this.scores["Market"];
+    const product = this.scores["Product"];
+    const team = this.scores["Team"];
+    const gtm = this.scores["Go-to-Market"];
+    const biz = this.scores["Business"];
+    const funding = this.scores["Funding"];
 
-    if (tech <= 2 && tech > 0) gaps.push("technical development");
-    if (market <= 2 && market > 0) gaps.push("market understanding");
-    if (product <= 2 && product > 0) gaps.push("product definition");
-    if (team <= 2 && team > 0) gaps.push("team development");
-    if (gtm <= 2 && gtm > 0) gaps.push("go-to-market strategy");
-    if (biz <= 2 && biz > 0) gaps.push("business foundation");
-    if (funding <= 2 && funding > 0) gaps.push("funding preparation");
+    if (tech != null && tech <= 2) gaps.push("technical development");
+    if (market != null && market <= 2) gaps.push("market understanding");
+    if (product != null && product <= 2) gaps.push("product definition");
+    if (team != null && team <= 2) gaps.push("team development");
+    if (gtm != null && gtm <= 2) gaps.push("go-to-market strategy");
+    if (biz != null && biz <= 2) gaps.push("business foundation");
+    if (funding != null && funding <= 2) gaps.push("funding preparation");
 
     let narrative = "";
     if (strengths.length > 0 || gaps.length > 0) {
@@ -303,7 +303,7 @@ export class VentureDescriptionGenerator {
       : Object.keys(readinessData).filter((c) => c !== "Regulatory");
     
     const unassessed = all.filter(
-      (cat) => !this.scores[cat] || this.scores[cat] === 0
+      (cat) => this.scores[cat] == null
     );
     
     if (unassessed.length > 0) {

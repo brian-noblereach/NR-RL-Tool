@@ -31,6 +31,7 @@ export const HEALTH_TERM_MAP = [
 // These add clinical/regulatory context to base definitions when health mode is enabled
 export const HX = {
   IP: {
+    0: { indicators: ["No clinical IP considerations"], deliverables: [] },
     1: { indicators: ["Awareness of clinical IP landscape for target indication"], deliverables: ["IP landscape scan for target indication"] },
     2: { indicators: ["Provisional scope includes clinical claims"], deliverables: ["Provisional draft with clinical claim language"] },
     3: { indicators: ["Initial clinical FTO questions articulated"], deliverables: ["Preliminary FTO notes"] },
@@ -43,6 +44,7 @@ export const HX = {
   },
 
   Technology_device: {
+    0: { indicators: ["No clinical device concept identified"], deliverables: [] },
     1: { indicators: ["Intended use and risk class hypothesis documented"], deliverables: ["Intended use & risk class note"] },
     2: { indicators: ["Initial IEC/ISO requirements identified"], deliverables: ["Standards & bench test matrix"] },
     3: { indicators: ["Preliminary DFMEA/HFMEA started"], deliverables: ["Risk analysis draft"] },
@@ -55,6 +57,7 @@ export const HX = {
   },
 
   Technology_pharma: {
+    0: { indicators: ["No target or preclinical hypothesis identified"], deliverables: [] },
     1: { indicators: ["Target Product Profile (TPP) drafted"], deliverables: ["TPP v0"] },
     2: { indicators: ["IND-enabling study needs outlined"], deliverables: ["Preclinical plan"] },
     3: { indicators: ["Dose/formulation strategy defined"], deliverables: ["Formulation concept"] },
@@ -67,6 +70,7 @@ export const HX = {
   },
 
   Market: {
+    0: { indicators: ["No clinical market or patient population identified"], deliverables: [] },
     1: { indicators: ["Patient population and unmet need quantified"], deliverables: ["Clinical problem/need brief"] },
     2: { indicators: ["HCP workflow mapping initiated"], deliverables: ["Provider workflow map (draft)"] },
     3: { indicators: ["Site feasibility signals gathered"], deliverables: ["Site interviews summary"] },
@@ -79,6 +83,7 @@ export const HX = {
   },
 
   Product: {
+    0: { indicators: ["No clinical product concept identified"], deliverables: [] },
     1: { indicators: ["Concept demonstrably ties to clinical need"], deliverables: ["Clinical prototype concept note"] },
     2: { indicators: ["Clinical usability goals defined"], deliverables: ["Usability goals document"] },
     3: { indicators: ["Usability risk analysis drafted"], deliverables: ["Risk analysis by clinical use case"] },
@@ -91,6 +96,7 @@ export const HX = {
   },
 
   Team: {
+    0: { indicators: ["No clinical expertise or KOLs identified"], deliverables: [] },
     1: { indicators: ["KOL identified and engaged"], deliverables: ["KOL interview notes"] },
     2: { indicators: ["PI/site relationship initiated"], deliverables: ["PI/site contact list"] },
     3: { indicators: ["Clinical advisory panel forming"], deliverables: ["Advisory roster"] },
@@ -103,6 +109,7 @@ export const HX = {
   },
 
   "Go-to-Market": {
+    0: { indicators: ["No clinical site or provider engagement considered"], deliverables: [] },
     1: { indicators: ["Initial site access conversations"], deliverables: ["Site access plan"] },
     2: { indicators: ["Pilot site criteria drafted"], deliverables: ["Site selection criteria"] },
     3: { indicators: ["MoUs with at least one site"], deliverables: ["Site MoUs"] },
@@ -115,6 +122,7 @@ export const HX = {
   },
 
   Business: {
+    0: { indicators: ["No clinical compliance or QMS considerations"], deliverables: [] },
     1: { indicators: ["HIPAA/GxP risks recognized"], deliverables: ["Compliance outline"] },
     2: { indicators: ["QMS plan drafted"], deliverables: ["QMS plan"] },
     3: { indicators: ["Vendor qualification approach defined"], deliverables: ["Vendor list & criteria"] },
@@ -127,6 +135,7 @@ export const HX = {
   },
 
   Funding: {
+    0: { indicators: ["No clinical funding needs identified"], deliverables: [] },
     1: { indicators: ["Use of proceeds includes clinical validation"], deliverables: ["Seed budget with clinical line items"] },
     2: { indicators: ["Runway covers preclinical/feasibility"], deliverables: ["Budget for early studies"] },
     3: { indicators: ["Capital plan for IND or device studies"], deliverables: ["Milestone-based plan"] },
@@ -139,6 +148,7 @@ export const HX = {
   },
 
   Regulatory: {
+    0: { indicators: ["No regulatory pathway considerations"], deliverables: [] },
     1: { indicators: ["Regulatory landscape & pathway hypothesis"], deliverables: ["Pathway brief"] },
     2: { indicators: ["Pre-sub/Type B meeting considered"], deliverables: ["Briefing package outline"] },
     3: { indicators: ["Testing protocol needs mapped to pathway"], deliverables: ["Testing matrix"] },

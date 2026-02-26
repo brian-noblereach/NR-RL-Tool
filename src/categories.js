@@ -20,7 +20,7 @@ export function initializeCategories() {
 
   categoriesToShow.forEach((cat) => {
     if (AppState.scores[cat] === undefined) {
-      AppState.scores[cat] = 0;
+      AppState.scores[cat] = null;
     }
   });
 
@@ -50,7 +50,7 @@ export function renderCategoryList(categories) {
       (cat) => `
       <li class="category-item ${AppState.currentCategory === cat ? "active" : ""}" data-category="${cat}">
         <span class="cat-name">${cat}</span>
-        <span class="category-score ${AppState.scores[cat] ? "" : "empty"}">${AppState.scores[cat] || "-"}</span>
+        <span class="category-score ${AppState.scores[cat] != null ? "" : "empty"}">${AppState.scores[cat] != null ? AppState.scores[cat] : "-"}</span>
       </li>`
     )
     .join("");
@@ -102,7 +102,7 @@ export function updateCategoryDisplay() {
     return;
   }
 
-  const currentScore = AppState.scores[AppState.currentCategory] || 0;
+  const currentScore = AppState.scores[AppState.currentCategory];
   const industryVal = document.getElementById("industry-select")?.value || "general";
 
   container.innerHTML = categoryData.levels
@@ -113,8 +113,8 @@ export function updateCategoryDisplay() {
 }
 
 export function createLevelCard(level, currentScore, industryVal) {
-  const isIncluded = level.level < currentScore;
-  const isSelected = level.level === currentScore;
+  const isIncluded = currentScore != null && level.level < currentScore;
+  const isSelected = currentScore != null && level.level === currentScore;
   const isExpanded = AppState.currentView === "expanded" || isSelected || isIncluded;
 
   const useIndustry =

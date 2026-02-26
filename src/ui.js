@@ -84,7 +84,7 @@ function syncPanelUI() {
   // Update title based on state
   const h = panel.querySelector(".summary-header h3");
   if (h) {
-    const done = Object.values(AppState.scores || {}).filter(Boolean).length;
+    const done = Object.values(AppState.scores || {}).filter(v => v != null).length;
     const healthEnabled = document.getElementById("health-related")?.checked;
     const total = healthEnabled ? 9 : 8;
     
