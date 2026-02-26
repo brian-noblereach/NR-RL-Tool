@@ -60,7 +60,8 @@ export async function fetchRLAssessments() {
     script.async = true;
 
     const cleanup = () => {
-      delete window[callbackName];
+      window[callbackName] = () => {};  // no-op for late JSONP responses
+      setTimeout(() => delete window[callbackName], 30000);
       if (script.parentNode) script.parentNode.removeChild(script);
     };
 

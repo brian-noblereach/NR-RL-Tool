@@ -233,7 +233,8 @@ function submitViaScript(data) {
     script.async = true;
 
     const cleanup = () => {
-      delete window[callbackName];
+      window[callbackName] = () => {};  // no-op for late JSONP responses
+      setTimeout(() => delete window[callbackName], 30000);
       if (script.parentNode) script.parentNode.removeChild(script);
     };
 
@@ -431,7 +432,8 @@ function fetchFromQualSheet() {
     script.async = true;
 
     const cleanup = () => {
-      delete window[callbackName];
+      window[callbackName] = () => {};  // no-op for late JSONP responses
+      setTimeout(() => delete window[callbackName], 30000);
       if (script.parentNode) script.parentNode.removeChild(script);
     };
 
@@ -518,7 +520,8 @@ function fetchFromRLSheet() {
     script.async = true;
 
     const cleanup = () => {
-      delete window[callbackName];
+      window[callbackName] = () => {};  // no-op for late JSONP responses
+      setTimeout(() => delete window[callbackName], 30000);
       if (script.parentNode) script.parentNode.removeChild(script);
     };
 
@@ -638,7 +641,8 @@ export async function fetchUserAssessments(advisorName) {
     script.async = true;
 
     const cleanup = () => {
-      delete window[callbackName];
+      window[callbackName] = () => {};  // no-op for late JSONP responses
+      setTimeout(() => delete window[callbackName], 30000);
       if (script.parentNode) script.parentNode.removeChild(script);
     };
 
