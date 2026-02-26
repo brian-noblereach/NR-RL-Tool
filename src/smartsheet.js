@@ -329,8 +329,9 @@ export async function fetchVentureData() {
   ]);
 
   // Merge and deduplicate, preferring Qual Tool data (has more info)
-  // Use Map to keep most recent/complete entry per venture name
+  // Aggregate advisor names from all sources per venture
   const ventureMap = new Map();
+  const advisorMap = new Map(); // key -> Set<string>
 
   // Add RL data first (lower priority)
   rlData.forEach(v => {
@@ -338,16 +339,25 @@ export async function fetchVentureData() {
     if (!ventureMap.has(key) || !ventureMap.get(key).portfolio) {
       ventureMap.set(key, v);
     }
+    // Collect advisors from all sources
+    if (!advisorMap.has(key)) advisorMap.set(key, new Set());
+    (v.advisorNames || []).forEach(a => advisorMap.get(key).add(a));
   });
 
   // Add Qual data (higher priority - overwrites RL if exists)
   qualData.forEach(v => {
     const key = v.name.toLowerCase().trim();
     ventureMap.set(key, v);
+    if (!advisorMap.has(key)) advisorMap.set(key, new Set());
+    (v.advisorNames || []).forEach(a => advisorMap.get(key).add(a));
   });
 
-  // Convert to array and sort alphabetically
+  // Convert to array, attach merged advisor names, and sort alphabetically
   const ventures = Array.from(ventureMap.values())
+    .map(v => {
+      const key = v.name.toLowerCase().trim();
+      return { ...v, advisorNames: Array.from(advisorMap.get(key) || []) };
+    })
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
   // Update cache
@@ -381,23 +391,33 @@ function fetchFromQualSheet() {
       cleanup();
 
       if (response && response.success && response.assessments) {
-        // Extract venture data with portfolio
-        const seen = new Set();
-        const ventures = response.assessments
+        // Extract venture data with portfolio and advisor names
+        const ventureMap = new Map();
+        response.assessments
           .filter(a => a.ventureName && typeof a.ventureName === "string" && a.ventureName.trim())
-          .map(a => ({
-            name: a.ventureName.trim(),
-            portfolio: a.portfolio || "",
-            source: "qual",
-            timestamp: a.timestamp || ""
-          }))
-          .filter(v => {
-            // Keep only first occurrence (most recent due to sort order)
-            const key = v.name.toLowerCase();
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
+          .forEach(a => {
+            const key = a.ventureName.trim().toLowerCase();
+            if (!ventureMap.has(key)) {
+              ventureMap.set(key, {
+                name: a.ventureName.trim(),
+                portfolio: a.portfolio || "",
+                advisorNames: new Set(),
+                source: "qual",
+                timestamp: a.timestamp || ""
+              });
+            }
+            const entry = ventureMap.get(key);
+            if (a.advisorName && a.advisorName.trim()) {
+              entry.advisorNames.add(a.advisorName.trim().toLowerCase());
+            }
+            if (!entry.portfolio && a.portfolio) entry.portfolio = a.portfolio;
           });
+
+        // Convert Sets to Arrays
+        const ventures = Array.from(ventureMap.values()).map(v => ({
+          ...v,
+          advisorNames: Array.from(v.advisorNames)
+        }));
 
         resolve(ventures);
       } else {
@@ -457,22 +477,33 @@ function fetchFromRLSheet() {
       cleanup();
 
       if (response && response.success && response.assessments) {
-        // Extract venture data with portfolio
-        const seen = new Set();
-        const ventures = response.assessments
+        // Extract venture data with portfolio and advisor names
+        const ventureMap = new Map();
+        response.assessments
           .filter(a => a.ventureName && typeof a.ventureName === "string" && a.ventureName.trim())
-          .map(a => ({
-            name: a.ventureName.trim(),
-            portfolio: a.portfolio || "",
-            source: "rl",
-            timestamp: a.assessmentDate || ""
-          }))
-          .filter(v => {
-            const key = v.name.toLowerCase();
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
+          .forEach(a => {
+            const key = a.ventureName.trim().toLowerCase();
+            if (!ventureMap.has(key)) {
+              ventureMap.set(key, {
+                name: a.ventureName.trim(),
+                portfolio: a.portfolio || "",
+                advisorNames: new Set(),
+                source: "rl",
+                timestamp: a.assessmentDate || ""
+              });
+            }
+            const entry = ventureMap.get(key);
+            if (a.advisorName && a.advisorName.trim()) {
+              entry.advisorNames.add(a.advisorName.trim().toLowerCase());
+            }
+            if (!entry.portfolio && a.portfolio) entry.portfolio = a.portfolio;
           });
+
+        // Convert Sets to Arrays
+        const ventures = Array.from(ventureMap.values()).map(v => ({
+          ...v,
+          advisorNames: Array.from(v.advisorNames)
+        }));
 
         resolve(ventures);
       } else {

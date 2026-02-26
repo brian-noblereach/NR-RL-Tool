@@ -838,15 +838,17 @@ function setupEventListeners() {
   document.getElementById("btn-save-db")?.addEventListener("click", handleSaveToDatabase);
 
   // Advisor name binding with localStorage persistence (debounced)
+  // Also refreshes venture autocomplete since it filters by advisor
   const advisorInput = document.getElementById("advisor-name");
   if (advisorInput) {
     let advisorDebounceTimer;
     advisorInput.addEventListener("input", (e) => {
       AppState.advisorName = e.target.value;
-      // Debounce localStorage write to reduce writes on every keystroke
+      // Debounce localStorage write and autocomplete refresh
       clearTimeout(advisorDebounceTimer);
       advisorDebounceTimer = setTimeout(() => {
         saveAdvisorPreference(e.target.value);
+        populateVentureNameAutocomplete();
       }, 300);
     });
   }
@@ -1051,33 +1053,42 @@ async function populatePortfolioDropdown() {
 }
 
 /**
- * Populate venture name autocomplete from both Smartsheets
- * Also stores portfolio data for auto-fill when a venture is selected
+ * Populate venture name autocomplete from both Smartsheets.
+ * Filters to only show ventures associated with the current advisor.
+ * Shows nothing if no advisor name is entered.
  */
 async function populateVentureNameAutocomplete() {
   const datalist = document.getElementById("venture-names-list");
   if (!datalist) return;
 
+  const advisor = (AppState.advisorName || "").trim().toLowerCase();
+
+  // No advisor name → empty suggestions (user can still type freely)
+  if (!advisor) {
+    datalist.innerHTML = "";
+    return;
+  }
+
   try {
     const ventures = await fetchVentureData();
 
-    // Clear existing options
-    datalist.innerHTML = "";
+    // Filter to ventures this advisor has previously assessed
+    const myVentures = ventures.filter(v =>
+      v.advisorNames && v.advisorNames.includes(advisor)
+    );
 
-    // Add options for each unique venture (limited to most recent 50 for performance)
-    // Users can still type any name - this just provides suggestions
-    const limitedVentures = ventures.slice(0, 50);
-    limitedVentures.forEach(v => {
+    // Clear and repopulate
+    datalist.innerHTML = "";
+    myVentures.forEach(v => {
       const opt = document.createElement("option");
       opt.value = v.name;
-      // Add source hint in the label for context
       if (v.portfolio) {
         opt.label = `${v.name} (${v.portfolio})`;
       }
       datalist.appendChild(opt);
     });
 
-    console.log(`[Autocomplete] Loaded ${ventures.length} ventures, showing top ${limitedVentures.length}`);
+    console.log(`[Autocomplete] ${myVentures.length} ventures for advisor "${advisor}" (${ventures.length} total)`);
   } catch (error) {
     console.warn("[Autocomplete] Failed to load venture names:", error);
   }
