@@ -353,6 +353,11 @@ export function updateSubmissionStatusUI() {
   const statusEl = document.getElementById("submission-status");
   if (!statusEl) return;
 
+  if (Auth.isExternal()) {
+    statusEl.style.display = 'none';
+    return;
+  }
+
   const status = getSubmissionStatus();
   const iconEl = statusEl.querySelector(".status-icon");
   const textEl = statusEl.querySelector(".status-text");
@@ -431,6 +436,7 @@ function handleStartNewAssessment() {
 let pendingLoadAssessment = null;  // Store assessment to load after warning confirmation
 
 async function showLoadAssessmentModal() {
+  if (Auth.isExternal()) return;
   const advisorName = AppState.advisorName || loadAdvisorPreference();
 
   if (!advisorName || !advisorName.trim()) {
@@ -848,7 +854,9 @@ function setupEventListeners() {
       clearTimeout(advisorDebounceTimer);
       advisorDebounceTimer = setTimeout(() => {
         saveAdvisorPreference(e.target.value);
-        populateVentureNameAutocomplete();
+        if (!Auth.isExternal()) {
+          populateVentureNameAutocomplete();
+        }
       }, 300);
     });
   }
@@ -933,6 +941,7 @@ let lastSubmitTime = 0;
 const SUBMIT_COOLDOWN = 5000; // 5 seconds between submissions
 
 async function handleSaveToDatabase() {
+  if (Auth.isExternal()) return;
   const btn = document.getElementById("btn-save-db");
   if (!btn || isCurrentlySubmitting()) return;
 
@@ -1121,23 +1130,58 @@ function handleVentureNameChange(ventureName) {
 /* -------------------------
    Boot
 --------------------------*/
+
+/**
+ * Apply external mode restrictions.
+ * Adds CSS class for hiding elements and renames internal labels.
+ */
+function applyExternalMode() {
+  document.body.classList.add('external-mode');
+
+  // Rename "Advisor Name" → "Your Name"
+  const advisorLabel = document.querySelector('.advisor-name-field label[for="advisor-name"]');
+  if (advisorLabel) {
+    advisorLabel.innerHTML = 'Your Name <span class="required">*</span>';
+  }
+
+  const advisorInput = document.getElementById('advisor-name');
+  if (advisorInput) {
+    advisorInput.placeholder = 'Your name';
+  }
+
+  // Clear venture name suggestions (no Smartsheet data for external)
+  const datalist = document.getElementById('venture-names-list');
+  if (datalist) datalist.innerHTML = '';
+
+  console.log('[External Mode] Applied external mode restrictions');
+}
+
 function normalBoot() {
-  populatePortfolioDropdown();
+  const isExternal = Auth.isExternal();
+
+  if (isExternal) {
+    applyExternalMode();
+  } else {
+    populatePortfolioDropdown();
+  }
+
   initializeApp();
   setupEventDelegation();
   setupEventListeners();
   ensureNextToastDom();
 
-  // Load venture name autocomplete in background (non-blocking)
-  populateVentureNameAutocomplete();
+  if (!isExternal) {
+    // Load venture name autocomplete in background (non-blocking)
+    populateVentureNameAutocomplete();
+  }
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
   const params = new URLSearchParams(window.location.search);
-  const isVDR = params.get('vdr') === 'true';
 
-  // Boot function based on mode
+  // Boot function — mode determined after auth (Auth.role is set)
   function boot() {
+    const isVDR = params.get('vdr') === 'true';
     if (isVDR) {
       import('./vdr/vdr-main.js').then(({ initializeVDR }) => {
         initializeVDR();

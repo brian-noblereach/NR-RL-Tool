@@ -1,7 +1,11 @@
-// baseline-loader.js - Fetches and displays RL assessments from Smartsheet for baseline selection
+// baseline-loader.js - Fetches and displays RL assessments for baseline selection
 // VDR Companion Tool - Associate Mode
+// Internal users: loads from Smartsheet database
+// External users: loads from locally saved ventures in localStorage
 
 import { VDRState } from './vdr-state.js';
+import { Auth } from '../auth.js';
+import { getAllVentures } from '../state.js';
 
 // Google Apps Script Web App URL (same as main tool)
 const PROXY_URL = "https://script.google.com/macros/s/AKfycbzt7wElvzQv0CNs-icg7QWpxjf4E5FGqWa6KpCY4zSa_thccGNWhw-THLTpnn8GJa2W/exec";
@@ -153,27 +157,61 @@ function formatScoresCompact(scores, isHealthRelated) {
 }
 
 /**
+ * Load ventures from localStorage for external users.
+ * Converts saved venture format to the assessment format VDR expects.
+ */
+function loadLocalVentures() {
+  const ventures = getAllVentures();
+  return ventures
+    .filter(v => v.ventureName && v.ventureName.trim())
+    .map(v => ({
+      ventureId: v.ventureId || v.id || '',
+      ventureName: v.ventureName.trim(),
+      advisorName: '',
+      portfolio: v.portfolio || '',
+      assessmentNumber: v.currentAssessmentNumber || 1,
+      assessmentDate: v.updatedAt || v.assessedAt || new Date().toISOString(),
+      isHealthRelated: v.isHealthRelated || false,
+      scores: {
+        IP: v.scores?.IP ?? 0,
+        Technology: v.scores?.Technology ?? 0,
+        Market: v.scores?.Market ?? 0,
+        Product: v.scores?.Product ?? 0,
+        Team: v.scores?.Team ?? 0,
+        'Go-to-Market': v.scores?.['Go-to-Market'] ?? 0,
+        Business: v.scores?.Business ?? 0,
+        Funding: v.scores?.Funding ?? 0,
+        Regulatory: v.scores?.Regulatory ?? 0
+      }
+    }))
+    .filter(v => Object.values(v.scores).some(s => s != null && s > 0));
+}
+
+/**
  * Render the baseline selector UI
  */
 export function renderBaselineSelector(container) {
+  const isExternal = Auth.isExternal();
+  const loadingText = isExternal ? 'Loading your saved assessments...' : 'Loading assessments from database...';
+
   container.innerHTML = `
     <div class="vdr-baseline-selector">
       <div class="vdr-header">
         <h2>Load Baseline Assessment</h2>
         <p>Select a venture's baseline readiness levels to set engagement goals.</p>
       </div>
-      
+
       <div class="vdr-search-bar">
         <input type="text" id="vdr-search" placeholder="Search ventures..." autocomplete="off" />
         <select id="vdr-portfolio-filter">
           <option value="">All Portfolios</option>
         </select>
       </div>
-      
+
       <div class="vdr-assessments-list" id="vdr-assessments-list">
         <div class="vdr-loading">
           <div class="spinner"></div>
-          <p>Loading assessments from database...</p>
+          <p>${loadingText}</p>
         </div>
       </div>
     </div>
@@ -194,17 +232,21 @@ async function loadAndRenderAssessments() {
   const portfolioFilter = document.getElementById('vdr-portfolio-filter');
   
   try {
-    const assessments = await fetchRLAssessments();
-    
+    const assessments = Auth.isExternal()
+      ? loadLocalVentures()
+      : await fetchRLAssessments();
+
     if (assessments.length === 0) {
+      const emptyMsg = Auth.isExternal()
+        ? '<p>No saved assessments found. Complete a baseline assessment first, then return here.</p>'
+        : '<p>No readiness level assessments have been saved to the database yet.</p><p>Ask the advisor to complete a baseline assessment first.</p>';
       listContainer.innerHTML = `
         <div class="vdr-empty-state">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <h3>No Assessments Found</h3>
-          <p>No readiness level assessments have been saved to the database yet.</p>
-          <p>Ask the advisor to complete a baseline assessment first.</p>
+          ${emptyMsg}
         </div>
       `;
       return;

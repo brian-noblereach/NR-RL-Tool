@@ -2688,3 +2688,28 @@ body {
     padding: 1rem;
   }
 }
+
+/* =========================================================
+   External Mode — hides internal-only features
+   Applied via body.external-mode class
+   ========================================================= */
+
+body.external-mode #btn-save-db {
+  display: none !important;
+}
+
+body.external-mode #btn-load-assessment {
+  display: none !important;
+}
+
+body.external-mode #btn-start-new-assessment {
+  display: none !important;
+}
+
+body.external-mode .portfolio-field {
+  display: none !important;
+}
+
+body.external-mode .status-group {
+  display: none !important;
+}
