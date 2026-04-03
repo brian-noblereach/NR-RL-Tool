@@ -1,5 +1,7 @@
 // transform.js
-import { HEALTH_TERM_MAP, HX } from "./data/constants.js";
+// Consolidated health mode logic
+// Updated April 2026 - healthExtras now live on each level in readiness-levels.js
+import { HEALTH_TERM_MAP } from "./data/constants.js";
 import { AppState } from "./state.js";
 
 export function applyHealthTerms(text) {
@@ -26,19 +28,42 @@ export function dedupe(arr) {
   return out;
 }
 
-export function getHealthExtras(category, lvl, track) {
-  const L = Number(lvl) || 0;
+/**
+ * Get health extras from the level object itself.
+ * Technology uses { device: {...}, pharma: {...} } sub-tracks.
+ * All other categories use { indicators: [...], deliverables: [...] }.
+ */
+export function getHealthExtras(category, levelObj, track) {
+  const extras = levelObj.healthExtras;
+  if (!extras) return { indicators: [], deliverables: [] };
+
+  // Technology has device/pharma sub-tracks
   if (category === "Technology") {
-    const key = track === "health_pharma" ? "Technology_pharma" : "Technology_device";
-    return (HX[key] && HX[key][L]) || { indicators: [], deliverables: [] };
-    }
-  return (HX[category] && HX[category][L]) || { indicators: [], deliverables: [] };
+    const key = track === "health_pharma" ? "pharma" : "device";
+    return extras[key] || { indicators: [], deliverables: [] };
+  }
+  return extras;
 }
 
-export function buildHealthContent(category, levelObj, baseIndicators, healthTrack) {
-  const extras = getHealthExtras(category, levelObj.level, healthTrack);
+/**
+ * Returns { definition, deliverables, indicators } for a given category/level,
+ * applying health transformations + extras when health mode is active.
+ * Centralizes the health/non-health branching that was previously scattered
+ * across categories.js, vdr-generator.js, etc.
+ */
+export function getEffectiveContent(category, levelObj, baseIndicators, healthTrack) {
+  if (!AppState.isHealthRelated) {
+    return {
+      definition: levelObj.definition,
+      deliverables: Array.isArray(levelObj.deliverables) ? levelObj.deliverables : [],
+      indicators: baseIndicators,
+    };
+  }
 
-  const definition = applyHealthTerms(levelObj.definition || "");
+  // Health mode: get extras from the level object itself
+  const extras = getHealthExtras(category, levelObj, healthTrack);
+
+  const definition = levelObj.health_definition || applyHealthTerms(levelObj.definition || "");
   const baseDeliverables = Array.isArray(levelObj.deliverables)
     ? levelObj.deliverables.map(applyHealthTerms)
     : [];

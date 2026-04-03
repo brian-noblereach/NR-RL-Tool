@@ -82,12 +82,11 @@ function collectDeliverables(category, baselineLevel, goalLevel, isHealth) {
     // Apply health transformations and add extras if applicable
     if (isHealth) {
       delivs = delivs.map(d => applyHealthTerms(d));
-      
-      // Add health-specific extras
-      const extras = getHealthExtras(category, L, null);
+
+      // Add health-specific extras from levelObj.healthExtras
+      const extras = getHealthExtras(category, levelObj, null);
       if (extras?.deliverables && extras.deliverables.length > 0) {
-        const healthDelivs = extras.deliverables.map(d => applyHealthTerms(d));
-        delivs = [...delivs, ...healthDelivs];
+        delivs = [...delivs, ...extras.deliverables];
       }
     }
     

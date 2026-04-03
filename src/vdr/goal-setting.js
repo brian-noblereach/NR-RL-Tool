@@ -289,13 +289,13 @@ function renderLevelDetail(category, levelObj, baselineLevel, isHealth) {
   
   // Apply health transformations if needed
   if (isHealth) {
-    definition = applyHealthTerms(definition);
+    definition = levelObj.health_definition || applyHealthTerms(definition);
     deliverables = deliverables.map(d => applyHealthTerms(d));
-    
-    // Add health-specific extras
-    const extras = getHealthExtras(category, level, null);
+
+    // Add health-specific extras from levelObj.healthExtras
+    const extras = getHealthExtras(category, levelObj, null);
     if (extras?.deliverables) {
-      deliverables = dedupe([...deliverables, ...extras.deliverables.map(d => applyHealthTerms(d))]);
+      deliverables = dedupe([...deliverables, ...extras.deliverables]);
     }
   }
   

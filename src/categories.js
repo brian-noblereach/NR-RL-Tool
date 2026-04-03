@@ -2,7 +2,7 @@
 // Updated December 2024
 import { AppState, setScore, saveCurrentVenture } from "./state.js";
 import { readinessData } from "./data/index.js";
-import { maybeHealth, buildHealthContent } from "./transform.js";
+import { maybeHealth, getEffectiveContent } from "./transform.js";
 import { updateIndustrySelectorUI, toggleLevel, stampAssessedNow, syncSummaryHeaderAndIcons } from "./ui.js";
 import { updateSummary, generateVentureDescription } from "./summary.js";
 import { updateSubmissionStatusUI } from "./main.js";
@@ -128,13 +128,7 @@ export function createLevelCard(level, currentScore, industryVal) {
       ? industryVal 
       : null;
 
-  const content = AppState.isHealthRelated
-    ? buildHealthContent(AppState.currentCategory, level, baseIndicators, healthTrack)
-    : {
-        definition: level.definition,
-        deliverables: Array.isArray(level.deliverables) ? level.deliverables : [],
-        indicators: baseIndicators,
-      };
+  const content = getEffectiveContent(AppState.currentCategory, level, baseIndicators, healthTrack);
 
   const deliverables = Array.isArray(content.deliverables) ? content.deliverables : [];
   const indicators = Array.isArray(content.indicators) ? content.indicators : [];
