@@ -18,6 +18,7 @@ Advisors use this tool to score ventures on a 0–9 scale across nine categories
 | Go-to-Market | Distribution, sales, and channel strategy |
 | Business | Business model, legal structure, and operations |
 | Funding | Funding strategy, fundraising, and financial planning |
+| Mission Impact | Identification of, alignment to, and progress against a core mission — covering both mission-oriented work (social/community impact) and national-security/dual-use ventures |
 | Regulatory | Regulatory pathway and compliance (health ventures only) |
 
 Each level (0–9) includes a definition, deliverables, and progress indicators. Level 0 represents a deliberate "Not Started" assessment, distinct from categories that have not yet been evaluated.

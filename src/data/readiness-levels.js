@@ -761,6 +761,81 @@ export const readinessData = {
         ]
     },
 
+    'Mission Impact': {
+        levels: [
+            {
+                level: 0,
+                title: "Mission Curiosity",
+                definition: "PI interested in scale and impact",
+                deliverables: [],
+                indicators: []
+            },
+            {
+                level: 1,
+                title: "Mission Need Identified",
+                definition: "Can identify a societal need for which the technology is applicable",
+                deliverables: ["Initial mission need statement"],
+                indicators: ["Articulated societal, public-good, or national-security need the technology could address", "Plausible link drawn between technology capability and the named mission need"]
+            },
+            {
+                level: 2,
+                title: "Theory of Change",
+                definition: "Able to outline a Theory of Change for the proposed solution",
+                deliverables: ["Theory of Change document", "Mission outcomes hypothesis"],
+                indicators: ["Inputs, activities, outputs, and intended mission outcomes mapped end-to-end", "Key assumptions and external dependencies named explicitly"]
+            },
+            {
+                level: 3,
+                title: "Stakeholders Identified",
+                definition: "Identification of relevant stakeholders for development/implementation of solution OR a set of community stakeholders who will be impacted by deployment of the technology",
+                deliverables: ["Mission stakeholder map", "Initial engagement plan"],
+                indicators: ["Mission stakeholders identified across development, implementation, and deployment (beneficiaries, community partners, mission owners, or end-user agencies as appropriate)", "Each stakeholder group has a stated role and interest in the work"]
+            },
+            {
+                level: 4,
+                title: "Mission Need Validated",
+                definition: "Declared need from potential beneficiaries that indicates appropriateness of proposed solution OR initial \"Voice of stakeholders\" conducted",
+                deliverables: ["Voice-of-stakeholders summary", "Mission need validation memo"],
+                indicators: ["Intended beneficiaries or mission owners have explicitly confirmed the need is real and the proposed approach is appropriate", "First-hand stakeholder input is captured and is informing how the venture frames its mission"]
+            },
+            {
+                level: 5,
+                title: "Mission Pilot",
+                definition: "Pilot of solution/demo of product conducted with relevant community",
+                deliverables: ["Pilot or demonstration plan", "Pilot debrief report"],
+                indicators: ["Pilot or demonstration completed with the relevant mission audience (community, agency, operational user, or other appropriate group)", "Pilot results capture both technical performance and mission-relevance signal"]
+            },
+            {
+                level: 6,
+                title: "Engagement Active",
+                definition: "Active, ongoing community engagement for validation, incorporation of needs + concerns into product design, and onward engagement",
+                deliverables: ["Ongoing engagement cadence (advisory group, working sessions, or equivalent)", "Feedback log linking stakeholder input to design or deployment changes"],
+                indicators: ["Sustained two-way engagement with mission stakeholders is established, not one-off", "Stakeholder input is demonstrably influencing design or deployment decisions"]
+            },
+            {
+                level: 7,
+                title: "Stakeholder Strategy Set",
+                definition: "Community stakeholders strategies defined. Positive feedback on product design, deployment, impact",
+                deliverables: ["Stakeholder engagement strategy", "Stakeholder feedback summary"],
+                indicators: ["Defined strategy for how each stakeholder group is engaged and sustained over time", "Positive qualitative feedback from stakeholders on design, deployment, and early mission-impact signals"]
+            },
+            {
+                level: 8,
+                title: "Impact Metrics Defined",
+                definition: "Near-, Medium- and Long-term impact metrics and plan for collection defined",
+                deliverables: ["Mission impact measurement framework", "Impact data collection plan"],
+                indicators: ["Near-, medium-, and long-term mission impact metrics defined with clear definitions and targets", "Collection plan in place specifying who measures what, when, and how, with baseline expectations"]
+            },
+            {
+                level: 9,
+                title: "Attributable Mission Impact",
+                definition: "Near- and medium-term impact metrics collected from beneficiaries demonstrating attributable impact towards validating/refining Theory of Change",
+                deliverables: ["Mission impact measurement report", "Theory of Change refinement memo"],
+                indicators: ["Near- and medium-term metrics show outcomes attributable (not merely correlated) to the venture's work", "Theory of Change validated, refined, or revised based on collected field evidence"]
+            }
+        ]
+    },
+
     'Regulatory': {
         levels: [
             {

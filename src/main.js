@@ -45,7 +45,7 @@ import {
    Helpers
 --------------------------*/
 const CATEGORY_ORDER = [
-  "IP", "Technology", "Market", "Product", "Team", "Go-to-Market", "Business", "Funding", "Regulatory",
+  "IP", "Technology", "Market", "Product", "Team", "Go-to-Market", "Business", "Funding", "Mission Impact", "Regulatory",
 ];
 
 function pad(n) {
@@ -634,11 +634,11 @@ function formatAssessmentDate(dateStr) {
 }
 
 function formatScoresCompact(scores, isHealthRelated) {
-  const cats = ["IP", "Technology", "Market", "Product", "Team", "Go-to-Market", "Business", "Funding"];
+  const cats = ["IP", "Technology", "Market", "Product", "Team", "Go-to-Market", "Business", "Funding", "Mission Impact"];
   if (isHealthRelated) cats.push("Regulatory");
 
   return cats.map(c => {
-    const abbrev = c === "Go-to-Market" ? "GTM" : c === "Technology" ? "Tech" : c.substring(0, 3);
+    const abbrev = c === "Go-to-Market" ? "GTM" : c === "Technology" ? "Tech" : c === "Mission Impact" ? "MI" : c.substring(0, 3);
     return `${abbrev}:${scores[c] != null ? scores[c] : "-"}`;
   }).join(" ");
 }

@@ -152,6 +152,7 @@ function buildPayload() {
     RL_GTM: clampScore(AppState.scores["Go-to-Market"]),
     RL_Business: clampScore(AppState.scores["Business"]),
     RL_Funding: clampScore(AppState.scores["Funding"]),
+    RL_MissionImpact: clampScore(AppState.scores["Mission Impact"]),
     RL_Regulatory: AppState.isHealthRelated ? clampScore(AppState.scores["Regulatory"]) : null,
 
     // Submission tracking
@@ -693,6 +694,7 @@ function processRLAssessments(raw) {
         "Go-to-Market": parseInt(a.RL_GTM, 10) || 0,
         Business: parseInt(a.RL_Business, 10) || 0,
         Funding: parseInt(a.RL_Funding, 10) || 0,
+        "Mission Impact": parseInt(a.RL_MissionImpact, 10) || 0,
         Regulatory: parseInt(a.RL_Regulatory, 10) || 0
       }
     }))

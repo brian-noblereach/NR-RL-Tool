@@ -6,7 +6,7 @@ import { readinessData } from '../data/readiness-levels.js';
 import { applyHealthTerms, getHealthExtras, dedupe } from '../transform.js';
 
 // Category display order
-const CATEGORY_ORDER = ['IP', 'Market', 'Product', 'Team', 'Go-to-Market', 'Business', 'Funding', 'Regulatory'];
+const CATEGORY_ORDER = ['IP', 'Market', 'Product', 'Team', 'Go-to-Market', 'Business', 'Funding', 'Mission Impact', 'Regulatory'];
 
 /**
  * Generate VDR content structure

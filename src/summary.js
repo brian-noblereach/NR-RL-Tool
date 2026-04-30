@@ -86,6 +86,7 @@ export class VentureDescriptionGenerator {
     description += this.getMarketGTMNarrative();
     description += this.getTeamNarrative();
     description += this.getBusinessFundingNarrative();
+    description += this.getMissionImpactNarrative();
 
     if (this.isHealthRelated) {
       description += this.getRegulatoryNarrative();
@@ -239,6 +240,22 @@ export class VentureDescriptionGenerator {
     return narrative;
   }
 
+  getMissionImpactNarrative() {
+    const mi = this.scores["Mission Impact"] || 0;
+    if (mi === 0) return "";
+
+    if (mi >= 8) {
+      return "Mission impact metrics are defined and attributable outcomes are being collected, validating the venture's Theory of Change. ";
+    }
+    if (mi >= 5) {
+      return "Mission engagement is active with a pilot completed and stakeholders informing design and deployment. ";
+    }
+    if (mi >= 3) {
+      return "Mission stakeholders are mapped with a Theory of Change articulated and initial engagement underway. ";
+    }
+    return "Initial mission alignment is forming with a societal or mission need identified for the technology. ";
+  }
+
   getRegulatoryNarrative() {
     const reg = this.scores["Regulatory"] || 0;
     if (reg === 0) return "";
@@ -267,6 +284,7 @@ export class VentureDescriptionGenerator {
     if ((this.scores["Business"] || 0) >= 5) strengths.push("business operations");
     if ((this.scores["Funding"] || 0) >= 5) strengths.push("fundraising readiness");
     if ((this.scores["IP"] || 0) >= 5) strengths.push("IP protection");
+    if ((this.scores["Mission Impact"] || 0) >= 5) strengths.push("mission engagement");
 
     // Identify gaps (assessed and score <= 2, including Level 0)
     const tech = this.scores["Technology"];
@@ -276,6 +294,7 @@ export class VentureDescriptionGenerator {
     const gtm = this.scores["Go-to-Market"];
     const biz = this.scores["Business"];
     const funding = this.scores["Funding"];
+    const mission = this.scores["Mission Impact"];
 
     if (tech != null && tech <= 2) gaps.push("technical development");
     if (market != null && market <= 2) gaps.push("market understanding");
@@ -284,6 +303,7 @@ export class VentureDescriptionGenerator {
     if (gtm != null && gtm <= 2) gaps.push("go-to-market strategy");
     if (biz != null && biz <= 2) gaps.push("business foundation");
     if (funding != null && funding <= 2) gaps.push("funding preparation");
+    if (mission != null && mission <= 2) gaps.push("mission alignment");
 
     let narrative = "";
     if (strengths.length > 0 || gaps.length > 0) {
