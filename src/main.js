@@ -191,7 +191,7 @@ function refreshVentureSelector() {
   if (!select) return;
 
   const ventures = getAllVentures();
-  select.innerHTML = `<option value="">Select or create new...</option>`;
+  select.innerHTML = `<option value="">Select a venture...</option>`;
   
   ventures.forEach(v => {
     const name = v.ventureName || "Unnamed Assessment";

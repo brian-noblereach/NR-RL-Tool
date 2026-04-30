@@ -78,11 +78,11 @@
           </svg>
           <span>Load</span>
         </button>
-        <button id="btn-start-new-assessment" class="btn small accent" disabled title="Start new assessment after venture has progressed">
+        <button id="btn-start-new-assessment" class="btn small accent" disabled title="Start a new scoring round for the CURRENT venture (increments Assessment # and clears scores). Use this after the venture has progressed.">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 5v14M5 12h14"></path>
           </svg>
-          <span>New Assessment</span>
+          <span>New Assessment Round</span>
         </button>
         <button id="btn-save-db" class="btn small accent" title="Save to Database">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -99,12 +99,12 @@
     <div class="venture-bar">
       <div class="venture-bar-primary">
         <div class="venture-selector">
-          <label for="venture-select">Assessment:</label>
+          <label for="venture-select">Venture:</label>
           <select id="venture-select">
-            <option value="">Select or create new...</option>
+            <option value="">Select a venture...</option>
           </select>
-          <button id="btn-new-venture" class="btn small" title="Start New Assessment">+ New</button>
-          <button id="btn-delete-venture" class="btn small outline danger" title="Delete Current Assessment">
+          <button id="btn-new-venture" class="btn small" title="Add a new venture (different company). Starts at Assessment #1.">+ New Venture</button>
+          <button id="btn-delete-venture" class="btn small outline danger" title="Delete the current venture and all its assessments">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -154,13 +154,13 @@
       <div class="health-toggle compact">
         <label class="health-label">
           <input type="checkbox" id="health-related" />
-          <span>Health-related mode</span>
+          <span>Life Sciences Mode</span>
         </label>
         <small id="health-help-text" class="help-text">
           Uses patient/clinical language and enables Regulatory category.
         </small>
         <div id="health-mode-note" class="info-banner hidden" aria-live="polite">
-          Health mode ON: using patient-centric definitions.
+          Life Sciences Mode ON: using patient-centric definitions.
         </div>
       </div>
 
@@ -193,13 +193,13 @@
                   <option value="software">Software</option>
                   <option value="hardware">Hardware</option>
                 </optgroup>
-                <optgroup label="Health (when enabled)" id="health-track-optgroup">
+                <optgroup label="Life Sciences (when enabled)" id="health-track-optgroup">
                   <option value="health_device">Medical device</option>
                   <option value="health_pharma">Pharmaceuticals</option>
                 </optgroup>
               </select>
               <small class="help-text">
-                When health mode is ON, choose a track to specialize Technology content.
+                When Life Sciences Mode is ON, choose a track to specialize Technology content.
               </small>
             </div>
           </div>
@@ -364,7 +364,7 @@
     <div class="modal-backdrop"></div>
     <div class="modal-content small-modal">
       <div class="modal-header">
-        <h3 id="new-venture-modal-title">New Assessment</h3>
+        <h3 id="new-venture-modal-title">New Venture</h3>
         <button id="new-venture-modal-close" class="icon-btn" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
@@ -375,7 +375,7 @@
       </div>
       <div class="modal-footer">
         <button id="new-venture-cancel" class="btn outline">Cancel</button>
-        <button id="new-venture-create" class="btn">Create Assessment</button>
+        <button id="new-venture-create" class="btn">Create Venture</button>
       </div>
     </div>
   </div>

@@ -148,7 +148,7 @@ export function renderVDROutput(container) {
             ${vdr.portfolio ? `<span><strong>Portfolio:</strong> ${escapeHtml(vdr.portfolio)}</span>` : ''}
             <span><strong>Baseline Date:</strong> ${formattedBaselineDate}</span>
             ${vdr.advisorName ? `<span><strong>Advisor:</strong> ${escapeHtml(vdr.advisorName)}</span>` : ''}
-            ${vdr.isHealthRelated ? `<span class="vdr-health-indicator">Health-Related Venture</span>` : ''}
+            ${vdr.isHealthRelated ? `<span class="vdr-health-indicator">Life Sciences Venture</span>` : ''}
           </div>
           <p class="vdr-doc-summary">
             <strong>${vdr.categoriesWithGaps}</strong> categories with advancement goals • 

@@ -101,7 +101,7 @@ export async function generateDocx(vdr) {
     metaParts.push(`Advisor: ${vdr.advisorName}`);
   }
   if (vdr.isHealthRelated) {
-    metaParts.push(`Health-Related Venture`);
+    metaParts.push(`Life Sciences Venture`);
   }
 
   content.push(

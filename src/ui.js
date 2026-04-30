@@ -1,5 +1,6 @@
 // ui.js - UI controls and panel management
 import { AppState, saveCurrentVenture } from "./state.js";
+import { readinessData } from "./data/index.js";
 
 /* -----------------------------
    Assessed timestamp (MM-DD-YYYY HH:MM)
@@ -84,9 +85,10 @@ function syncPanelUI() {
   // Update title based on state
   const h = panel.querySelector(".summary-header h3");
   if (h) {
-    const done = Object.values(AppState.scores || {}).filter(v => v != null).length;
     const healthEnabled = document.getElementById("health-related")?.checked;
-    const total = healthEnabled ? 9 : 8;
+    const activeCategories = Object.keys(readinessData).filter(c => healthEnabled || c !== "Regulatory");
+    const done = activeCategories.filter(c => AppState.scores?.[c] != null).length;
+    const total = activeCategories.length;
     
     if (state === PanelState.MINIMIZED) {
       h.textContent = `Summary ${done}/${total}`;
