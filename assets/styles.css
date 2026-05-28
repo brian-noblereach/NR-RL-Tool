@@ -1565,7 +1565,10 @@ body {
 }
 
 /* Submit Review Modal */
-.submit-review-modal-content {
+/* Specificity note: .modal .modal-content (0,0,2) sets width: min(560px, 92vw)
+   for every modal. Using a compound selector here matches that specificity so
+   source order decides the winner — and this rule is later. */
+.modal-content.submit-review-modal-content {
   width: min(1320px, 96vw);
   max-height: min(90vh, 820px);
 }

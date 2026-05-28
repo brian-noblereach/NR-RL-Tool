@@ -72,7 +72,7 @@ function saveActiveId(id) {
   }
 }
 
-function hasCurrentVentureData() {
+export function hasCurrentVentureData() {
   const commentary = normalizeCommentary(AppState.commentary);
   return Object.keys(AppState.scores || {}).length > 0 ||
     Object.keys(AppState.goalLevels || {}).length > 0 ||
@@ -257,11 +257,11 @@ export const AppState = {
   _savedVentures: loadAssessments(),
 };
 
-// Initialize active venture from localStorage
-const savedActiveId = loadActiveId();
-if (savedActiveId && AppState._savedVentures[savedActiveId]) {
-  loadVenture(savedActiveId);
-}
+// Intentionally NOT auto-loading the previously active venture on module init.
+// The tool should open in a "start a new venture" state on every page load —
+// the prior active venture remains in _savedVentures and can be reloaded via
+// the venture-select dropdown or the Load Assessment modal. See
+// resetActiveVenture() below, which main.js calls during boot.
 
 // Export venture management functions
 export function loadVenture(id) {
@@ -444,4 +444,38 @@ export function clearCommentary() {
 export function setGoalLevel(category, level) {
   AppState.goalLevels[category] = level;
   saveCurrentVenture();
+}
+
+// Reset the *in-memory* active venture to a blank assessment WITHOUT
+// persisting an empty venture entry. Used at app boot so the tool opens in
+// a "start a new venture" state on every refresh. Saved ventures remain in
+// _savedVentures untouched and can be recalled via the venture-select
+// dropdown or Load Assessment modal. A venture entry is only created in
+// localStorage once the user enters a name or score (via saveCurrentVenture).
+export function resetActiveVenture() {
+  AppState.activeVentureId = null;
+  AppState.ventureName = "";
+  AppState.scores = {};
+  AppState.goalLevels = {};
+  AppState.commentary = createEmptyCommentary();
+  AppState.isHealthRelated = false;
+  AppState.assessedAt = null;
+  AppState.createdAt = null;
+  AppState.currentCategory = null;
+
+  AppState.ventureId = null;
+  AppState.portfolio = "";
+  AppState.lastSavedToSmartsheet = null;
+
+  AppState.currentAssessmentNumber = 1;
+  AppState.lastSubmissionTimestamp = null;
+  AppState.lastSubmittedStateHash = null;
+
+  AppState.smartsheetRowId = null;
+  AppState.isEditingExisting = false;
+  AppState.originalAssessment = null;
+
+  // Forget which venture used to be active so a later refresh doesn't
+  // resurrect it via any path.
+  saveActiveId(null);
 }

@@ -14,7 +14,9 @@ import {
   recordSubmission,
   generateStateHash,
   generateVentureId,
-  setCommentaryField
+  setCommentaryField,
+  resetActiveVenture,
+  hasCurrentVentureData
 } from "./state.js";
 import { readinessData } from "./data/index.js";
 import {
@@ -393,6 +395,9 @@ export function updateSubmissionStatusUI() {
 
 function hasDatabaseRelevantChanges() {
   if (Auth.isExternal()) return false;
+  // Don't nag about a blank fresh assessment — only flag "needs submit" once
+  // the advisor has actually entered something worth submitting.
+  if (!hasCurrentVentureData()) return false;
   const status = getSubmissionStatus();
   return !status.submitted || status.hasChanges;
 }
@@ -752,17 +757,13 @@ function generateId() {
    App Initialization
 --------------------------*/
 function initializeApp() {
-  // Check if we have an active venture
-  if (!AppState.activeVentureId) {
-    // Create a default venture if none exists
-    const ventures = getAllVentures();
-    if (ventures.length === 0) {
-      createNewVenture("");
-    } else {
-      // Load the most recent one
-      loadVenture(ventures[0].id);
-    }
-  }
+  // Always open in a fresh, blank assessment state. The advisor explicitly
+  // picks a saved venture via the venture-select dropdown or the Load
+  // Assessment modal when they want to continue prior work — refresh should
+  // not silently resurrect the last venture they happened to be looking at.
+  // resetActiveVenture clears AppState in-memory only; saved ventures remain
+  // in _savedVentures and no empty entry is written to localStorage.
+  resetActiveVenture();
 
   syncUIFromState();
   initializeCategories();
