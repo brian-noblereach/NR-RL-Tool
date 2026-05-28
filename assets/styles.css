@@ -570,8 +570,51 @@ body {
   border-color: var(--nr-orange-1);
 }
 
+.submission-status.not-submitted { color: #9a3412; }
+.submission-status.modified { color: #a16207; }
+.submission-status.submitted { color: #166534; }
+
 .status-icon {
   flex-shrink: 0;
+}
+
+.submission-banner {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 24px 16px;
+  padding: 12px 16px;
+  background: #fffbeb;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(146, 64, 14, 0.12);
+}
+
+.submission-banner.hidden {
+  display: none;
+}
+
+.submission-banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.submission-banner strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: #92400e;
+}
+
+.submission-banner span {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #78350f;
 }
 
 /* ---------- Settings Toggle Button ---------- */
@@ -1521,6 +1564,171 @@ body {
   margin: 4px 0;
 }
 
+/* Submit Review Modal */
+.submit-review-modal-content {
+  width: min(1320px, 96vw);
+  max-height: min(90vh, 820px);
+}
+
+.submit-review-intro {
+  margin-bottom: 18px;
+  color: var(--slate-600);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.submit-review-grid {
+  display: grid;
+  /* Fixed-ish left column for the checklist; right column gets all remaining
+     room so the commentary textarea has space to breathe.
+     minmax(0, ...) lets both columns shrink at narrow widths. */
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.submit-checklist,
+.submit-commentary-fields {
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  background: var(--slate-50);
+  padding: 14px;
+  min-width: 0; /* allow grid items to shrink and let long words wrap */
+}
+
+.submit-checklist {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.submit-checklist h4 {
+  margin: 0 0 12px;
+  font-family: 'Clash Display', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--nr-navy-1);
+}
+
+.submit-checklist ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.submit-checklist li {
+  position: relative;
+  padding-left: 22px;
+  color: var(--slate-700);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.submit-checklist li::before {
+  content: "";
+  position: absolute;
+  top: 0.55em;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid #c2410c;
+  border-radius: 50%;
+  background: #fff7ed;
+}
+
+.submit-checklist li.complete {
+  color: #166534;
+}
+
+.submit-checklist li.complete::before {
+  border-color: #16a34a;
+  background: #16a34a;
+}
+
+.submit-commentary-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: #fff;
+  min-width: 0; /* allow children (textarea, long labels) to shrink in the grid */
+}
+
+.submit-commentary-fields .help-text {
+  margin: 4px 0 0;
+  color: var(--slate-500);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.commentary-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.commentary-radio-group legend,
+.commentary-notes-field label {
+  flex-basis: 100%;
+  margin-bottom: 2px;
+  color: var(--slate-700);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.commentary-radio-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--slate-700);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.commentary-radio-group input {
+  accent-color: var(--nr-teal-1);
+}
+
+.commentary-notes-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.commentary-notes-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 240px;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--slate-300);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.commentary-notes-field textarea:focus {
+  outline: none;
+  border-color: var(--nr-teal-1);
+  box-shadow: 0 0 0 3px rgba(0,130,165,0.1);
+}
+
+.submit-review-footer {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.submit-review-note {
+  margin-right: auto;
+  color: var(--slate-500);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 /* Form elements in modals */
 .form-group {
   margin-bottom: 16px;
@@ -2002,6 +2210,15 @@ body {
 
   .submission-status {
     border-radius: 0 8px 8px 0;
+  }
+
+  .submission-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .submit-review-grid {
+    grid-template-columns: 1fr;
   }
 
   .btn.accent span {

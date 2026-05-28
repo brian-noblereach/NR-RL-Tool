@@ -170,6 +170,14 @@
       </div>
     </div>
 
+    <div id="submission-banner" class="submission-banner hidden">
+      <div class="submission-banner-content" role="status" aria-live="polite">
+        <strong id="submission-banner-title">This assessment has not been submitted to the database.</strong>
+        <span id="submission-banner-message">Click Save to Database to review scores, add required call commentary, and submit.</span>
+      </div>
+      <button id="submission-banner-save" class="btn small accent">Save to Database</button>
+    </div>
+
     <!-- MAIN APP VIEW -->
     <div id="app-view">
       <div class="main-content">
@@ -459,6 +467,48 @@
       <div class="modal-footer">
         <button id="replace-warning-cancel" class="btn outline">Cancel</button>
         <button id="replace-warning-confirm" class="btn accent">Load Assessment</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="submit-review-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="submit-review-modal-title" aria-describedby="submit-review-intro">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content submit-review-modal-content">
+      <div class="modal-header">
+        <h3 id="submit-review-modal-title">Submit assessment?</h3>
+        <button id="submit-review-close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="submit-review-intro" class="submit-review-intro">
+          Review completeness and add required founder-call commentary before writing this row to the database.
+        </p>
+        <div class="submit-review-grid">
+          <div class="submit-checklist" id="submit-checklist"></div>
+          <div class="submit-commentary-fields">
+            <fieldset class="commentary-radio-group">
+              <legend>Founder coachability <span class="required">*</span></legend>
+              <label><input type="radio" name="submit-review-coachability" value="Yes"> Yes</label>
+              <label><input type="radio" name="submit-review-coachability" value="Maybe"> Maybe</label>
+              <label><input type="radio" name="submit-review-coachability" value="No"> No</label>
+            </fieldset>
+            <fieldset class="commentary-radio-group">
+              <legend>Interest in forming a startup <span class="required">*</span></legend>
+              <label><input type="radio" name="submit-review-startup-interest" value="Yes"> Yes</label>
+              <label><input type="radio" name="submit-review-startup-interest" value="Maybe"> Maybe</label>
+              <label><input type="radio" name="submit-review-startup-interest" value="No"> No</label>
+            </fieldset>
+            <div class="commentary-notes-field">
+              <label for="call-notes">Call notes, milestone ideas, and task ideas <span class="required">*</span></label>
+              <p class="help-text">Summarize the founder call and capture early, non-final ideas for program milestones or work assignments.</p>
+              <textarea id="call-notes" rows="7" placeholder="Examples: technical details learned; application areas; market/customer conclusions; advisor concerns; milestones the venture might realistically hit during the program; tasks or follow-ups that may need to be assigned."></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer submit-review-footer">
+        <span class="submit-review-note">Nothing is submitted until you click Submit.</span>
+        <button id="submit-review-cancel" class="btn outline">Cancel</button>
+        <button id="submit-review-confirm" class="btn accent" disabled>Submit</button>
       </div>
     </div>
   </div>

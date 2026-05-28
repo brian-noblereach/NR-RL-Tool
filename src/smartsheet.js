@@ -8,6 +8,12 @@ import {
   getCurrentAssessmentNumber,
   recordSubmission
 } from "./state.js";
+import { readinessData } from "./data/index.js";
+import {
+  getSubmissionReadiness,
+  isFirstAssessmentRound,
+  normalizeCommentary
+} from "./submission-requirements.js";
 
 // Google Apps Script Web App URL (same proxy as Qual Tool)
 const PROXY_URL = "https://script.google.com/macros/s/AKfycbzt7wElvzQv0CNs-icg7QWpxjf4E5FGqWa6KpCY4zSa_thccGNWhw-THLTpnn8GJa2W/exec";
@@ -111,10 +117,21 @@ function validateSubmission() {
     return { valid: false, message: "Please enter your name (Advisor Name)" };
   }
 
-  // Check if at least one score exists
-  const hasScores = Object.values(AppState.scores).some(s => s != null);
-  if (!hasScores) {
-    return { valid: false, message: "Please assess at least one category before saving" };
+  // Every active category must be scored before any submission (Assessment #1 or later).
+  const readiness = getSubmissionReadiness(AppState, readinessData);
+  if (readiness.missingScores.length > 0) {
+    return {
+      valid: false,
+      message: `Please score all active categories before saving (${readiness.missingScores.join(", ")} remaining)`
+    };
+  }
+
+  // Assessment #1 also requires the first-call commentary captured in the review modal.
+  if (readiness.missingCommentary.length > 0) {
+    return {
+      valid: false,
+      message: `Please complete required call commentary (${readiness.missingCommentary.join(", ")} missing)`
+    };
   }
 
   return { valid: true };
@@ -130,6 +147,8 @@ function buildPayload() {
   const assessmentDate = AppState.assessedAt
     ? AppState.assessedAt.toISOString()
     : new Date().toISOString();
+
+  const commentary = normalizeCommentary(AppState.commentary);
 
   return {
     // Identity fields (sanitized)
@@ -154,6 +173,15 @@ function buildPayload() {
     RL_Funding: clampScore(AppState.scores["Funding"]),
     RL_MissionImpact: clampScore(AppState.scores["Mission Impact"]),
     RL_Regulatory: AppState.isHealthRelated ? clampScore(AppState.scores["Regulatory"]) : null,
+
+    // Assessment #1 intake commentary — first-call only.
+    // For Assessment #2+ the helper omits these fields entirely so the proxy
+    // does not overwrite the Smartsheet cells written during Assessment #1.
+    ...(isFirstAssessmentRound(AppState) && {
+      Coachability: commentary.coachability,
+      StartupInterest: commentary.startupInterest,
+      CallNotes: commentary.callNotes
+    }),
 
     // Submission tracking
     submissionTimestamp: new Date().toISOString()
@@ -696,6 +724,15 @@ function processRLAssessments(raw) {
         Funding: parseInt(a.RL_Funding, 10) || 0,
         "Mission Impact": parseInt(a.RL_MissionImpact, 10) || 0,
         Regulatory: parseInt(a.RL_Regulatory, 10) || 0
+      },
+      // Assessment #1 intake commentary (empty strings on rows that never had it set).
+      Coachability: a.Coachability || "",
+      StartupInterest: a.StartupInterest || "",
+      CallNotes: a.CallNotes || "",
+      commentary: {
+        coachability: a.Coachability || "",
+        startupInterest: a.StartupInterest || "",
+        callNotes: a.CallNotes || ""
       }
     }))
     .sort((a, b) => {

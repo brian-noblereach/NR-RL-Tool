@@ -5,11 +5,36 @@ const ACTIVE_KEY = "nr-rl-active";
 const ADVISOR_KEY = "nr-rl-advisor-name";
 const ASSESSMENT_HISTORY_KEY = "nr-rl-assessment-history";
 
+const DEFAULT_COMMENTARY = Object.freeze({
+  coachability: "",
+  startupInterest: "",
+  callNotes: "",
+});
+
+function normalizeCommentary(commentary = {}) {
+  const source = commentary || {};
+  return {
+    coachability: String(source.coachability || source.Coachability || "").trim(),
+    startupInterest: String(source.startupInterest || source.StartupInterest || "").trim(),
+    callNotes: String(source.callNotes || source.CallNotes || "").trim(),
+  };
+}
+
+function createEmptyCommentary() {
+  return { ...DEFAULT_COMMENTARY };
+}
+
 // Load saved assessments from localStorage
 function loadAssessments() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : {};
+    if (!saved) return {};
+
+    const parsed = JSON.parse(saved);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed;
   } catch (e) {
     console.warn("Failed to load assessments from localStorage:", e);
     return {};
@@ -45,6 +70,24 @@ function saveActiveId(id) {
   } catch (e) {
     console.warn("Failed to save active venture ID:", e);
   }
+}
+
+function hasCurrentVentureData() {
+  const commentary = normalizeCommentary(AppState.commentary);
+  return Object.keys(AppState.scores || {}).length > 0 ||
+    Object.keys(AppState.goalLevels || {}).length > 0 ||
+    Object.values(commentary).some(value => value !== "") ||
+    String(AppState.ventureName || "").trim() !== "" ||
+    String(AppState.portfolio || "").trim() !== "" ||
+    AppState.isHealthRelated === true ||
+    !!AppState.assessedAt ||
+    !!AppState.lastSavedToSmartsheet ||
+    (AppState.currentAssessmentNumber || 1) > 1 ||
+    !!AppState.lastSubmissionTimestamp ||
+    !!AppState.lastSubmittedStateHash ||
+    !!AppState.smartsheetRowId ||
+    AppState.isEditingExisting === true ||
+    !!AppState.originalAssessment;
 }
 
 // Generate unique ID for ventures (internal localStorage ID)
@@ -89,6 +132,7 @@ export function incrementAssessmentNumber() {
   AppState.currentAssessmentNumber = (AppState.currentAssessmentNumber || 1) + 1;
   AppState.lastSubmissionTimestamp = null;
   AppState.lastSubmittedStateHash = null;
+  AppState.commentary = createEmptyCommentary();
   // Reset edit mode flags so next submission is INSERT, not UPDATE
   AppState.smartsheetRowId = null;
   AppState.isEditingExisting = false;
@@ -98,8 +142,12 @@ export function incrementAssessmentNumber() {
 export function generateStateHash() {
   const stateStr = JSON.stringify({
     scores: AppState.scores,
+    commentary: normalizeCommentary(AppState.commentary),
     ventureName: AppState.ventureName,
-    isHealthRelated: AppState.isHealthRelated
+    advisorName: AppState.advisorName,
+    portfolio: AppState.portfolio,
+    isHealthRelated: AppState.isHealthRelated,
+    currentAssessmentNumber: AppState.currentAssessmentNumber,
   });
   // Simple hash function
   let hash = 0;
@@ -184,6 +232,7 @@ export const AppState = {
   ventureName: "",
   scores: {},
   goalLevels: {},
+  commentary: createEmptyCommentary(),
   isHealthRelated: false,
   assessedAt: null,
   createdAt: null,
@@ -233,6 +282,7 @@ export function loadVenture(id) {
   AppState.ventureName = venture.ventureName || "";
   AppState.scores = { ...venture.scores } || {};
   AppState.goalLevels = { ...venture.goalLevels } || {};
+  AppState.commentary = normalizeCommentary(venture.commentary);
   AppState.isHealthRelated = venture.isHealthRelated || false;
   AppState.assessedAt = venture.assessedAt ? new Date(venture.assessedAt) : null;
   AppState.createdAt = venture.createdAt ? new Date(venture.createdAt) : null;
@@ -276,6 +326,7 @@ export function saveCurrentVenture() {
     ventureName: AppState.ventureName,
     scores: { ...AppState.scores },
     goalLevels: { ...AppState.goalLevels },
+    commentary: normalizeCommentary(AppState.commentary),
     isHealthRelated: AppState.isHealthRelated,
     assessedAt: AppState.assessedAt ? AppState.assessedAt.toISOString() : null,
     createdAt: AppState.createdAt ? AppState.createdAt.toISOString() : null,
@@ -296,7 +347,7 @@ export function saveCurrentVenture() {
 
 export function createNewVenture(name = "") {
   // Save current venture if it has any data
-  if (AppState.activeVentureId && Object.keys(AppState.scores).length > 0) {
+  if (AppState.activeVentureId && hasCurrentVentureData()) {
     saveCurrentVenture();
   }
 
@@ -305,6 +356,7 @@ export function createNewVenture(name = "") {
   AppState.ventureName = name;
   AppState.scores = {};
   AppState.goalLevels = {};
+  AppState.commentary = createEmptyCommentary();
   AppState.isHealthRelated = false;
   AppState.assessedAt = null;
   AppState.createdAt = new Date();
@@ -335,9 +387,19 @@ export function deleteVenture(id) {
       AppState.ventureName = "";
       AppState.scores = {};
       AppState.goalLevels = {};
+      AppState.commentary = createEmptyCommentary();
       AppState.isHealthRelated = false;
       AppState.assessedAt = null;
       AppState.createdAt = null;
+      AppState.portfolio = "";
+      AppState.ventureId = null;
+      AppState.lastSavedToSmartsheet = null;
+      AppState.currentAssessmentNumber = 1;
+      AppState.lastSubmissionTimestamp = null;
+      AppState.lastSubmittedStateHash = null;
+      AppState.smartsheetRowId = null;
+      AppState.isEditingExisting = false;
+      AppState.originalAssessment = null;
       saveActiveId(null);
     }
   }
@@ -357,6 +419,25 @@ export function setScore(category, level) {
   if (!AppState.assessedAt) {
     AppState.assessedAt = new Date();
   }
+  saveCurrentVenture();
+}
+
+export function setCommentaryField(field, value) {
+  if (!AppState.commentary) {
+    AppState.commentary = createEmptyCommentary();
+  }
+  if (!(field in DEFAULT_COMMENTARY)) return;
+  AppState.commentary[field] = String(value || "");
+  saveCurrentVenture();
+}
+
+export function setCommentary(commentary = {}) {
+  AppState.commentary = normalizeCommentary(commentary);
+  saveCurrentVenture();
+}
+
+export function clearCommentary() {
+  AppState.commentary = createEmptyCommentary();
   saveCurrentVenture();
 }
 

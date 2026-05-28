@@ -12,9 +12,16 @@ import {
   incrementAssessmentNumber,
   getSubmissionStatus,
   recordSubmission,
-  generateVentureId
+  generateStateHash,
+  generateVentureId,
+  setCommentaryField
 } from "./state.js";
 import { readinessData } from "./data/index.js";
+import {
+  getSubmissionReadiness,
+  isFirstAssessmentRound,
+  normalizeCommentary
+} from "./submission-requirements.js";
 import { PORTFOLIOS } from "./data/constants.js";
 import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchUserAssessments, clearUserAssessmentsCache } from "./smartsheet.js";
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
@@ -365,11 +372,12 @@ export function updateSubmissionStatusUI() {
   statusEl.className = "submission-status";
 
   if (!status.submitted) {
+    statusEl.classList.add("not-submitted");
     textEl.textContent = "Not submitted";
     iconEl.innerHTML = '<circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/>';
   } else if (status.hasChanges) {
     statusEl.classList.add("modified");
-    textEl.textContent = `Modified since ${formatTime(status.lastSubmitted)}`;
+    textEl.textContent = `Unsaved changes since ${formatTime(status.lastSubmitted)}`;
     iconEl.innerHTML = '<path d="M12 2v20M2 12h20" stroke="currentColor" stroke-width="2"/>';
   } else {
     statusEl.classList.add("submitted");
@@ -378,6 +386,75 @@ export function updateSubmissionStatusUI() {
   }
 
   updateStartNewAssessmentButton();
+  updateSaveButtonHint();
+  updateSubmissionBanner();
+  updateBeforeUnloadGuard();
+}
+
+function hasDatabaseRelevantChanges() {
+  if (Auth.isExternal()) return false;
+  const status = getSubmissionStatus();
+  return !status.submitted || status.hasChanges;
+}
+
+function updateSaveButtonHint() {
+  const btn = document.getElementById("btn-save-db");
+  if (!btn) return;
+  if (Auth.isExternal()) return;
+
+  if (AppState.isEditingExisting) {
+    btn.title = "Update existing assessment in database";
+  } else if (isFirstAssessmentRound(AppState)) {
+    btn.title = "Open review step to add required call commentary and submit";
+  } else {
+    btn.title = "Submit completed assessment scores to the database";
+  }
+}
+
+function updateSubmissionBanner() {
+  const banner = document.getElementById("submission-banner");
+  if (!banner) return;
+
+  if (Auth.isExternal() || !hasDatabaseRelevantChanges()) {
+    banner.classList.add("hidden");
+    return;
+  }
+
+  const title = document.getElementById("submission-banner-title");
+  const message = document.getElementById("submission-banner-message");
+  const status = getSubmissionStatus();
+
+  if (title) {
+    title.textContent = status.submitted
+      ? "This assessment has unsaved database changes."
+      : "This assessment has not been submitted to the database.";
+  }
+  if (message) {
+    message.textContent = isFirstAssessmentRound(AppState)
+      ? "Click Save to Database to review scores, add required call commentary, and submit."
+      : "Click Save to Database after all active categories are scored.";
+  }
+
+  banner.classList.remove("hidden");
+}
+
+let beforeUnloadAttached = false;
+
+function handleBeforeUnload(e) {
+  if (!hasDatabaseRelevantChanges()) return;
+  e.preventDefault();
+  e.returnValue = "";
+}
+
+function updateBeforeUnloadGuard() {
+  const shouldAttach = hasDatabaseRelevantChanges();
+  if (shouldAttach && !beforeUnloadAttached) {
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    beforeUnloadAttached = true;
+  } else if (!shouldAttach && beforeUnloadAttached) {
+    window.removeEventListener("beforeunload", handleBeforeUnload);
+    beforeUnloadAttached = false;
+  }
 }
 
 function updateStartNewAssessmentButton() {
@@ -416,6 +493,10 @@ function handleStartNewAssessment() {
   // Clear scores for fresh assessment
   AppState.scores = {};
   AppState.goalLevels = {};
+  // Commentary is intake-only and tied to Assessment #1, so reset it on the
+  // new round. incrementAssessmentNumber() already clears it in state.js, but
+  // we set it again here to keep the local handler self-evident.
+  AppState.commentary = { coachability: "", startupInterest: "", callNotes: "" };
   AppState.assessedAt = null;
   AppState.currentCategory = Object.keys(readinessData)[0];
 
@@ -582,6 +663,13 @@ function loadAssessmentIntoState(assessment) {
   AppState.createdAt = new Date();
   AppState.currentCategory = "IP";
 
+  // Commentary: round-trip from Smartsheet for Assessment #1 rows
+  AppState.commentary = normalizeCommentary(assessment.commentary || {
+    coachability: assessment.Coachability,
+    startupInterest: assessment.StartupInterest,
+    callNotes: assessment.CallNotes,
+  });
+
   // Smartsheet integration fields
   AppState.ventureId = assessment.ventureId || generateVentureId();
   AppState.portfolio = assessment.portfolio || "";
@@ -594,7 +682,9 @@ function loadAssessmentIntoState(assessment) {
   // Assessment tracking
   AppState.currentAssessmentNumber = assessment.assessmentNumber || 1;
   AppState.lastSubmissionTimestamp = assessment.assessmentDate;
-  AppState.lastSubmittedStateHash = null;  // Will be recalculated
+  // Snapshot the just-loaded state so a freshly loaded row shows as clean
+  // until the advisor changes a score or commentary field.
+  AppState.lastSubmittedStateHash = generateStateHash();
 
   saveCurrentVenture();
   syncUIFromState();
@@ -773,6 +863,7 @@ function setupEventListeners() {
       hideModal("start-new-modal");
       hideModal("load-assessment-modal");
       hideModal("replace-warning-modal");
+      hideModal("submit-review-modal");
     }
   });
 
@@ -842,6 +933,37 @@ function setupEventListeners() {
 
   // Save to Database button
   document.getElementById("btn-save-db")?.addEventListener("click", handleSaveToDatabase);
+
+  // Sticky submission banner — same action as the topbar Save button
+  document.getElementById("submission-banner-save")?.addEventListener("click", handleSaveToDatabase);
+
+  // Submit-review modal (Assessment #1 commentary capture)
+  document.getElementById("submit-review-close")?.addEventListener("click", () => hideModal("submit-review-modal"));
+  document.getElementById("submit-review-cancel")?.addEventListener("click", () => hideModal("submit-review-modal"));
+  document.querySelector("#submit-review-modal .modal-backdrop")?.addEventListener("click", () => hideModal("submit-review-modal"));
+  document.getElementById("submit-review-confirm")?.addEventListener("click", submitAssessmentFromModal);
+
+  document.querySelectorAll('input[name="submit-review-coachability"]').forEach(input => {
+    input.addEventListener("change", (e) => {
+      setCommentaryField("coachability", e.target.value);
+      renderSubmitReviewModal();
+      updateSubmissionStatusUI();
+    });
+  });
+
+  document.querySelectorAll('input[name="submit-review-startup-interest"]').forEach(input => {
+    input.addEventListener("change", (e) => {
+      setCommentaryField("startupInterest", e.target.value);
+      renderSubmitReviewModal();
+      updateSubmissionStatusUI();
+    });
+  });
+
+  document.getElementById("call-notes")?.addEventListener("input", (e) => {
+    setCommentaryField("callNotes", e.target.value);
+    renderSubmitReviewModal();
+    updateSubmissionStatusUI();
+  });
 
   // Advisor name binding with localStorage persistence (debounced)
   // Also refreshes venture autocomplete since it filters by advisor
@@ -942,21 +1064,114 @@ const SUBMIT_COOLDOWN = 5000; // 5 seconds between submissions
 
 async function handleSaveToDatabase() {
   if (Auth.isExternal()) return;
-  const btn = document.getElementById("btn-save-db");
-  if (!btn || isCurrentlySubmitting()) return;
+  if (isCurrentlySubmitting()) return;
 
-  // Rate limiting - prevent rapid submissions
+  // Assessment #1 routes through the review modal so the advisor must add
+  // founder-call commentary before the database write. Assessment #2+ submits
+  // directly (subject to score-completeness validation in smartsheet.js).
+  if (isFirstAssessmentRound(AppState)) {
+    openSubmitReviewModal();
+    return;
+  }
+
+  await submitAssessmentDirect();
+}
+
+function openSubmitReviewModal() {
+  renderSubmitReviewModal();
+  showModal("submit-review-modal");
+}
+
+function renderSubmitReviewModal() {
+  const title = document.getElementById("submit-review-modal-title");
+  const checklist = document.getElementById("submit-checklist");
+  const confirmBtn = document.getElementById("submit-review-confirm");
+  const readiness = getSubmissionReadiness(AppState, readinessData);
+
+  if (title) {
+    const ventureLabel = AppState.ventureName || "Unnamed Assessment";
+    title.textContent = `Submit assessment for ${ventureLabel}?`;
+  }
+
+  const scoreLabel = readiness.missingScores.length === 0
+    ? "All active categories scored"
+    : `Score every active category (${readiness.missingScores.length} remaining: ${readiness.missingScores.join(", ")})`;
+
+  const items = [
+    { label: scoreLabel, complete: readiness.missingScores.length === 0 },
+    { label: "Founder coachability", complete: !readiness.missingCommentary.includes("Founder coachability") },
+    { label: "Startup interest", complete: !readiness.missingCommentary.includes("Startup interest") },
+    { label: "Call notes, milestone ideas, and task ideas", complete: !readiness.missingCommentary.includes("Call notes, milestone ideas, and task ideas") },
+  ];
+
+  if (checklist) {
+    checklist.innerHTML = `
+      <h4>Submission Checklist</h4>
+      <ul>
+        ${items.map(item => `<li class="${item.complete ? "complete" : ""}">${escapeHtml(item.label)}</li>`).join("")}
+      </ul>
+    `;
+  }
+
+  const commentary = AppState.commentary || {};
+  document.querySelectorAll('input[name="submit-review-coachability"]').forEach(input => {
+    input.checked = input.value === (commentary.coachability || "");
+  });
+  document.querySelectorAll('input[name="submit-review-startup-interest"]').forEach(input => {
+    input.checked = input.value === (commentary.startupInterest || "");
+  });
+  const notes = document.getElementById("call-notes");
+  if (notes && notes.value !== (commentary.callNotes || "")) {
+    notes.value = commentary.callNotes || "";
+  }
+
+  if (confirmBtn) {
+    confirmBtn.disabled = !readiness.canSubmit;
+    confirmBtn.title = readiness.canSubmit
+      ? "Submit to database"
+      : "Complete all checklist items before submitting";
+  }
+}
+
+async function submitAssessmentFromModal() {
+  const readiness = getSubmissionReadiness(AppState, readinessData);
+  if (!readiness.canSubmit) {
+    renderSubmitReviewModal();
+    return;
+  }
+
+  const modalBtn = document.getElementById("submit-review-confirm");
+  const originalText = modalBtn ? modalBtn.textContent : null;
+  if (modalBtn) {
+    modalBtn.disabled = true;
+    modalBtn.textContent = "Submitting...";
+  }
+
+  const result = await submitAssessmentDirect();
+
+  if (result?.success) {
+    hideModal("submit-review-modal");
+    if (modalBtn) modalBtn.textContent = originalText || "Submit";
+  } else if (modalBtn) {
+    modalBtn.textContent = originalText || "Submit";
+    renderSubmitReviewModal();
+  }
+}
+
+async function submitAssessmentDirect() {
+  const btn = document.getElementById("btn-save-db");
+  if (!btn || isCurrentlySubmitting()) return { success: false };
+
+  // Rate limiting applies only to the actual database write, not to opening
+  // the review modal — so the advisor can re-open the modal freely.
   const now = Date.now();
   if (now - lastSubmitTime < SUBMIT_COOLDOWN) {
     showToast("Please wait before saving again", "info");
-    return;
+    return { success: false };
   }
   lastSubmitTime = now;
 
-  // Store original content
   const originalHTML = btn.innerHTML;
-
-  // Update button state - show loading
   btn.disabled = true;
   btn.innerHTML = `
     <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -971,8 +1186,7 @@ async function handleSaveToDatabase() {
 
     if (result.success) {
       showToast("Assessment saved to database", "success");
-      updateSubmissionStatusUI();  // Update status indicator
-      // Show success state briefly
+      updateSubmissionStatusUI();
       btn.innerHTML = `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="20 6 9 17 4 12"></polyline>
@@ -983,15 +1197,18 @@ async function handleSaveToDatabase() {
         btn.innerHTML = originalHTML;
         btn.disabled = false;
       }, 2000);
-    } else {
-      showToast(result.message || "Failed to save", "error");
-      btn.innerHTML = originalHTML;
-      btn.disabled = false;
+      return { success: true };
     }
+
+    showToast(result.message || "Failed to save", "error");
+    btn.innerHTML = originalHTML;
+    btn.disabled = false;
+    return { success: false, message: result.message };
   } catch (error) {
     showToast("Failed to save: " + error.message, "error");
     btn.innerHTML = originalHTML;
     btn.disabled = false;
+    return { success: false, message: error.message };
   }
 }
 
