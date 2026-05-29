@@ -74,8 +74,8 @@ function saveActiveId(id) {
 
 export function hasCurrentVentureData() {
   const commentary = normalizeCommentary(AppState.commentary);
-  return Object.keys(AppState.scores || {}).length > 0 ||
-    Object.keys(AppState.goalLevels || {}).length > 0 ||
+  return Object.values(AppState.scores || {}).some(score => score != null) ||
+    Object.values(AppState.goalLevels || {}).some(level => level != null) ||
     Object.values(commentary).some(value => value !== "") ||
     String(AppState.ventureName || "").trim() !== "" ||
     String(AppState.portfolio || "").trim() !== "" ||

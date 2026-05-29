@@ -69,6 +69,10 @@ function updateTopbarForVDR() {
   const ventureBar = document.querySelector('.venture-bar');
   if (ventureBar) ventureBar.style.display = 'none';
 
+  // Hide the assessment workspace header (normal assessment mode only)
+  const assessmentWorkspace = document.getElementById('assessment-workspace');
+  if (assessmentWorkspace) assessmentWorkspace.style.display = 'none';
+
   // Hide the settings bar
   const settingsBar = document.getElementById('settings-bar');
   if (settingsBar) settingsBar.style.display = 'none';

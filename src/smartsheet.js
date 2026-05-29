@@ -92,9 +92,13 @@ export async function submitToSmartsheet() {
       const actionMsg = isUpdate ? "updated" : "saved";
       console.log(`[Smartsheet] Assessment ${actionMsg} successfully`);
       return { success: true, message: `Assessment ${actionMsg} to database` };
-    } else {
-      throw new Error(result.error || "Submission failed");
     }
+
+    return {
+      success: false,
+      message: result.error || "Submission failed",
+      unconfirmed: !!result.unconfirmed
+    };
 
   } catch (error) {
     console.error("[Smartsheet] Submission error:", error);
@@ -115,6 +119,10 @@ function validateSubmission() {
 
   if (!AppState.advisorName || !AppState.advisorName.trim()) {
     return { valid: false, message: "Please enter your name (Advisor Name)" };
+  }
+
+  if (!AppState.portfolio || !AppState.portfolio.trim()) {
+    return { valid: false, message: "Please select a portfolio" };
   }
 
   // Every active category must be scored before any submission (Assessment #1 or later).
@@ -223,11 +231,17 @@ async function submitWithRetry(data, maxRetries = MAX_RETRIES) {
       return result;
     }
 
+    if (result.unconfirmed) {
+      return result;
+    }
     lastError = result.error || "Unknown error";
     console.warn(`[Smartsheet] Attempt ${attempt + 1} failed:`, lastError);
   }
 
-  return { success: false, error: `Failed after ${maxRetries + 1} attempts: ${lastError}` };
+  return {
+    success: false,
+    error: `Failed after ${maxRetries + 1} attempts: ${lastError}`
+  };
 }
 
 /**
@@ -272,8 +286,14 @@ function submitViaScript(data) {
       completed = true;
       cleanup();
       console.log("[Smartsheet] Script failed, trying image beacon");
-      // Fallback to image beacon
-      submitViaImage(data).then(resolve);
+      // Attempt fallback, but do not mark the save confirmed without JSONP response.
+      submitViaImage(data).then(() => {
+        resolve({
+          success: false,
+          unconfirmed: true,
+          error: "Database save could not be confirmed. Please retry from Save to Database."
+        });
+      });
     };
 
     // Timeout - try image beacon
@@ -282,7 +302,13 @@ function submitViaScript(data) {
         completed = true;
         cleanup();
         console.log("[Smartsheet] Script timeout, trying image beacon");
-        submitViaImage(data).then(resolve);
+        submitViaImage(data).then(() => {
+          resolve({
+            success: false,
+            unconfirmed: true,
+            error: "Database save could not be confirmed. Please retry from Save to Database."
+          });
+        });
       }
     }, timeoutMs);
 
@@ -294,7 +320,7 @@ function submitViaScript(data) {
 /**
  * Fire-and-forget image beacon fallback
  * @param {Object} data - Request data
- * @returns {Promise<{success: boolean, message: string}>}
+ * @returns {Promise<{attempted: boolean, confirmed: boolean}>}
  */
 function submitViaImage(data) {
   return new Promise((resolve) => {
@@ -303,20 +329,18 @@ function submitViaImage(data) {
 
     const img = new Image();
     img.onload = () => {
-      console.log("[Smartsheet] Image beacon completed");
-      resolve({ success: true, message: "Saved via beacon" });
+      console.warn("[Smartsheet] Image beacon completed but response is unverified");
+      resolve({ attempted: true, confirmed: false });
     };
     img.onerror = () => {
-      // Even on error, the request was likely sent
-      console.log("[Smartsheet] Image beacon sent (fire and forget)");
-      resolve({ success: true, message: "Submitted (fire and forget)" });
+      console.warn("[Smartsheet] Image beacon attempted but response is unverified");
+      resolve({ attempted: true, confirmed: false });
     };
 
-    console.log("[Smartsheet] Submitting via image beacon");
+    console.warn("[Smartsheet] Attempting unverified image beacon fallback");
     img.src = url;
 
-    // Resolve after delay regardless
-    setTimeout(() => resolve({ success: true, message: "Submitted" }), 2000);
+    setTimeout(() => resolve({ attempted: true, confirmed: false }), 2000);
   });
 }
 

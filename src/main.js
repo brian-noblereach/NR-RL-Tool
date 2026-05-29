@@ -200,7 +200,7 @@ function refreshVentureSelector() {
   if (!select) return;
 
   const ventures = getAllVentures();
-  select.innerHTML = `<option value="">Select a venture...</option>`;
+  select.innerHTML = `<option value="">Select a local draft...</option>`;
   
   ventures.forEach(v => {
     const name = v.ventureName || "Unnamed Assessment";
@@ -259,6 +259,7 @@ function syncUIFromState() {
   refreshVentureSelector();
   updateSubmissionStatusUI();
   updateStartNewAssessmentButton();
+  renderWorkspaceHeader();
 }
 
 /* -------------------------
@@ -358,6 +359,140 @@ function formatTime(isoString) {
   return `${diffDays}d ago`;
 }
 
+function formatDatabaseTimestamp(isoString) {
+  if (!isoString) return "No confirmed database save yet";
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return "Database save time unavailable";
+  return `Saved to NobleReach database ${d.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  })}`;
+}
+
+function getWorkspaceSourceLabel() {
+  if (AppState.isEditingExisting && AppState.smartsheetRowId) {
+    return "Loaded from database";
+  }
+  if (AppState.currentAssessmentNumber > 1) {
+    return "New assessment round";
+  }
+  if (AppState.activeVentureId && hasCurrentVentureData()) {
+    return "Local draft";
+  }
+  return "Blank draft";
+}
+
+function getSaveConsequenceLabel(status) {
+  if (status.submitted && !status.hasChanges) {
+    return "Saved to database";
+  }
+  if (AppState.isEditingExisting && AppState.smartsheetRowId) {
+    return "This save will update the existing saved assessment";
+  }
+  return "This save will create a new saved assessment";
+}
+
+function getMetadataMissingLabels() {
+  const missing = [];
+  if (!String(AppState.ventureName || "").trim()) missing.push("Venture name");
+  if (!String(AppState.advisorName || "").trim()) missing.push("Advisor name");
+  if (!Auth.isExternal() && !String(AppState.portfolio || "").trim()) missing.push("Portfolio");
+  return missing;
+}
+
+function buildWorkspaceChips(readiness, metadataMissing) {
+  const chips = [];
+  const completedScores = readiness.activeCategories.length - readiness.missingScores.length;
+
+  chips.push({
+    label: `${completedScores}/${readiness.activeCategories.length} scores complete`,
+    complete: readiness.missingScores.length === 0
+  });
+
+  chips.push({
+    label: metadataMissing.length === 0
+      ? "Required fields complete"
+      : `${metadataMissing.length} required ${metadataMissing.length === 1 ? "field" : "fields"} missing`,
+    complete: metadataMissing.length === 0
+  });
+
+  if (readiness.isFirstAssessment) {
+    chips.push({
+      label: readiness.missingCommentary.length === 0
+        ? "Founder-call commentary complete"
+        : "First-assessment notes needed",
+      complete: readiness.missingCommentary.length === 0
+    });
+  }
+
+  return chips;
+}
+
+function renderWorkspaceHeader() {
+  const title = document.getElementById("workspace-venture-title");
+  const assessmentBadge = document.getElementById("workspace-assessment-badge");
+  const sourceBadge = document.getElementById("workspace-source-badge");
+  const consequenceBadge = document.getElementById("workspace-save-consequence");
+  const saveRow = document.getElementById("workspace-save-row");
+  const saveTitle = document.getElementById("workspace-save-title");
+  const saveDetail = document.getElementById("workspace-save-detail");
+  const chipsEl = document.getElementById("workspace-completion-chips");
+  const dbTimestamp = document.getElementById("workspace-database-timestamp");
+
+  if (!title || !assessmentBadge || !sourceBadge || !consequenceBadge || !saveRow || !saveTitle || !saveDetail || !chipsEl || !dbTimestamp) {
+    return;
+  }
+
+  const status = getSubmissionStatus();
+  const readiness = getSubmissionReadiness(AppState, readinessData);
+  const metadataMissing = getMetadataMissingLabels();
+  const sourceLabel = getWorkspaceSourceLabel();
+  const saveConsequence = getSaveConsequenceLabel(status);
+  const hasRelevantData = hasCurrentVentureData();
+  const needsDatabaseSave = !Auth.isExternal() && hasRelevantData && (!status.submitted || status.hasChanges);
+
+  title.textContent = AppState.ventureName?.trim() || "Untitled venture";
+  assessmentBadge.textContent = `Assessment #${AppState.currentAssessmentNumber || 1}`;
+  sourceBadge.textContent = sourceLabel;
+  consequenceBadge.textContent = saveConsequence;
+  consequenceBadge.classList.toggle("success", status.submitted && !status.hasChanges);
+  consequenceBadge.classList.toggle("warning", !status.submitted || status.hasChanges);
+
+  saveRow.classList.toggle("hidden", Auth.isExternal());
+  saveRow.classList.toggle("is-saved", hasRelevantData && status.submitted && !status.hasChanges);
+  saveRow.classList.toggle("is-unconfirmed", false);
+
+  if (!hasRelevantData) {
+    saveTitle.textContent = "Start by entering a venture name or choosing scores.";
+    saveDetail.textContent = "Local changes will save in this browser. Save to Database is required when the assessment is ready for NobleReach.";
+  } else if (status.submitted && !status.hasChanges) {
+    saveTitle.textContent = "Saved to the NobleReach database.";
+    saveDetail.textContent = "This browser copy matches the last confirmed database save.";
+  } else {
+    saveTitle.textContent = "Not saved to the NobleReach database.";
+    saveDetail.textContent = status.submitted
+      ? "Local changes are saved only in this browser until you complete Save to Database again."
+      : "Local changes are saved only in this browser until you complete Save to Database.";
+  }
+
+  chipsEl.innerHTML = buildWorkspaceChips(readiness, metadataMissing)
+    .map(chip => `<span class="workspace-chip ${chip.complete ? "complete" : "missing"}">${escapeHtml(chip.label)}</span>`)
+    .join("");
+
+  dbTimestamp.textContent = formatDatabaseTimestamp(AppState.lastSubmissionTimestamp);
+
+  const saveBtn = document.getElementById("btn-save-db");
+  if (saveBtn) {
+    saveBtn.classList.toggle("primary", needsDatabaseSave);
+    saveBtn.title = status.submitted && status.hasChanges
+      ? "Save changes to the NobleReach database"
+      : "Save this assessment to the NobleReach database";
+  }
+}
+
 export function updateSubmissionStatusUI() {
   const statusEl = document.getElementById("submission-status");
   if (!statusEl) return;
@@ -391,6 +526,7 @@ export function updateSubmissionStatusUI() {
   updateSaveButtonHint();
   updateSubmissionBanner();
   updateBeforeUnloadGuard();
+  renderWorkspaceHeader();
 }
 
 function hasDatabaseRelevantChanges() {
@@ -404,43 +540,24 @@ function hasDatabaseRelevantChanges() {
 
 function updateSaveButtonHint() {
   const btn = document.getElementById("btn-save-db");
-  if (!btn) return;
-  if (Auth.isExternal()) return;
+  if (!btn || Auth.isExternal()) return;
 
-  if (AppState.isEditingExisting) {
-    btn.title = "Update existing assessment in database";
+  const status = getSubmissionStatus();
+  if (AppState.isEditingExisting && AppState.smartsheetRowId) {
+    btn.title = status.hasChanges
+      ? "Save changes to the existing database assessment"
+      : "This assessment is already saved to the database";
   } else if (isFirstAssessmentRound(AppState)) {
-    btn.title = "Open review step to add required call commentary and submit";
+    btn.title = "Open the review step, add required founder-call commentary, and submit to the database";
   } else {
-    btn.title = "Submit completed assessment scores to the database";
+    btn.title = "Submit this assessment round to the database";
   }
 }
 
 function updateSubmissionBanner() {
   const banner = document.getElementById("submission-banner");
-  if (!banner) return;
-
-  if (Auth.isExternal() || !hasDatabaseRelevantChanges()) {
-    banner.classList.add("hidden");
-    return;
-  }
-
-  const title = document.getElementById("submission-banner-title");
-  const message = document.getElementById("submission-banner-message");
-  const status = getSubmissionStatus();
-
-  if (title) {
-    title.textContent = status.submitted
-      ? "This assessment has unsaved database changes."
-      : "This assessment has not been submitted to the database.";
-  }
-  if (message) {
-    message.textContent = isFirstAssessmentRound(AppState)
-      ? "Click Save to Database to review scores, add required call commentary, and submit."
-      : "Click Save to Database after all active categories are scored.";
-  }
-
-  banner.classList.remove("hidden");
+  if (banner) banner.classList.add("hidden");
+  renderWorkspaceHeader();
 }
 
 let beforeUnloadAttached = false;
@@ -468,12 +585,12 @@ function updateStartNewAssessmentButton() {
 
   const status = getSubmissionStatus();
 
-  if (status.submitted) {
+  if (status.submitted && !status.hasChanges) {
     btn.disabled = false;
-    btn.title = `Start Assessment #${AppState.currentAssessmentNumber + 1} after venture has progressed`;
+    btn.title = `Start Assessment #${AppState.currentAssessmentNumber + 1} for this same venture after it has progressed`;
   } else {
     btn.disabled = true;
-    btn.title = "Submit current assessment before starting new one";
+    btn.title = "Save the current assessment to the database before starting a new round";
   }
 }
 
@@ -828,6 +945,7 @@ function setupEventListeners() {
       initializeCategories();
       updateSummary();
       syncSummaryHeaderAndIcons();
+      updateSubmissionStatusUI();
     });
   }
 
@@ -877,6 +995,8 @@ function setupEventListeners() {
       AppState.ventureName = e.target.value;
       saveCurrentVenture();
       refreshVentureSelector();
+      updateSubmissionStatusUI();
+      renderWorkspaceHeader();
     });
 
     // Check for portfolio auto-fill when user selects from datalist or finishes typing
@@ -973,10 +1093,12 @@ function setupEventListeners() {
     let advisorDebounceTimer;
     advisorInput.addEventListener("input", (e) => {
       AppState.advisorName = e.target.value;
+      renderWorkspaceHeader();
       // Debounce localStorage write and autocomplete refresh
       clearTimeout(advisorDebounceTimer);
       advisorDebounceTimer = setTimeout(() => {
         saveAdvisorPreference(e.target.value);
+        renderWorkspaceHeader();
         if (!Auth.isExternal()) {
           populateVentureNameAutocomplete();
         }
@@ -990,6 +1112,7 @@ function setupEventListeners() {
     portfolioSelect.addEventListener("change", (e) => {
       AppState.portfolio = e.target.value;
       saveCurrentVenture();
+      updateSubmissionStatusUI();
     });
   }
 
@@ -1088,10 +1211,12 @@ function renderSubmitReviewModal() {
   const checklist = document.getElementById("submit-checklist");
   const confirmBtn = document.getElementById("submit-review-confirm");
   const readiness = getSubmissionReadiness(AppState, readinessData);
+  const metadataMissing = getMetadataMissingLabels();
+  const canSubmit = readiness.canSubmit && metadataMissing.length === 0;
 
   if (title) {
     const ventureLabel = AppState.ventureName || "Unnamed Assessment";
-    title.textContent = `Submit assessment for ${ventureLabel}?`;
+    title.textContent = `Save ${ventureLabel} to the NobleReach database?`;
   }
 
   const scoreLabel = readiness.missingScores.length === 0
@@ -1099,6 +1224,12 @@ function renderSubmitReviewModal() {
     : `Score every active category (${readiness.missingScores.length} remaining: ${readiness.missingScores.join(", ")})`;
 
   const items = [
+    {
+      label: metadataMissing.length === 0
+        ? "Required venture, advisor, and portfolio fields complete"
+        : `Complete required fields (${metadataMissing.join(", ")} missing)`,
+      complete: metadataMissing.length === 0
+    },
     { label: scoreLabel, complete: readiness.missingScores.length === 0 },
     { label: "Founder coachability", complete: !readiness.missingCommentary.includes("Founder coachability") },
     { label: "Startup interest", complete: !readiness.missingCommentary.includes("Startup interest") },
@@ -1127,8 +1258,8 @@ function renderSubmitReviewModal() {
   }
 
   if (confirmBtn) {
-    confirmBtn.disabled = !readiness.canSubmit;
-    confirmBtn.title = readiness.canSubmit
+    confirmBtn.disabled = !canSubmit;
+    confirmBtn.title = canSubmit
       ? "Submit to database"
       : "Complete all checklist items before submitting";
   }
@@ -1136,7 +1267,8 @@ function renderSubmitReviewModal() {
 
 async function submitAssessmentFromModal() {
   const readiness = getSubmissionReadiness(AppState, readinessData);
-  if (!readiness.canSubmit) {
+  const metadataMissing = getMetadataMissingLabels();
+  if (!readiness.canSubmit || metadataMissing.length > 0) {
     renderSubmitReviewModal();
     return;
   }
@@ -1186,7 +1318,7 @@ async function submitAssessmentDirect() {
     const result = await submitToSmartsheet();
 
     if (result.success) {
-      showToast("Assessment saved to database", "success");
+      showToast("Saved to NobleReach database", "success");
       updateSubmissionStatusUI();
       btn.innerHTML = `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1201,12 +1333,14 @@ async function submitAssessmentDirect() {
       return { success: true };
     }
 
-    showToast(result.message || "Failed to save", "error");
+    showToast(result.unconfirmed ? "Database save could not be confirmed. Please retry." : (result.message || "Failed to save"), "error");
+    updateSubmissionStatusUI();
     btn.innerHTML = originalHTML;
     btn.disabled = false;
-    return { success: false, message: result.message };
+    return { success: false, message: result.message, unconfirmed: result.unconfirmed };
   } catch (error) {
     showToast("Failed to save: " + error.message, "error");
+    updateSubmissionStatusUI();
     btn.innerHTML = originalHTML;
     btn.disabled = false;
     return { success: false, message: error.message };
