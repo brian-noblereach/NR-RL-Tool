@@ -144,7 +144,7 @@
       <div class="workspace-save-row" id="workspace-save-row" role="status" aria-live="polite">
         <div class="workspace-save-message">
           <strong id="workspace-save-title">Not saved to the NobleReach database.</strong>
-          <span id="workspace-save-detail">Local changes are saved only in this browser until you complete Save to Database.</span>
+          <span id="workspace-save-detail">Local changes are saved only in this browser until you complete Review & Save to Database.</span>
           <div class="workspace-completion-chips" id="workspace-completion-chips"></div>
           <div class="workspace-subtext">
             <span>Last edited: <time id="assessed-at">&mdash;</time></span>
@@ -163,7 +163,7 @@
             <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
             <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
           </svg>
-          <span>Save to Database</span>
+          <span>Review & Save to Database</span>
         </button>
       </div>
     </section>
@@ -192,9 +192,9 @@
     <div id="submission-banner" class="submission-banner hidden">
       <div class="submission-banner-content" role="status" aria-live="polite">
         <strong id="submission-banner-title">This assessment has not been submitted to the database.</strong>
-        <span id="submission-banner-message">Click Save to Database to review scores, add required call commentary, and submit.</span>
+        <span id="submission-banner-message">Click Review & Save to Database to review scores, add required call commentary, and submit.</span>
       </div>
-      <button id="submission-banner-save" class="btn small accent">Save to Database</button>
+      <button id="submission-banner-save" class="btn small accent">Review & Save to Database</button>
     </div>
 
     <!-- MAIN APP VIEW -->
@@ -320,7 +320,7 @@
             <li><strong>Select a category</strong> from the sidebar to begin assessment</li>
             <li><strong>Choose a readiness level</strong> that best describes the venture's current state</li>
             <li><strong>Levels are cumulative</strong>—selecting Level 5 means Levels 1-4 have been achieved</li>
-            <li><strong>Use Save to Database</strong> when the assessment is ready for NobleReach</li>
+            <li><strong>Use Review & Save to Database</strong> when the assessment is ready for NobleReach</li>
             <li><strong>Export a PDF</strong> when you need a local snapshot</li>
           </ul>
         </div>
@@ -499,7 +499,7 @@
       </div>
       <div class="modal-body">
         <p id="submit-review-intro" class="submit-review-intro">
-          Review completeness and add required founder-call commentary before writing this row to the database.
+          Review completeness and add founder-call commentary before saving.
         </p>
         <div class="submit-review-grid">
           <div class="submit-checklist" id="submit-checklist"></div>
@@ -525,9 +525,9 @@
         </div>
       </div>
       <div class="modal-footer submit-review-footer">
-        <span class="submit-review-note">Nothing is saved to the database until you click Submit.</span>
+        <span class="submit-review-note">Nothing is saved until you confirm this review step.</span>
         <button id="submit-review-cancel" class="btn outline">Cancel</button>
-        <button id="submit-review-confirm" class="btn accent" disabled>Submit</button>
+        <button id="submit-review-confirm" class="btn accent" disabled>Submit to Database</button>
       </div>
     </div>
   </div>

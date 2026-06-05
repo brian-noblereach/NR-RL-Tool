@@ -2018,6 +2018,11 @@ body {
   line-height: 1.4;
 }
 
+.required.optional {
+  color: var(--slate-500);
+  font-weight: 500;
+}
+
 /* Form elements in modals */
 .form-group {
   margin-bottom: 16px;
