@@ -14,6 +14,7 @@ import {
   isFirstAssessmentRound,
   normalizeCommentary
 } from "./submission-requirements.js";
+import { normalizeTrackAssignment } from "./qualification-matching.js";
 
 // Google Apps Script Web App URL (same proxy as Qual Tool)
 const PROXY_URL = "https://script.google.com/macros/s/AKfycbzt7wElvzQv0CNs-icg7QWpxjf4E5FGqWa6KpCY4zSa_thccGNWhw-THLTpnn8GJa2W/exec";
@@ -157,6 +158,8 @@ function buildPayload() {
     : new Date().toISOString();
 
   const commentary = normalizeCommentary(AppState.commentary);
+  const institution = sanitizeString(AppState.institution, 120);
+  const trackAssignment = normalizeTrackAssignment(AppState.trackAssignment);
 
   return {
     // Identity fields (sanitized)
@@ -164,6 +167,8 @@ function buildPayload() {
     ventureName: sanitizeString(AppState.ventureName),
     advisorName: sanitizeString(AppState.advisorName),
     portfolio: sanitizeString(AppState.portfolio, 100),
+    ...(institution && { institution }),
+    ...(trackAssignment && { trackAssignment }),
 
     // Assessment metadata
     assessmentNumber: assessmentNumber,
@@ -425,7 +430,7 @@ export async function fetchVentureData() {
 /**
  * Fetch venture names from Qualification Tool Smartsheet
  */
-function fetchFromQualSheet() {
+function fetchFromQualSheet({ dedupe = true, limit = 200 } = {}) {
   return new Promise((resolve) => {
     const timeoutMs = 8000;
     let completed = false;
@@ -433,7 +438,7 @@ function fetchFromQualSheet() {
 
     const requestData = {
       action: "smartsheet_list",
-      limit: 200
+      limit
     };
 
     const encodedData = encodeURIComponent(JSON.stringify(requestData));
@@ -445,17 +450,39 @@ function fetchFromQualSheet() {
       cleanup();
 
       if (response && response.success && response.assessments) {
+        const rawRecords = response.assessments
+          .filter(a => a.ventureName && typeof a.ventureName === "string" && a.ventureName.trim())
+          .map(a => ({
+            name: a.ventureName.trim(),
+            ventureName: a.ventureName.trim(),
+            portfolio: a.portfolio || "",
+            advisorName: a.advisorName || "",
+            advisorNames: a.advisorName ? [a.advisorName.trim().toLowerCase()] : [],
+            institution: a.institution || "",
+            trackAssignment: normalizeTrackAssignment(a.trackAssignment),
+            source: "qual",
+            timestamp: a.timestamp || ""
+          }));
+
+        if (!dedupe) {
+          resolve(rawRecords);
+          return;
+        }
+
         // Extract venture data with portfolio and advisor names
         const ventureMap = new Map();
         response.assessments
           .filter(a => a.ventureName && typeof a.ventureName === "string" && a.ventureName.trim())
           .forEach(a => {
             const key = a.ventureName.trim().toLowerCase();
+            const trackAssignment = normalizeTrackAssignment(a.trackAssignment);
             if (!ventureMap.has(key)) {
               ventureMap.set(key, {
                 name: a.ventureName.trim(),
                 portfolio: a.portfolio || "",
                 advisorNames: new Set(),
+                institution: a.institution || "",
+                trackAssignment,
                 source: "qual",
                 timestamp: a.timestamp || ""
               });
@@ -465,6 +492,8 @@ function fetchFromQualSheet() {
               entry.advisorNames.add(a.advisorName.trim().toLowerCase());
             }
             if (!entry.portfolio && a.portfolio) entry.portfolio = a.portfolio;
+            if (!entry.institution && a.institution) entry.institution = a.institution;
+            if (!entry.trackAssignment && trackAssignment) entry.trackAssignment = trackAssignment;
           });
 
         // Convert Sets to Arrays
@@ -507,6 +536,15 @@ function fetchFromQualSheet() {
 
     document.body.appendChild(script);
   });
+}
+
+/**
+ * Fetch raw Qualification Tool records for Assessment #1 reporting metadata matching.
+ * Keeps separate rows so the review modal can show ambiguous candidates.
+ * @returns {Promise<Array<{name, ventureName, portfolio, advisorName, advisorNames, institution, trackAssignment, source, timestamp}>>}
+ */
+export function fetchQualificationRecords() {
+  return fetchFromQualSheet({ dedupe: false, limit: 500 });
 }
 
 /**
@@ -734,6 +772,8 @@ function processRLAssessments(raw) {
       ventureName: a.ventureName.trim(),
       advisorName: a.advisorName || "",
       portfolio: a.portfolio || "",
+      institution: a.institution || "",
+      trackAssignment: normalizeTrackAssignment(a.trackAssignment),
       assessmentNumber: parseInt(a.assessmentNumber, 10) || 1,
       assessmentDate: a.assessmentDate || a.submissionTimestamp || "",
       isHealthRelated: a.isHealthRelated === true || a.isHealthRelated === "true",

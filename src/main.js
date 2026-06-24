@@ -15,6 +15,7 @@ import {
   generateStateHash,
   generateVentureId,
   setCommentaryField,
+  setReportingMetadata,
   resetActiveVenture,
   hasCurrentVentureData
 } from "./state.js";
@@ -28,8 +29,14 @@ import {
   buildReviewChecklist,
   getReviewFlowConfig
 } from "./review-flow.js";
+import { savePdfSnapshot } from "./pdf-export.js";
+import { startExternalFlow } from "./external-flow.js";
 import { PORTFOLIOS } from "./data/constants.js";
-import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchUserAssessments, clearUserAssessmentsCache } from "./smartsheet.js";
+import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchUserAssessments, fetchQualificationRecords, clearUserAssessmentsCache } from "./smartsheet.js";
+import {
+  getQualificationMatchResolution,
+  normalizeTrackAssignment
+} from "./qualification-matching.js";
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
 import { updateSummary } from "./summary.js";
 import { Auth } from "./auth.js";
@@ -268,151 +275,9 @@ function syncUIFromState() {
 
 /* -------------------------
    PDF Export
+   savePdfSnapshot lives in ./pdf-export.js so the external guided stepper can
+   reuse the identical assessment PDF. Imported at the top of this file.
 --------------------------*/
-function buildSnapshotRows() {
-  const allowed = new Set(categoriesToInclude());
-  const rows = [];
-  CATEGORY_ORDER.forEach(cat => {
-    if (!readinessData[cat] || !allowed.has(cat)) return;
-    rows.push({ category: cat, level: AppState.scores[cat] != null ? AppState.scores[cat] : "-" });
-  });
-  return rows;
-}
-
-function addWrappedPdfText(doc, text, x, y, maxWidth, lineHeight) {
-  const lines = doc.splitTextToSize(String(text || ""), maxWidth);
-  lines.forEach(line => {
-    if (y > 280) {
-      doc.addPage();
-      y = 20;
-    }
-    doc.text(line, x, y);
-    y += lineHeight;
-  });
-  return y;
-}
-
-function ensurePdfSpace(doc, y, needed = 20) {
-  if (y + needed <= 280) return y;
-  doc.addPage();
-  return 20;
-}
-
-function savePdfSnapshot(options = {}) {
-  const jsPDF = window.jspdf && window.jspdf.jsPDF;
-  if (!jsPDF) {
-    alert("PDF library failed to load. Please check your network and reload the page.");
-    return;
-  }
-  if (!AppState.assessedAt) stampAssessedNow();
-
-  const ventureName = (AppState.ventureName && AppState.ventureName.trim()) || "(unnamed venture)";
-  const readiness = getSubmissionReadiness(AppState, readinessData);
-  const commentary = normalizeCommentary(AppState.commentary);
-  const includeCommentary = options.includeCommentary !== false;
-  const showPartialWarning = Boolean(options.showPartialWarning && readiness.missingScores.length > 0);
-  const assessed = AppState.assessedAt ? formatLocalDateTime(AppState.assessedAt) : "—";
-
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const left = 16;
-  let y = 20;
-  const lh = 8;
-
-  // Header
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text("NobleReach Readiness Level Assessment", left, y);
-  y += lh + 2;
-  
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(12);
-  doc.text(`Venture: ${ventureName}`, left, y);
-  y += lh;
-  doc.text(`Assessed: ${assessed}`, left, y);
-  y += lh + 2;
-
-  if (showPartialWarning) {
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(154, 52, 18);
-    y = addWrappedPdfText(
-      doc,
-      `Partial assessment: ${readiness.missingScores.length} active ${readiness.missingScores.length === 1 ? "category is" : "categories are"} unscored (${readiness.missingScores.join(", ")}).`,
-      left,
-      y,
-      178,
-      6
-    );
-    doc.setTextColor(0);
-    y += 2;
-  }
-
-  // Table header
-  doc.setFont("helvetica", "bold");
-  doc.text("Category", left, y);
-  doc.text("Level", left + 120, y);
-  y += lh;
-  doc.setLineWidth(0.2);
-  doc.line(left, y - 6, left + 160, y - 6);
-  doc.setFont("helvetica", "normal");
-
-  buildSnapshotRows().forEach(r => {
-    if (y > 280) {
-      doc.addPage();
-      y = 20;
-      doc.setFont("helvetica", "bold");
-      doc.text("Category", left, y);
-      doc.text("Level", left + 120, y);
-      y += lh;
-      doc.line(left, y - 6, left + 160, y - 6);
-      doc.setFont("helvetica", "normal");
-    }
-    doc.text(r.category, left, y);
-    doc.text(String(r.level), left + 120, y);
-    y += lh;
-  });
-
-  if (includeCommentary) {
-    const commentaryRows = [
-      ["Founder coachability", commentary.coachability],
-      ["Interest in forming a startup", commentary.startupInterest],
-      ["Call notes, milestone ideas, and task ideas", commentary.callNotes],
-    ].filter(([, value]) => value);
-
-    y = ensurePdfSpace(doc, y + 6, commentaryRows.length > 0 ? 34 : 20);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text("Assessment Commentary", left, y);
-    y += lh;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-
-    if (commentaryRows.length === 0) {
-      doc.text("No commentary provided.", left, y);
-      y += lh;
-    } else {
-      commentaryRows.forEach(([label, value]) => {
-        y = ensurePdfSpace(doc, y, 18);
-        doc.setFont("helvetica", "bold");
-        doc.text(`${label}:`, left, y);
-        y += 6;
-        doc.setFont("helvetica", "normal");
-        y = addWrappedPdfText(doc, value, left, y, 178, 5);
-        y += 2;
-      });
-    }
-  }
-
-  // Footer
-  y = ensurePdfSpace(doc, y + lh, 12);
-  doc.setFontSize(10);
-  doc.setTextColor(100);
-  doc.text("Generated by NobleReach Readiness Level Assessment Tool (Pilot v0.5)", left, y);
-
-  const now = new Date();
-  const fnameTs = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
-  const fileSafeName = ventureName.replace(/[^\w\-]+/g, "_");
-  doc.save(`${fileSafeName}_${fnameTs}.pdf`);
-}
 
 /* -------------------------
    Submission Status UI
@@ -880,6 +745,8 @@ function loadAssessmentIntoState(assessment) {
   // Smartsheet integration fields
   AppState.ventureId = assessment.ventureId || generateVentureId();
   AppState.portfolio = assessment.portfolio || "";
+  AppState.institution = assessment.institution || "";
+  AppState.trackAssignment = normalizeTrackAssignment(assessment.trackAssignment);
 
   // Edit mode tracking - this is key for UPDATE operations
   AppState.smartsheetRowId = assessment.rowId;
@@ -1153,6 +1020,13 @@ function setupEventListeners() {
   document.querySelector("#submit-review-modal .modal-backdrop")?.addEventListener("click", () => hideModal("submit-review-modal"));
   document.getElementById("submit-review-confirm")?.addEventListener("click", submitAssessmentFromModal);
 
+  document.getElementById("qualification-match-panel")?.addEventListener("change", (event) => {
+    if (event.target?.name !== "qualification-match-choice") return;
+    const value = event.target.value;
+    qualificationMatchState.selectedIndex = value === "none" ? "none" : Number(value);
+    renderSubmitReviewModal();
+  });
+
   document.querySelectorAll('input[name="submit-review-coachability"]').forEach(input => {
     input.addEventListener("change", (e) => {
       setCommentaryField("coachability", e.target.value);
@@ -1276,6 +1150,38 @@ let lastSubmitTime = 0;
 const SUBMIT_COOLDOWN = 5000; // 5 seconds between submissions
 let reviewFlowIsExternalPdf = false;
 
+function createQualificationMatchState() {
+  return {
+    status: "idle",
+    candidates: [],
+    match: null,
+    selectedIndex: null,
+    error: "",
+  };
+}
+
+let qualificationMatchState = createQualificationMatchState();
+
+function resetQualificationMatchState() {
+  qualificationMatchState = createQualificationMatchState();
+}
+
+function hasReportingMetadata() {
+  return Boolean(String(AppState.institution || "").trim() || String(AppState.trackAssignment || "").trim());
+}
+
+function shouldRunQualificationMatching() {
+  return !reviewFlowIsExternalPdf && isFirstAssessmentRound(AppState);
+}
+
+function qualificationMatchCanProceed() {
+  if (!shouldRunQualificationMatching()) return true;
+  if (hasReportingMetadata()) return true;
+
+  return ["confident", "no-match", "error"].includes(qualificationMatchState.status) ||
+    (qualificationMatchState.status === "ambiguous" && qualificationMatchState.selectedIndex !== null);
+}
+
 function handlePdfExportRequest() {
   if (Auth.isExternal()) {
     openSubmitReviewModal({ isExternalPdf: true });
@@ -1302,8 +1208,181 @@ async function handleSaveToDatabase() {
 
 function openSubmitReviewModal({ isExternalPdf = false } = {}) {
   reviewFlowIsExternalPdf = isExternalPdf;
+  resetQualificationMatchState();
   renderSubmitReviewModal();
   showModal("submit-review-modal");
+
+  if (shouldRunQualificationMatching()) {
+    prepareQualificationMatch();
+  }
+}
+
+async function prepareQualificationMatch() {
+  if (hasReportingMetadata()) {
+    qualificationMatchState = {
+      status: "existing",
+      candidates: [],
+      match: {
+        institution: AppState.institution,
+        trackAssignment: normalizeTrackAssignment(AppState.trackAssignment),
+      },
+      selectedIndex: null,
+      error: "",
+    };
+    renderSubmitReviewModal();
+    return;
+  }
+
+  qualificationMatchState = {
+    status: "loading",
+    candidates: [],
+    match: null,
+    selectedIndex: null,
+    error: "",
+  };
+  renderSubmitReviewModal();
+
+  try {
+    const records = await fetchQualificationRecords();
+    const resolution = getQualificationMatchResolution({
+      ventureName: AppState.ventureName,
+      advisorName: AppState.advisorName,
+      portfolio: AppState.portfolio,
+    }, records);
+
+    qualificationMatchState = {
+      status: resolution.status,
+      candidates: resolution.candidates || [],
+      match: resolution.match || null,
+      selectedIndex: resolution.status === "confident" ? 0 : null,
+      error: "",
+    };
+
+    if (resolution.status === "confident" && resolution.match) {
+      setReportingMetadata(resolution.match);
+    }
+  } catch (error) {
+    console.warn("[Qualification Match] Failed to fetch Qualification records:", error);
+    qualificationMatchState = {
+      status: "error",
+      candidates: [],
+      match: null,
+      selectedIndex: null,
+      error: error.message || "Qualification lookup failed",
+    };
+  }
+
+  renderSubmitReviewModal();
+}
+
+function formatQualificationMeta(match = {}) {
+  const parts = [];
+  if (match.institution) parts.push(match.institution);
+  if (match.trackAssignment) parts.push(match.trackAssignment);
+  return parts.length > 0 ? parts.join(", ") : "No institution or track provided";
+}
+
+function renderQualificationCandidateOption(candidate, index) {
+  const checked = qualificationMatchState.selectedIndex === index ? "checked" : "";
+  const meta = [
+    candidate.portfolio,
+    candidate.advisorName,
+    candidate.institution,
+    candidate.trackAssignment,
+    candidate.timestamp ? formatAssessmentDate(candidate.timestamp) : "",
+  ].filter(Boolean).join(" | ");
+
+  return `
+    <label class="qualification-match-option">
+      <input type="radio" name="qualification-match-choice" value="${index}" ${checked}>
+      <span>
+        <span class="qualification-match-name">${escapeHtml(candidate.ventureName)}</span>
+        <span class="qualification-match-meta">${escapeHtml(meta || "No metadata available")}</span>
+      </span>
+    </label>
+  `;
+}
+
+function renderQualificationMatchPanel() {
+  const panel = document.getElementById("qualification-match-panel");
+  if (!panel) return;
+
+  if (!shouldRunQualificationMatching()) {
+    panel.className = "qualification-match-panel hidden";
+    panel.innerHTML = "";
+    return;
+  }
+
+  if (hasReportingMetadata()) {
+    panel.className = "qualification-match-panel success";
+    panel.innerHTML = `
+      <h4>Qualification metadata attached</h4>
+      <p>${escapeHtml(formatQualificationMeta({
+        institution: AppState.institution,
+        trackAssignment: AppState.trackAssignment,
+      }))}</p>
+    `;
+    return;
+  }
+
+  if (qualificationMatchState.status === "loading") {
+    panel.className = "qualification-match-panel loading";
+    panel.innerHTML = `
+      <h4>Looking for Qualification metadata</h4>
+      <p>Checking finalized Qualification records by advisor and portfolio.</p>
+    `;
+    return;
+  }
+
+  if (qualificationMatchState.status === "confident" && qualificationMatchState.match) {
+    panel.className = "qualification-match-panel success";
+    panel.innerHTML = `
+      <h4>Qualification metadata found</h4>
+      <p>${escapeHtml(formatQualificationMeta(qualificationMatchState.match))}</p>
+    `;
+    return;
+  }
+
+  if (qualificationMatchState.status === "ambiguous") {
+    const noneChecked = qualificationMatchState.selectedIndex === "none" ? "checked" : "";
+    panel.className = "qualification-match-panel warning";
+    panel.innerHTML = `
+      <h4>Choose the matching Qualification record</h4>
+      <p>Multiple records match this advisor or portfolio. Select one, or save without Qualification metadata.</p>
+      <div class="qualification-match-options">
+        ${qualificationMatchState.candidates.map(renderQualificationCandidateOption).join("")}
+        <label class="qualification-match-option">
+          <input type="radio" name="qualification-match-choice" value="none" ${noneChecked}>
+          <span>
+            <span class="qualification-match-name">Save without Qualification metadata</span>
+            <span class="qualification-match-meta">Institution and Track Assignment will be blank in the RL sheet.</span>
+          </span>
+        </label>
+      </div>
+    `;
+    return;
+  }
+
+  if (qualificationMatchState.status === "no-match") {
+    panel.className = "qualification-match-panel warning";
+    panel.innerHTML = `
+      <h4>No Qualification match found</h4>
+      <p>You can still save this RL assessment. Institution and Track Assignment will be blank in the RL sheet.</p>
+    `;
+    return;
+  }
+
+  if (qualificationMatchState.status === "error") {
+    panel.className = "qualification-match-panel warning";
+    panel.innerHTML = `
+      <h4>Qualification lookup unavailable</h4>
+      <p>You can still save this RL assessment. Institution and Track Assignment will be blank in the RL sheet.</p>
+    `;
+    return;
+  }
+
+  panel.className = "qualification-match-panel hidden";
+  panel.innerHTML = "";
 }
 
 function renderSubmitReviewModal() {
@@ -1318,7 +1397,7 @@ function renderSubmitReviewModal() {
     isExternal: reviewFlowIsExternalPdf,
     ventureName: AppState.ventureName,
   });
-  const canConfirm = config.canConfirm(readiness, metadataMissing);
+  const canConfirm = config.canConfirm(readiness, metadataMissing) && qualificationMatchCanProceed();
 
   if (title) {
     title.textContent = config.title;
@@ -1337,6 +1416,8 @@ function renderSubmitReviewModal() {
       </ul>
     `;
   }
+
+  renderQualificationMatchPanel();
 
   const commentary = AppState.commentary || {};
   document.querySelectorAll('input[name="submit-review-coachability"]').forEach(input => {
@@ -1364,6 +1445,21 @@ function renderSubmitReviewModal() {
   }
 }
 
+function applyQualificationMatchSelection() {
+  if (!shouldRunQualificationMatching()) return;
+  if (hasReportingMetadata()) return;
+
+  if (qualificationMatchState.status === "confident" && qualificationMatchState.match) {
+    setReportingMetadata(qualificationMatchState.match);
+    return;
+  }
+
+  if (qualificationMatchState.status === "ambiguous" && typeof qualificationMatchState.selectedIndex === "number") {
+    const selected = qualificationMatchState.candidates[qualificationMatchState.selectedIndex];
+    if (selected) setReportingMetadata(selected);
+  }
+}
+
 async function submitAssessmentFromModal() {
   const readiness = getSubmissionReadiness(AppState, readinessData);
   const metadataMissing = getMetadataMissingLabels();
@@ -1375,6 +1471,13 @@ async function submitAssessmentFromModal() {
     renderSubmitReviewModal();
     return;
   }
+
+  if (!qualificationMatchCanProceed()) {
+    renderSubmitReviewModal();
+    return;
+  }
+
+  applyQualificationMatchSelection();
 
   const modalBtn = document.getElementById("submit-review-confirm");
   const originalText = modalBtn ? modalBtn.textContent : null;
@@ -1644,6 +1747,9 @@ function normalBoot() {
   if (!isExternal) {
     // Load venture name autocomplete in background (non-blocking)
     populateVentureNameAutocomplete();
+  } else {
+    // External advisors get the guided stepper (Setup → Score → … → VDR).
+    startExternalFlow();
   }
 }
 

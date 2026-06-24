@@ -1866,6 +1866,88 @@ body {
   line-height: 1.6;
 }
 
+.qualification-match-panel {
+  margin: 0 0 18px;
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 12px 14px;
+  color: var(--slate-700);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.qualification-match-panel.hidden {
+  display: none;
+}
+
+.qualification-match-panel.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.qualification-match-panel.warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.qualification-match-panel.loading {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+  color: #075985;
+}
+
+.qualification-match-panel h4 {
+  margin: 0 0 8px;
+  font-family: 'Clash Display', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.qualification-match-panel p {
+  margin: 0;
+}
+
+.qualification-match-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.qualification-match-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid rgba(100,116,139,0.25);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  color: var(--slate-700);
+  cursor: pointer;
+}
+
+.qualification-match-option input {
+  margin-top: 3px;
+  accent-color: var(--nr-teal-1);
+}
+
+.qualification-match-name {
+  display: block;
+  font-weight: 600;
+  color: var(--nr-navy-1);
+}
+
+.qualification-match-meta {
+  display: block;
+  margin-top: 3px;
+  color: var(--slate-500);
+  font-size: 12px;
+}
+
 .submit-review-grid {
   display: grid;
   /* Fixed-ish left column for the checklist; right column gets all remaining
@@ -3265,4 +3347,314 @@ body.external-mode #btn-start-new-assessment,
 body.external-mode #workspace-save-row,
 body.external-mode .portfolio-field {
   display: none !important;
+}
+
+/* =========================================================
+   External Guided Flow (stepper) — external advisors only.
+   The stepper replaces the free-form workspace; internal-only
+   chrome is hidden and the existing scoring view (#app-view)
+   is reused as the "Score" step.
+   ========================================================= */
+
+/* Internal chrome the stepper supersedes for external users */
+body.external-mode #assessment-workspace,
+body.external-mode .toolbar,
+body.external-mode #submission-banner,
+body.external-mode #btn-export-pdf {
+  display: none !important;
+}
+
+/* Mode-aware copy (e.g. the welcome/help modal "How to Use" steps) */
+.if-external { display: none; }
+body.external-mode .if-external { display: block; }
+body.external-mode .if-internal { display: none; }
+
+/* External-only per-category note, shown under the level cards on the Score step */
+.category-notes { display: none; }
+body.external-mode .category-notes {
+  display: block;
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  background: var(--slate-50);
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius);
+}
+.category-notes-label {
+  display: block;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--slate-700);
+  margin-bottom: 6px;
+}
+.category-notes-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid var(--slate-300);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+.category-notes-input:focus {
+  outline: none;
+  border-color: var(--nr-teal-1);
+  box-shadow: 0 0 0 3px rgba(0, 130, 165, 0.1);
+}
+
+/* Flow shell + step rail */
+#external-flow {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 24px 4px;
+}
+
+.flow-rail-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0 0 6px;
+}
+
+.flow-rail-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--slate-500);
+  background: var(--slate-100);
+  border: 1px solid var(--slate-200);
+}
+
+.flow-rail-step .flow-rail-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--slate-300);
+  color: #fff;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.flow-rail-step.is-current {
+  color: var(--nr-navy-1);
+  background: rgba(109, 104, 231, 0.12);
+  border-color: var(--nr-purple-2);
+}
+.flow-rail-step.is-current .flow-rail-num { background: var(--nr-purple-2); }
+
+.flow-rail-step.is-done {
+  color: var(--nr-teal-2);
+  background: rgba(0, 130, 165, 0.08);
+  border-color: rgba(0, 130, 165, 0.3);
+}
+.flow-rail-step.is-done .flow-rail-num { background: var(--nr-teal-1); }
+
+/* Stage visibility driven by body[data-flow-step] */
+.flow-step { display: none; }
+body[data-flow-step="setup"] #step-setup,
+body[data-flow-step="questions"] #step-questions,
+body[data-flow-step="download"] #step-download,
+body[data-flow-step="vdr"] #step-vdr { display: block; }
+
+/* The Score step reuses #app-view; hidden on every other external step */
+body.external-mode #app-view { display: none; }
+body.external-mode[data-flow-step="score"] #app-view { display: block; }
+
+/* Score-step nav footer */
+#score-nav { display: none; }
+body.external-mode[data-flow-step="score"] #score-nav { display: flex; }
+
+/* Cards */
+.flow-card {
+  background: #fff;
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  padding: 24px;
+  margin: 8px auto 20px;
+  max-width: 760px;
+}
+.flow-card h2 {
+  font-family: 'Clash Display', sans-serif;
+  font-size: 22px;
+  color: var(--nr-navy-1);
+  margin-bottom: 4px;
+}
+.flow-card .flow-card-sub {
+  color: var(--slate-500);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+.flow-card h3 {
+  font-size: 15px;
+  color: var(--nr-navy-1);
+  margin: 16px 0 4px;
+}
+
+/* Setup fields */
+.flow-field { margin-bottom: 18px; }
+.flow-field > label {
+  display: block;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--slate-700);
+  margin-bottom: 6px;
+}
+.flow-field .required { color: var(--nr-orange-1); }
+.flow-field input[type="text"],
+.flow-field input[type="number"] {
+  width: 100%;
+  height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--slate-300);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+}
+.flow-field input[type="number"] { max-width: 140px; }
+.flow-field input[type="text"]:focus,
+.flow-field input[type="number"]:focus {
+  outline: none;
+  border-color: var(--nr-teal-1);
+  box-shadow: 0 0 0 3px rgba(0, 130, 165, 0.1);
+}
+.flow-field-help { font-size: 12px; color: var(--slate-500); margin-top: 6px; }
+
+/* Segmented choice cards (First / Follow-up) */
+.flow-choice { display: flex; gap: 10px; flex-wrap: wrap; }
+.flow-choice-card {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--slate-300);
+  border-radius: 10px;
+  cursor: pointer;
+  background: #fff;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.flow-choice-card:hover { border-color: var(--nr-purple-2); }
+.flow-choice-card:has(input:checked) {
+  border-color: var(--nr-purple-2);
+  background: rgba(109, 104, 231, 0.06);
+}
+.flow-choice-card input { margin-top: 3px; accent-color: var(--nr-purple-2); }
+.flow-choice-title { font-weight: 600; font-size: 14px; color: var(--slate-700); }
+.flow-choice-desc { display: block; font-size: 12px; color: var(--slate-500); margin-top: 2px; }
+
+/* Life Sciences toggle row */
+.flow-toggle { display: flex; gap: 10px; align-items: flex-start; }
+.flow-toggle input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--nr-teal-1); }
+
+/* Top-bar holds the Back button consistently at the top of each step */
+#flow-topbar { margin: 2px 0 10px; }
+
+/* Nav footers + buttons */
+.flow-nav {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  max-width: 760px;
+  margin: 0 auto 28px;
+  padding: 4px;
+}
+#flow-setup-error { margin-right: auto; }
+
+/* Score-step footer pins to the bottom of the viewport so Continue is always
+   reachable without scrolling past every level definition. */
+#score-nav {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  justify-content: space-between;
+  max-width: none;
+  padding: 14px 24px;
+  background: #fff;
+  border-top: 1px solid var(--slate-200);
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.06);
+}
+.flow-note.done { color: var(--nr-teal-1); font-weight: 600; }
+
+.flow-btn-back {
+  background: transparent;
+  color: var(--slate-600);
+  border: 1px solid var(--slate-300);
+}
+.flow-btn-back:hover { background: var(--slate-100); border-color: var(--slate-400); }
+
+/* Pulse the Continue button once scoring is complete */
+@keyframes flowPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(109, 104, 231, 0.45); }
+  50% { box-shadow: 0 0 0 7px rgba(109, 104, 231, 0); }
+}
+.btn.flow-pulse { animation: flowPulse 1.7s ease-in-out infinite; }
+
+/* Make VDR's white-on-transparent outline buttons legible inside the white shell */
+#step-vdr .btn.outline {
+  color: var(--slate-700);
+  border-color: var(--slate-300);
+  background: transparent;
+}
+#step-vdr .btn.outline:hover { background: var(--slate-100); }
+
+/* Inline notes */
+.flow-note { font-size: 13px; color: var(--slate-500); }
+.flow-note.warn { color: var(--nr-orange-1); }
+
+/* Download review */
+.flow-review-table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; }
+.flow-review-table th,
+.flow-review-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--slate-200);
+  font-size: 14px;
+}
+.flow-review-table th {
+  color: var(--slate-500);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.flow-review-answers dt {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--slate-700);
+  margin-top: 10px;
+}
+.flow-review-answers dd { font-size: 14px; color: var(--slate-600); white-space: pre-wrap; }
+
+/* Post-download success / VDR offer */
+.flow-success {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 10px;
+  background: rgba(92, 224, 66, 0.08);
+  border: 1px solid rgba(0, 204, 0, 0.35);
+}
+.flow-success h3 { font-size: 15px; color: var(--nr-teal-2); margin-bottom: 4px; }
+.flow-success p { font-size: 13px; color: var(--slate-600); margin-bottom: 12px; }
+.flow-success-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* VDR host: neutralize the standalone 1200px centering inside our shell */
+#step-vdr .vdr-container { padding: 0; max-width: none; }
+
+@media (max-width: 720px) {
+  .flow-choice-card { min-width: 100%; }
+  .flow-nav { flex-direction: column-reverse; align-items: stretch; }
+  .flow-nav .btn { width: 100%; justify-content: center; }
 }

@@ -24,6 +24,21 @@ function createEmptyCommentary() {
   return { ...DEFAULT_COMMENTARY };
 }
 
+function normalizeTrackAssignment(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^([123])$/) || raw.match(/^(?:track|phase)\s+([123])$/i);
+  return match ? `Track ${match[1]}` : "";
+}
+
+function normalizeReportingMetadata(source = {}) {
+  const safeSource = source || {};
+  return {
+    institution: String(safeSource.institution || safeSource.Institution || "").trim(),
+    trackAssignment: normalizeTrackAssignment(safeSource.trackAssignment || safeSource.TrackAssignment || safeSource["Track Assignment"]),
+  };
+}
+
 // Load saved assessments from localStorage
 function loadAssessments() {
   try {
@@ -140,7 +155,8 @@ export function incrementAssessmentNumber() {
 
 // Generate hash of current state for change detection
 export function generateStateHash() {
-  const stateStr = JSON.stringify({
+  const reportingMetadata = normalizeReportingMetadata(AppState);
+  const stateForHash = {
     scores: AppState.scores,
     commentary: normalizeCommentary(AppState.commentary),
     ventureName: AppState.ventureName,
@@ -148,7 +164,14 @@ export function generateStateHash() {
     portfolio: AppState.portfolio,
     isHealthRelated: AppState.isHealthRelated,
     currentAssessmentNumber: AppState.currentAssessmentNumber,
-  });
+  };
+
+  if (reportingMetadata.institution || reportingMetadata.trackAssignment) {
+    stateForHash.institution = reportingMetadata.institution;
+    stateForHash.trackAssignment = reportingMetadata.trackAssignment;
+  }
+
+  const stateStr = JSON.stringify(stateForHash);
   // Simple hash function
   let hash = 0;
   for (let i = 0; i < stateStr.length; i++) {
@@ -233,6 +256,7 @@ export const AppState = {
   scores: {},
   goalLevels: {},
   commentary: createEmptyCommentary(),
+  categoryNotes: {},  // External flow: optional per-category justification { [category]: text }
   isHealthRelated: false,
   assessedAt: null,
   createdAt: null,
@@ -240,6 +264,8 @@ export const AppState = {
   // Smartsheet integration fields
   advisorName: "",
   portfolio: "",
+  institution: "",
+  trackAssignment: "",
   ventureId: null,  // UUID for Smartsheet tracking (distinct from activeVentureId)
   lastSavedToSmartsheet: null,
 
@@ -283,6 +309,7 @@ export function loadVenture(id) {
   AppState.scores = { ...venture.scores } || {};
   AppState.goalLevels = { ...venture.goalLevels } || {};
   AppState.commentary = normalizeCommentary(venture.commentary);
+  AppState.categoryNotes = { ...(venture.categoryNotes || {}) };
   AppState.isHealthRelated = venture.isHealthRelated || false;
   AppState.assessedAt = venture.assessedAt ? new Date(venture.assessedAt) : null;
   AppState.createdAt = venture.createdAt ? new Date(venture.createdAt) : null;
@@ -290,6 +317,9 @@ export function loadVenture(id) {
   // Smartsheet integration fields
   AppState.ventureId = venture.ventureId || generateVentureId();
   AppState.portfolio = venture.portfolio || "";
+  const reportingMetadata = normalizeReportingMetadata(venture);
+  AppState.institution = reportingMetadata.institution;
+  AppState.trackAssignment = reportingMetadata.trackAssignment;
   AppState.lastSavedToSmartsheet = venture.lastSavedToSmartsheet || null;
   // Note: advisorName is loaded from localStorage preference, not per-venture
 
@@ -319,6 +349,10 @@ export function saveCurrentVenture() {
     AppState.ventureId = generateVentureId();
   }
 
+  const reportingMetadata = normalizeReportingMetadata(AppState);
+  AppState.institution = reportingMetadata.institution;
+  AppState.trackAssignment = reportingMetadata.trackAssignment;
+
   AppState._savedVentures[AppState.activeVentureId] = {
     _schemaVersion: 2,
     id: AppState.activeVentureId,
@@ -327,11 +361,14 @@ export function saveCurrentVenture() {
     scores: { ...AppState.scores },
     goalLevels: { ...AppState.goalLevels },
     commentary: normalizeCommentary(AppState.commentary),
+    categoryNotes: { ...AppState.categoryNotes },
     isHealthRelated: AppState.isHealthRelated,
     assessedAt: AppState.assessedAt ? AppState.assessedAt.toISOString() : null,
     createdAt: AppState.createdAt ? AppState.createdAt.toISOString() : null,
     updatedAt: new Date().toISOString(),
     portfolio: AppState.portfolio,  // Smartsheet field
+    institution: reportingMetadata.institution,
+    trackAssignment: reportingMetadata.trackAssignment,
     lastSavedToSmartsheet: AppState.lastSavedToSmartsheet,  // Smartsheet tracking
     currentAssessmentNumber: AppState.currentAssessmentNumber,  // Assessment tracking
     lastSubmissionTimestamp: AppState.lastSubmissionTimestamp,  // Submission tracking
@@ -357,9 +394,12 @@ export function createNewVenture(name = "") {
   AppState.scores = {};
   AppState.goalLevels = {};
   AppState.commentary = createEmptyCommentary();
+  AppState.categoryNotes = {};
   AppState.isHealthRelated = false;
   AppState.assessedAt = null;
   AppState.createdAt = new Date();
+  AppState.institution = "";
+  AppState.trackAssignment = "";
   AppState.currentCategory = null;
 
   // Initialize assessment tracking
@@ -388,10 +428,13 @@ export function deleteVenture(id) {
       AppState.scores = {};
       AppState.goalLevels = {};
       AppState.commentary = createEmptyCommentary();
+      AppState.categoryNotes = {};
       AppState.isHealthRelated = false;
       AppState.assessedAt = null;
       AppState.createdAt = null;
       AppState.portfolio = "";
+      AppState.institution = "";
+      AppState.trackAssignment = "";
       AppState.ventureId = null;
       AppState.lastSavedToSmartsheet = null;
       AppState.currentAssessmentNumber = 1;
@@ -431,8 +474,24 @@ export function setCommentaryField(field, value) {
   saveCurrentVenture();
 }
 
+// External flow: optional per-category justification note. Not trimmed here so
+// trailing spaces while typing aren't eaten; trim at PDF time instead.
+export function setCategoryNote(category, text) {
+  if (!category) return;
+  if (!AppState.categoryNotes) AppState.categoryNotes = {};
+  AppState.categoryNotes[category] = String(text || "");
+  saveCurrentVenture();
+}
+
 export function setCommentary(commentary = {}) {
   AppState.commentary = normalizeCommentary(commentary);
+  saveCurrentVenture();
+}
+
+export function setReportingMetadata(metadata = {}) {
+  const normalized = normalizeReportingMetadata(metadata);
+  AppState.institution = normalized.institution;
+  AppState.trackAssignment = normalized.trackAssignment;
   saveCurrentVenture();
 }
 
@@ -458,6 +517,7 @@ export function resetActiveVenture() {
   AppState.scores = {};
   AppState.goalLevels = {};
   AppState.commentary = createEmptyCommentary();
+  AppState.categoryNotes = {};
   AppState.isHealthRelated = false;
   AppState.assessedAt = null;
   AppState.createdAt = null;
@@ -465,6 +525,8 @@ export function resetActiveVenture() {
 
   AppState.ventureId = null;
   AppState.portfolio = "";
+  AppState.institution = "";
+  AppState.trackAssignment = "";
   AppState.lastSavedToSmartsheet = null;
 
   AppState.currentAssessmentNumber = 1;

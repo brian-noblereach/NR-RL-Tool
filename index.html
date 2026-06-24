@@ -73,6 +73,16 @@
       </div>
     </div>
 
+    <!-- External flow shell (guided stepper for external advisors; populated by external-flow.js) -->
+    <div id="external-flow" hidden>
+      <nav id="external-rail" class="flow-rail" aria-label="Workflow steps"></nav>
+      <div id="flow-topbar" hidden></div>
+      <div id="step-setup" class="flow-step"></div>
+      <div id="step-questions" class="flow-step"></div>
+      <div id="step-download" class="flow-step"></div>
+      <div id="step-vdr" class="flow-step"></div>
+    </div>
+
     <!-- ASSESSMENT WORKSPACE HEADER -->
     <section class="assessment-workspace" id="assessment-workspace" aria-label="Current assessment workspace">
       <div class="workspace-main-row">
@@ -247,6 +257,10 @@
             <button class="advisor-tip-dismiss" id="dismiss-advisor-tip" aria-label="Dismiss tip">×</button>
           </div>
 
+          <!-- External flow: optional per-category note (populated by external-flow.js).
+               Sits above the level cards so it's visible without scrolling. -->
+          <div id="category-notes" class="category-notes"></div>
+
           <!-- Levels -->
           <div id="levels-container" class="levels-container"></div>
         </main>
@@ -255,7 +269,7 @@
       <!-- Summary Panel -->
       <div class="summary-panel minimized hidden" id="summary-panel" aria-hidden="true">
         <div class="summary-header">
-          <h3>Summary 0/8</h3>
+          <h3>Summary 0/9</h3>
           <div class="panel-controls">
             <button class="panel-btn" id="minimize-btn" title="Restore" aria-label="Restore">
               <svg class="icon-minimize hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -289,6 +303,8 @@
         </div>
       </div>
     </div>
+    <!-- External flow: score-step navigation footer (populated by external-flow.js) -->
+    <div id="score-nav" class="flow-nav" hidden></div>
   </div>
 
   <!-- Panel Overlay -->
@@ -305,8 +321,8 @@
       <div class="modal-body">
         <div class="welcome-intro">
           <p>
-            This tool helps <strong>research teams, early-stage ventures, and their advisors</strong> assess 
-            commercialization readiness across 8 key dimensions.
+            This tool helps <strong>research teams, early-stage ventures, and their advisors</strong> assess
+            commercialization readiness across nine key dimensions (plus a Regulatory dimension for life-sciences ventures).
           </p>
           <p>
             Use it to measure progress for <strong>pre-incorporated research projects</strong> or 
@@ -314,7 +330,7 @@
           </p>
         </div>
         
-        <div class="welcome-features">
+        <div class="welcome-features if-internal">
           <h4>How to Use</h4>
           <ul>
             <li><strong>Select a category</strong> from the sidebar to begin assessment</li>
@@ -322,6 +338,17 @@
             <li><strong>Levels are cumulative</strong>—selecting Level 5 means Levels 1-4 have been achieved</li>
             <li><strong>Use Review & Save to Database</strong> when the assessment is ready for NobleReach</li>
             <li><strong>Export a PDF</strong> when you need a local snapshot</li>
+          </ul>
+        </div>
+
+        <div class="welcome-features if-external">
+          <h4>How to Use</h4>
+          <ul>
+            <li><strong>Set up</strong>—enter the venture name, your name, and whether this is the venture's first BRL assessment</li>
+            <li><strong>Score each category</strong>—pick the readiness level that best fits. Levels are cumulative, so Level 5 means Levels 1–4 are also achieved</li>
+            <li><strong>First assessments</strong>—add optional notes on the founder conversation, then download a PDF of the scores and notes</li>
+            <li><strong>Build a roadmap (optional)</strong>—continue into the Venture Development Roadmap to set goals and download a VDR document</li>
+            <li><strong>Follow-up assessments</strong>—skip the questions and download a scores-only PDF</li>
           </ul>
         </div>
 
@@ -501,6 +528,7 @@
         <p id="submit-review-intro" class="submit-review-intro">
           Review completeness and add founder-call commentary before saving.
         </p>
+        <div id="qualification-match-panel" class="qualification-match-panel hidden" aria-live="polite"></div>
         <div class="submit-review-grid">
           <div class="submit-checklist" id="submit-checklist"></div>
           <div class="submit-commentary-fields">

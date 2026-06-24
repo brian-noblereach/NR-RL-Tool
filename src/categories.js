@@ -99,6 +99,7 @@ export function updateCategoryDisplay() {
 
   if (!categoryData) {
     container.innerHTML = "<p>Select a category from the sidebar to begin assessment.</p>";
+    notifyCategoryDisplayUpdated();
     return;
   }
 
@@ -110,6 +111,14 @@ export function updateCategoryDisplay() {
     .join("");
 
   setupLevelCardDelegation();
+  notifyCategoryDisplayUpdated();
+}
+
+// Signal that the level cards for the current category were (re)rendered.
+// The external flow listens for this to refresh its per-category notes box;
+// internal mode registers no listener, so this is a no-op there.
+function notifyCategoryDisplayUpdated() {
+  window.dispatchEvent(new CustomEvent("categoryDisplayUpdated", { detail: AppState.currentCategory }));
 }
 
 export function createLevelCard(level, currentScore, industryVal) {
