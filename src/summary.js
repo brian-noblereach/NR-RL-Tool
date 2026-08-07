@@ -3,6 +3,8 @@
 import { AppState } from "./state.js";
 import { readinessData } from "./data/index.js";
 import { applyHealthTerms } from "./transform.js";
+import { getCategoryLabel } from "./category-labels.js";
+import { scoreRank } from "./score-utils.js";
 
 export function updateSummary() {
   const categories = Object.keys(readinessData);
@@ -23,7 +25,7 @@ export function renderSummaryScores(categories) {
     .map(
       (cat) => `
       <div class="summary-score-item">
-        <div class="score-label">${cat}</div>
+        <div class="score-label">${getCategoryLabel(cat)}</div>
         <div class="score-value">${AppState.scores[cat] != null ? AppState.scores[cat] : "-"}</div>
       </div>`
     )
@@ -65,6 +67,17 @@ export class VentureDescriptionGenerator {
   constructor(scores, isHealthRelated) {
     this.scores = scores;
     this.isHealthRelated = isHealthRelated;
+
+    // Numeric view of the scores for every >= / <= comparison below. A TRL score
+    // may be a sub-level string like "3B", which ranks as 3. Never compare
+    // this.scores directly: "3B" is truthy, so `|| 0` does not fire and every
+    // numeric comparison silently returns false, dropping the narrative to its
+    // default branch with no error.
+    this.ranks = {};
+    Object.entries(scores || {}).forEach(([cat, value]) => {
+      this.ranks[cat] = scoreRank(value);
+    });
+
     this.assessedCategories = this.getAssessedCategories();
   }
 
@@ -99,9 +112,9 @@ export class VentureDescriptionGenerator {
   }
 
   getVentureStageDescription() {
-    const tech = this.scores["Technology"] || 0;
-    const market = this.scores["Market"] || 0;
-    const product = this.scores["Product"] || 0;
+    const tech = this.ranks["Technology"] ?? 0;
+    const market = this.ranks["Market"] ?? 0;
+    const product = this.ranks["Product"] ?? 0;
 
     if (tech <= 3 && market <= 3 && product <= 3) {
       return "This early-stage venture is in the ideation and validation phase, focusing on establishing fundamental concepts and initial proof points. ";
@@ -119,8 +132,8 @@ export class VentureDescriptionGenerator {
   }
 
   getTechnologyProductNarrative() {
-    const tech = this.scores["Technology"] || 0;
-    const product = this.scores["Product"] || 0;
+    const tech = this.ranks["Technology"] ?? 0;
+    const product = this.ranks["Product"] ?? 0;
 
     if (tech === 0 && product === 0) return "";
 
@@ -147,7 +160,7 @@ export class VentureDescriptionGenerator {
   }
 
   getIPNarrative() {
-    const ip = this.scores["IP"] || 0;
+    const ip = this.ranks["IP"] ?? 0;
     if (ip === 0) return "";
 
     if (ip >= 7) {
@@ -166,8 +179,8 @@ export class VentureDescriptionGenerator {
   }
 
   getMarketGTMNarrative() {
-    const market = this.scores["Market"] || 0;
-    const gtm = this.scores["Go-to-Market"] || 0;
+    const market = this.ranks["Market"] ?? 0;
+    const gtm = this.ranks["Go-to-Market"] ?? 0;
 
     if (market === 0 && gtm === 0) return "";
 
@@ -190,7 +203,7 @@ export class VentureDescriptionGenerator {
   }
 
   getTeamNarrative() {
-    const team = this.scores["Team"] || 0;
+    const team = this.ranks["Team"] ?? 0;
     if (team === 0) return "";
 
     if (team >= 6) {
@@ -206,8 +219,8 @@ export class VentureDescriptionGenerator {
   }
 
   getBusinessFundingNarrative() {
-    const biz = this.scores["Business"] || 0;
-    const funding = this.scores["Funding"] || 0;
+    const biz = this.ranks["Business"] ?? 0;
+    const funding = this.ranks["Funding"] ?? 0;
 
     if (biz === 0 && funding === 0) return "";
 
@@ -241,7 +254,7 @@ export class VentureDescriptionGenerator {
   }
 
   getMissionImpactNarrative() {
-    const mi = this.scores["Mission Impact"] || 0;
+    const mi = this.ranks["Mission Impact"] ?? 0;
     if (mi === 0) return "";
 
     if (mi >= 8) {
@@ -257,7 +270,7 @@ export class VentureDescriptionGenerator {
   }
 
   getRegulatoryNarrative() {
-    const reg = this.scores["Regulatory"] || 0;
+    const reg = this.ranks["Regulatory"] ?? 0;
     if (reg === 0) return "";
 
     if (reg >= 7) {
@@ -277,24 +290,24 @@ export class VentureDescriptionGenerator {
     const gaps = [];
 
     // Identify strengths (score >= 5)
-    if ((this.scores["Technology"] || 0) >= 5) strengths.push("technical validation");
-    if ((this.scores["Market"] || 0) >= 5) strengths.push("market validation");
-    if ((this.scores["Product"] || 0) >= 5) strengths.push("product development");
-    if ((this.scores["Team"] || 0) >= 5) strengths.push("team building");
-    if ((this.scores["Business"] || 0) >= 5) strengths.push("business operations");
-    if ((this.scores["Funding"] || 0) >= 5) strengths.push("fundraising readiness");
-    if ((this.scores["IP"] || 0) >= 5) strengths.push("IP protection");
-    if ((this.scores["Mission Impact"] || 0) >= 5) strengths.push("mission engagement");
+    if ((this.ranks["Technology"] ?? 0) >= 5) strengths.push("technical validation");
+    if ((this.ranks["Market"] ?? 0) >= 5) strengths.push("market validation");
+    if ((this.ranks["Product"] ?? 0) >= 5) strengths.push("product development");
+    if ((this.ranks["Team"] ?? 0) >= 5) strengths.push("team building");
+    if ((this.ranks["Business"] ?? 0) >= 5) strengths.push("business operations");
+    if ((this.ranks["Funding"] ?? 0) >= 5) strengths.push("fundraising readiness");
+    if ((this.ranks["IP"] ?? 0) >= 5) strengths.push("IP protection");
+    if ((this.ranks["Mission Impact"] ?? 0) >= 5) strengths.push("mission engagement");
 
     // Identify gaps (assessed and score <= 2, including Level 0)
-    const tech = this.scores["Technology"];
-    const market = this.scores["Market"];
-    const product = this.scores["Product"];
-    const team = this.scores["Team"];
-    const gtm = this.scores["Go-to-Market"];
-    const biz = this.scores["Business"];
-    const funding = this.scores["Funding"];
-    const mission = this.scores["Mission Impact"];
+    const tech = this.ranks["Technology"];
+    const market = this.ranks["Market"];
+    const product = this.ranks["Product"];
+    const team = this.ranks["Team"];
+    const gtm = this.ranks["Go-to-Market"];
+    const biz = this.ranks["Business"];
+    const funding = this.ranks["Funding"];
+    const mission = this.ranks["Mission Impact"];
 
     if (tech != null && tech <= 2) gaps.push("technical development");
     if (market != null && market <= 2) gaps.push("market understanding");
@@ -329,7 +342,7 @@ export class VentureDescriptionGenerator {
     );
 
     if (unassessed.length > 0) {
-      return `\n\nAreas pending assessment: ${unassessed.join(", ")}.`;
+      return `\n\nAreas pending assessment: ${unassessed.map(getCategoryLabel).join(", ")}.`;
     }
 
     return "";

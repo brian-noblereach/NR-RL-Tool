@@ -1463,6 +1463,152 @@ body {
   border-radius: 0 8px 8px 0;
 }
 
+/* ---------------------------------------------------------
+   TRL sub-levels and BARDA workstreams
+   Sub-level scores ("3B") mean a level is in progress. Only the
+   therapeutics track defines the lettered activities that produce them.
+   --------------------------------------------------------- */
+.level-card.in-progress {
+  border-color: var(--nr-purple-2);
+  box-shadow: 0 6px 24px rgba(109,104,231,0.15);
+}
+
+.level-card.in-progress .level-header {
+  background: linear-gradient(135deg, rgba(109,104,231,0.12), rgba(0,130,165,0.06));
+}
+
+/* Two glyphs in a circle sized for one */
+.level-number.has-sublevel {
+  font-size: 0.95rem;
+  letter-spacing: -0.5px;
+}
+
+.sublevel-indicator {
+  background: rgba(109,104,231,0.08);
+  border-left: 4px solid var(--nr-purple-2);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--slate-700);
+  border-radius: 0 8px 8px 0;
+}
+
+.activities-hint {
+  font-size: 12px;
+  color: var(--slate-600);
+  margin-bottom: 8px;
+}
+
+.sublevel-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.sublevel-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  margin: 6px 0;
+  background: #fff;
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+}
+
+.sublevel-item.is-complete {
+  background: rgba(92,224,66,0.06);
+  border-color: rgba(92,224,66,0.3);
+}
+
+.sublevel-item.is-current {
+  background: rgba(109,104,231,0.08);
+  border-color: var(--nr-purple-2);
+}
+
+.sublevel-id {
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+  font-size: 12px;
+  min-width: 34px;
+  text-align: center;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--slate-100);
+  color: var(--slate-600);
+  flex-shrink: 0;
+}
+
+.sublevel-item.is-complete .sublevel-id {
+  background: var(--nr-green-1);
+  color: #fff;
+}
+
+.sublevel-item.is-current .sublevel-id {
+  background: var(--nr-purple-2);
+  color: #fff;
+}
+
+.sublevel-label {
+  flex: 1;
+  line-height: 1.55;
+  color: var(--slate-700);
+}
+
+.sublevel-chip {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--slate-100);
+  color: var(--slate-700);
+  font-weight: 600;
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.sublevel-chip:hover {
+  background: var(--slate-200);
+}
+
+.sublevel-chip.selected {
+  background: var(--nr-purple-2);
+  color: #fff;
+}
+
+.workstream-list {
+  margin: 0;
+}
+
+.workstream-item {
+  margin: 6px 0;
+}
+
+.workstream-label {
+  font-weight: 700;
+  color: var(--slate-700);
+  display: inline;
+}
+
+.workstream-label::after {
+  content: ": ";
+}
+
+.workstream-note {
+  display: inline;
+  margin: 0;
+  line-height: 1.65;
+  color: var(--slate-700);
+}
+
+.track-attribution {
+  display: block;
+  margin-top: 4px;
+  font-style: italic;
+}
+
 /* =========================================================
    Summary Panel
    ========================================================= */

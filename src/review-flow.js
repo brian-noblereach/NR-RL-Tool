@@ -1,3 +1,5 @@
+import { getCategoryLabel } from "./category-labels.js";
+
 export function getReviewFlowConfig({ isExternal, ventureName } = {}) {
   const safeVentureName = String(ventureName || "").trim() || "this assessment";
 
@@ -50,8 +52,8 @@ export function buildReviewChecklist({ config, readiness, metadataMissing = [] }
   const scoreLabel = missingScores.length === 0
     ? "All active categories scored"
     : isExternal
-      ? `Partial PDF warning: ${missingScores.length} active ${missingScores.length === 1 ? "category is" : "categories are"} unscored (${missingScores.join(", ")})`
-      : `Score every active category (${missingScores.length} remaining: ${missingScores.join(", ")})`;
+      ? `Partial PDF warning: ${missingScores.length} active ${missingScores.length === 1 ? "category is" : "categories are"} unscored (${missingScores.map(getCategoryLabel).join(", ")})`
+      : `Score every active category (${missingScores.length} remaining: ${missingScores.map(getCategoryLabel).join(", ")})`;
 
   return [
     {

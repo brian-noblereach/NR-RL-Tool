@@ -1,5 +1,7 @@
 // submission-requirements.js - Shared submission completion rules
 
+import { isValidScore } from "./score-utils.js";
+
 export const SUBMISSION_CATEGORY_ORDER = [
   "IP",
   "Technology",
@@ -40,13 +42,11 @@ export function normalizeCommentary(commentary = {}) {
   };
 }
 
+// Accepts null/""/garbage as incomplete, integers 0-9 as complete, and TRL
+// sub-level strings like "3B" as complete. Identical to the previous
+// Number.isInteger check for every value that predates sub-levels.
 function isCompleteScore(score) {
-  if (typeof score === "string") {
-    if (!score.trim()) return false;
-    score = Number(score);
-  }
-
-  return Number.isInteger(score) && score >= 0 && score <= 9;
+  return isValidScore(score);
 }
 
 export function getMissingCommentaryFields(state) {

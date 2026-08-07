@@ -6,6 +6,8 @@
 import { VDRState } from './vdr-state.js';
 import { Auth } from '../auth.js';
 import { getAllVentures } from '../state.js';
+import { getCategoryAbbrev } from '../category-labels.js';
+import { readScoreCell, scoreRank } from '../score-utils.js';
 
 // Google Apps Script Web App URL (same as main tool)
 const PROXY_URL = "https://script.google.com/macros/s/AKfycbzt7wElvzQv0CNs-icg7QWpxjf4E5FGqWa6KpCY4zSa_thccGNWhw-THLTpnn8GJa2W/exec";
@@ -108,7 +110,8 @@ function processAssessments(raw) {
       isHealthRelated: a.isHealthRelated === true || a.isHealthRelated === 'true',
       scores: {
         IP: parseInt(a.RL_IP, 10) || 0,
-        Technology: parseInt(a.RL_Technology, 10) || 0,
+        // TRL may carry a sub-level like "3B" on the therapeutics track; keep it.
+        Technology: readScoreCell(a.RL_Technology, { allowSubLevel: true }),
         Market: parseInt(a.RL_Market, 10) || 0,
         Product: parseInt(a.RL_Product, 10) || 0,
         Team: parseInt(a.RL_Team, 10) || 0,
@@ -150,10 +153,7 @@ function formatScoresCompact(scores, isHealthRelated) {
   const cats = ['IP', 'Technology', 'Market', 'Product', 'Team', 'Go-to-Market', 'Business', 'Funding'];
   if (isHealthRelated) cats.push('Regulatory');
   
-  return cats.map(c => {
-    const abbrev = c === 'Go-to-Market' ? 'GTM' : c === 'Technology' ? 'Tech' : c.substring(0, 3);
-    return `${abbrev}:${scores[c] != null ? scores[c] : "-"}`;
-  }).join(' ');
+  return cats.map(c => `${getCategoryAbbrev(c)}:${scores[c] != null ? scores[c] : "-"}`).join(' ');
 }
 
 /**
@@ -184,7 +184,8 @@ function loadLocalVentures() {
         Regulatory: v.scores?.Regulatory ?? 0
       }
     }))
-    .filter(v => Object.values(v.scores).some(s => s != null && s > 0));
+    // scoreRank so a sub-level string like "3B" counts as progress ("3B" > 0 is false)
+    .filter(v => Object.values(v.scores).some(s => (scoreRank(s) ?? 0) > 0));
 }
 
 /**

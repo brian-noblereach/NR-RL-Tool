@@ -30,17 +30,19 @@ export function dedupe(arr) {
 
 /**
  * Get health extras from the level object itself.
- * Technology uses { device: {...}, pharma: {...} } sub-tracks.
+ * Technology uses { device: {...}, therapeutics: {...} } sub-tracks, keyed by
+ * the normalized track key from track-content.js.
  * All other categories use { indicators: [...], deliverables: [...] }.
  */
-export function getHealthExtras(category, levelObj, track) {
+export function getHealthExtras(category, levelObj, trackKey) {
   const extras = levelObj.healthExtras;
   if (!extras) return { indicators: [], deliverables: [] };
 
-  // Technology has device/pharma sub-tracks
+  // Technology extras are per-track. A track with no extras gets none — the
+  // general/software/hardware tracks used to fall through to the device extras,
+  // which was wrong.
   if (category === "Technology") {
-    const key = track === "health_pharma" ? "pharma" : "device";
-    return extras[key] || { indicators: [], deliverables: [] };
+    return extras[trackKey] || { indicators: [], deliverables: [] };
   }
   return extras;
 }
@@ -52,6 +54,18 @@ export function getHealthExtras(category, levelObj, track) {
  * across categories.js, vdr-generator.js, etc.
  */
 export function getEffectiveContent(category, levelObj, baseIndicators, healthTrack) {
+  // Track-override content (the BARDA life-sciences TRLs) is authored clinical
+  // canon. Never run the health term map over it — the map would turn "GMP pilot
+  // lot" into "GMP clinical studies lot" — and don't merge healthExtras on top,
+  // so the override stays the single source of truth for that level and track.
+  if (levelObj.isTrackOverride) {
+    return {
+      definition: levelObj.definition,
+      deliverables: Array.isArray(levelObj.deliverables) ? levelObj.deliverables : [],
+      indicators: Array.isArray(baseIndicators) ? baseIndicators : [baseIndicators],
+    };
+  }
+
   if (!AppState.isHealthRelated) {
     return {
       definition: levelObj.definition,

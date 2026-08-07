@@ -1,5 +1,7 @@
 // state.js - Central app state with localStorage persistence and multi-venture support
 
+import { coerceScore, allowsSubLevel } from "./score-utils.js";
+
 const STORAGE_KEY = "nr-rl-assessments";
 const ACTIVE_KEY = "nr-rl-active";
 const ADVISOR_KEY = "nr-rl-advisor-name";
@@ -258,6 +260,11 @@ export const AppState = {
   commentary: createEmptyCommentary(),
   categoryNotes: {},  // External flow: optional per-category justification { [category]: text }
   isHealthRelated: false,
+  // Which TRL track the Technology category is scored against (DOM option value
+  // from #industry-select). Persisted because the life-sciences tracks render
+  // materially different level definitions — reopening a venture on the wrong
+  // track would misrepresent its TRL score.
+  technologyTrack: "general",
   assessedAt: null,
   createdAt: null,
 
@@ -311,6 +318,7 @@ export function loadVenture(id) {
   AppState.commentary = normalizeCommentary(venture.commentary);
   AppState.categoryNotes = { ...(venture.categoryNotes || {}) };
   AppState.isHealthRelated = venture.isHealthRelated || false;
+  AppState.technologyTrack = venture.technologyTrack || "general";
   AppState.assessedAt = venture.assessedAt ? new Date(venture.assessedAt) : null;
   AppState.createdAt = venture.createdAt ? new Date(venture.createdAt) : null;
 
@@ -363,6 +371,7 @@ export function saveCurrentVenture() {
     commentary: normalizeCommentary(AppState.commentary),
     categoryNotes: { ...AppState.categoryNotes },
     isHealthRelated: AppState.isHealthRelated,
+    technologyTrack: AppState.technologyTrack || "general",
     assessedAt: AppState.assessedAt ? AppState.assessedAt.toISOString() : null,
     createdAt: AppState.createdAt ? AppState.createdAt.toISOString() : null,
     updatedAt: new Date().toISOString(),
@@ -396,6 +405,7 @@ export function createNewVenture(name = "") {
   AppState.commentary = createEmptyCommentary();
   AppState.categoryNotes = {};
   AppState.isHealthRelated = false;
+  AppState.technologyTrack = "general";
   AppState.assessedAt = null;
   AppState.createdAt = new Date();
   AppState.institution = "";
@@ -430,6 +440,7 @@ export function deleteVenture(id) {
       AppState.commentary = createEmptyCommentary();
       AppState.categoryNotes = {};
       AppState.isHealthRelated = false;
+      AppState.technologyTrack = "general";
       AppState.assessedAt = null;
       AppState.createdAt = null;
       AppState.portfolio = "";
@@ -456,9 +467,12 @@ export function getAllVentures() {
   });
 }
 
-// Auto-save on any score change
+// Auto-save on any score change.
+// The single write choke point for AppState.scores: coerceScore guarantees the
+// stored value is null, an integer 0-9, or — for TRL only — a sub-level string
+// like "3B".
 export function setScore(category, level) {
-  AppState.scores[category] = level;
+  AppState.scores[category] = coerceScore(level, { allowSubLevel: allowsSubLevel(category) });
   if (!AppState.assessedAt) {
     AppState.assessedAt = new Date();
   }
@@ -519,6 +533,7 @@ export function resetActiveVenture() {
   AppState.commentary = createEmptyCommentary();
   AppState.categoryNotes = {};
   AppState.isHealthRelated = false;
+  AppState.technologyTrack = "general";
   AppState.assessedAt = null;
   AppState.createdAt = null;
   AppState.currentCategory = null;

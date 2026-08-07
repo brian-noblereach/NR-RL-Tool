@@ -30,6 +30,7 @@ import {
   getReviewFlowConfig
 } from "./review-flow.js";
 import { savePdfSnapshot } from "./pdf-export.js";
+import { getCategoryLabel, getCategoryAbbrev } from "./category-labels.js";
 import { startExternalFlow } from "./external-flow.js";
 import { PORTFOLIOS } from "./data/constants.js";
 import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchUserAssessments, fetchQualificationRecords, clearUserAssessmentsCache } from "./smartsheet.js";
@@ -189,7 +190,7 @@ function showNextToast(nextCat) {
   const toast = document.getElementById("next-cat-toast");
   const btn = document.getElementById("next-cat-btn");
   const name = document.getElementById("next-cat-name");
-  name.textContent = nextCat;
+  name.textContent = getCategoryLabel(nextCat);
 
   if (!toast.classList.contains("show")) {
     toast.classList.remove("hidden");
@@ -806,8 +807,7 @@ function formatScoresCompact(scores, isHealthRelated) {
   if (isHealthRelated) cats.push("Regulatory");
 
   return cats.map(c => {
-    const abbrev = c === "Go-to-Market" ? "GTM" : c === "Technology" ? "Tech" : c === "Mission Impact" ? "MI" : c.substring(0, 3);
-    return `${abbrev}:${scores[c] != null ? scores[c] : "-"}`;
+    return `${getCategoryAbbrev(c)}:${scores[c] != null ? scores[c] : "-"}`;
   }).join(" ");
 }
 
@@ -897,7 +897,11 @@ function setupEventListeners() {
       const note = document.getElementById("health-mode-note");
       if (note) note.classList.toggle("hidden", !AppState.isHealthRelated);
       
-      updateIndustrySelectorUI({ forceDefaultOnEnable: true });
+      // Deliberately does NOT auto-select a life-sciences track. The three
+      // life-sciences tracks now render materially different level definitions,
+      // so silently picking one would have a therapeutics venture reading
+      // device content.
+      updateIndustrySelectorUI();
       initializeCategories();
       updateSummary();
       syncSummaryHeaderAndIcons();
@@ -917,10 +921,15 @@ function setupEventListeners() {
     });
   });
 
-  // Technology subtrack selector
+  // TRL subtrack selector
   const industrySelect = document.getElementById("industry-select");
   if (industrySelect) {
-    industrySelect.addEventListener("change", updateCategoryDisplay);
+    industrySelect.addEventListener("change", () => {
+      AppState.technologyTrack = industrySelect.value;
+      saveCurrentVenture();
+      updateIndustrySelectorUI();
+      updateCategoryDisplay();
+    });
   }
 
   // Summary panel controls

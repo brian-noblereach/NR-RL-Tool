@@ -12,6 +12,7 @@ import {
   SUBMISSION_CATEGORY_ORDER,
 } from "./submission-requirements.js";
 import { stampAssessedNow } from "./ui.js";
+import { getCategoryLabel } from "./category-labels.js";
 
 function pad(n) {
   return n < 10 ? "0" + n : "" + n;
@@ -31,7 +32,11 @@ function buildSnapshotRows() {
   const rows = [];
   SUBMISSION_CATEGORY_ORDER.forEach(cat => {
     if (!readinessData[cat] || !allowed.has(cat)) return;
-    rows.push({ category: cat, level: AppState.scores[cat] != null ? AppState.scores[cat] : "-" });
+    rows.push({
+      category: cat,
+      label: getCategoryLabel(cat),
+      level: AppState.scores[cat] != null ? AppState.scores[cat] : "-",
+    });
   });
   return rows;
 }
@@ -126,7 +131,7 @@ export function savePdfSnapshot(options = {}) {
       doc.line(left, y - 6, left + 160, y - 6);
       doc.setFont("helvetica", "normal");
     }
-    doc.text(r.category, left, y);
+    doc.text(r.label, left, y);
     doc.text(String(r.level), left + 120, y);
     y += lh;
   });
@@ -150,7 +155,7 @@ export function savePdfSnapshot(options = {}) {
     noteRows.forEach(([cat, note]) => {
       y = ensurePdfSpace(doc, y, 18);
       doc.setFont("helvetica", "bold");
-      doc.text(`${cat}:`, left, y);
+      doc.text(`${getCategoryLabel(cat)}:`, left, y);
       y += 6;
       doc.setFont("helvetica", "normal");
       y = addWrappedPdfText(doc, note, left, y, 178, 5);

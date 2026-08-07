@@ -1,5 +1,6 @@
 // data.js - Readiness Level Data Structure (ES Module)
 // Updated April 2026 - Revised definitions per alignment document + healthExtras merged
+// Updated August 2026 - Market, Team, Go-to-Market, Business revisions per BRL_by_Category_Updates
 
 export const readinessData = {
     'IP': {
@@ -95,8 +96,8 @@ export const readinessData = {
                 deliverables: [],
                 indicators: {
                     general: ["No scientific principles explored", "No research activity initiated"],
-                    pharma: ["No target identification or literature review", "No preclinical hypothesis formed"],
-                    meddevice: ["No clinical need identified", "No device concept proposed"],
+                    therapeutics: ["No target identification or literature review", "No preclinical hypothesis formed"],
+                    device: ["No clinical need identified", "No device concept proposed"],
                     hardware: ["No physical principles explored", "No concept designs considered"],
                     software: ["No algorithms or architecture considered", "No technical feasibility explored"]
                 }
@@ -108,14 +109,14 @@ export const readinessData = {
                 deliverables: ["Scientific principles documentation", "Initial research findings"],
                 indicators: {
                     general: ["Basic scientific principles identified", "Initial observations documented"],
-                    pharma: ["Review of scientific knowledge", "Gathering existing research"],
-                    meddevice: ["Basic device concept identified", "Clinical need documented"],
+                    therapeutics: ["Review of scientific knowledge", "Gathering existing research"],
+                    device: ["Basic device concept identified", "Clinical need documented"],
                     hardware: ["Physical principles understood", "Basic concept sketched"],
                     software: ["Core algorithms conceptualized", "Basic architecture outlined"]
                 },
                 healthExtras: {
                     device: { indicators: ["Intended use and risk class hypothesis documented"], deliverables: ["Intended use & risk class note"] },
-                    pharma: { indicators: ["Target Product Profile (TPP) drafted"], deliverables: ["TPP v0"] }
+                    therapeutics: { indicators: ["Target Product Profile (TPP) drafted"], deliverables: ["TPP v0"] }
                 }
             },
             {
@@ -125,14 +126,14 @@ export const readinessData = {
                 deliverables: ["Concept design document", "Application use cases"],
                 indicators: {
                     general: ["Specific applications identified", "Concept refined and documented"],
-                    pharma: ["Hypotheses developed", "Experimental designs created", "Computer simulations conducted"],
-                    meddevice: ["Device specifications outlined", "Intended use defined"],
+                    therapeutics: ["Hypotheses developed", "Experimental designs created", "Computer simulations conducted"],
+                    device: ["Device specifications outlined", "Intended use defined"],
                     hardware: ["Technical specifications drafted", "Component requirements identified"],
                     software: ["System architecture designed", "Key features specified"]
                 },
                 healthExtras: {
                     device: { indicators: ["Initial IEC/ISO requirements identified"], deliverables: ["Standards & bench test matrix"] },
-                    pharma: { indicators: ["IND-enabling study needs outlined"], deliverables: ["Preclinical plan"] }
+                    therapeutics: { indicators: ["IND-enabling study needs outlined"], deliverables: ["Preclinical plan"] }
                 }
             },
             {
@@ -142,14 +143,14 @@ export const readinessData = {
                 deliverables: ["POC demonstration", "Test results documentation"],
                 indicators: {
                     general: ["Critical functions demonstrated", "Feasibility proven"],
-                    pharma: ["Target/candidate identified", "In vitro efficacy demonstrated"],
-                    meddevice: ["Bench testing completed", "Initial prototype built"],
+                    therapeutics: ["Target/candidate identified", "In vitro efficacy demonstrated"],
+                    device: ["Bench testing completed", "Initial prototype built"],
                     hardware: ["Breadboard prototype functional", "Key components tested"],
                     software: ["Core functionality implemented", "Alpha version operational"]
                 },
                 healthExtras: {
                     device: { indicators: ["Preliminary DFMEA/HFMEA started"], deliverables: ["Risk analysis draft"] },
-                    pharma: { indicators: ["Dose/formulation strategy defined"], deliverables: ["Formulation concept"] }
+                    therapeutics: { indicators: ["Dose/formulation strategy defined"], deliverables: ["Formulation concept"] }
                 }
             },
             {
@@ -159,14 +160,14 @@ export const readinessData = {
                 deliverables: ["Integration test results", "System design documentation"],
                 indicators: {
                     general: ["Components working together", "System integration demonstrated"],
-                    pharma: ["Candidate optimization underway", "Non-GLP in vivo testing initiated"],
-                    meddevice: ["Integrated prototype developed", "Pre-clinical testing initiated"],
+                    therapeutics: ["Candidate optimization underway", "Non-GLP in vivo testing initiated"],
+                    device: ["Integrated prototype developed", "Pre-clinical testing initiated"],
                     hardware: ["Integrated system prototype", "Laboratory testing complete"],
                     software: ["Beta version released", "Core modules integrated"]
                 },
                 healthExtras: {
                     device: { indicators: ["Bench test protocols approved"], deliverables: ["Bench test plan"] },
-                    pharma: { indicators: ["GLP study protocols planned"], deliverables: ["GLP plan"] }
+                    therapeutics: { indicators: ["GLP study protocols planned"], deliverables: ["GLP plan"] }
                 }
             },
             {
@@ -176,14 +177,14 @@ export const readinessData = {
                 deliverables: ["Validation test reports", "Performance metrics"],
                 indicators: {
                     general: ["Performance validated in lab", "Specifications met in controlled environment"],
-                    pharma: ["Advanced characterization complete", "GMP process development initiated"],
-                    meddevice: ["Animal studies completed", "Design verification testing"],
+                    therapeutics: ["Advanced characterization complete", "GMP process development initiated"],
+                    device: ["Animal studies completed", "Design verification testing"],
                     hardware: ["Environmental testing passed", "Reliability demonstrated"],
                     software: ["Load testing completed", "Security validation performed"]
                 },
                 healthExtras: {
                     device: { indicators: ["Design inputs traceability established"], deliverables: ["Traceability matrix"] },
-                    pharma: { indicators: ["Preclinical evidence generated"], deliverables: ["Preclinical data package"] }
+                    therapeutics: { indicators: ["Preclinical evidence generated"], deliverables: ["Preclinical data package"] }
                 }
             },
             {
@@ -193,14 +194,14 @@ export const readinessData = {
                 deliverables: ["Prototype documentation", "Test protocols"],
                 indicators: {
                     general: ["Prototype built and tested", "Near-final configuration"],
-                    pharma: ["GMP pilot lot produced", "IND submission prepared", "Phase I trials planned"],
-                    meddevice: ["Clinical prototype ready", "IDE submission prepared"],
+                    therapeutics: ["GMP pilot lot produced", "IND submission prepared", "Phase I trials planned"],
+                    device: ["Clinical prototype ready", "IDE submission prepared"],
                     hardware: ["Production-intent prototype", "Field testing initiated"],
                     software: ["Release candidate version", "User acceptance testing"]
                 },
                 healthExtras: {
                     device: { indicators: ["Verification plan aligns to standards"], deliverables: ["V&V plan"] },
-                    pharma: { indicators: ["Clinical development plan defined"], deliverables: ["Clinical development plan (CDP)"] }
+                    therapeutics: { indicators: ["Clinical development plan defined"], deliverables: ["Clinical development plan (CDP)"] }
                 }
             },
             {
@@ -210,14 +211,14 @@ export const readinessData = {
                 deliverables: ["Field test results", "Performance validation"],
                 indicators: {
                     general: ["Real-world testing complete", "Customer feedback incorporated"],
-                    pharma: ["Phase 2 clinical trials underway", "Scale-up initiated"],
-                    meddevice: ["Clinical trials underway", "Regulatory pathway clear"],
+                    therapeutics: ["Phase 2 clinical trials underway", "Scale-up initiated"],
+                    device: ["Clinical trials underway", "Regulatory pathway clear"],
                     hardware: ["Pilot production run", "Customer trials successful"],
                     software: ["Production deployment", "Live user testing"]
                 },
                 healthExtras: {
                     device: { indicators: ["First-in-human/feasibility study planned"], deliverables: ["Clinical protocol synopsis (device)"] },
-                    pharma: { indicators: ["Phase I protocol drafted"], deliverables: ["Phase I synopsis"] }
+                    therapeutics: { indicators: ["Phase I protocol drafted"], deliverables: ["Phase I synopsis"] }
                 }
             },
             {
@@ -227,14 +228,14 @@ export const readinessData = {
                 deliverables: ["Final test reports", "Certification documents"],
                 indicators: {
                     general: ["All testing complete", "Ready for production"],
-                    pharma: ["Phase 3 trials complete", "GMP validation complete"],
-                    meddevice: ["Pivotal clinical trials complete", "510(k) or PMA submitted"],
+                    therapeutics: ["Phase 3 trials complete", "GMP validation complete"],
+                    device: ["Pivotal clinical trials complete", "510(k) or PMA submitted"],
                     hardware: ["Production line established", "Quality systems in place"],
                     software: ["Full production release", "SLA compliance demonstrated"]
                 },
                 healthExtras: {
                     device: { indicators: ["Clinical validation underway for intended use"], deliverables: ["Interim clinical evidence (device)"] },
-                    pharma: { indicators: ["Early clinical data demonstrates safety"], deliverables: ["Phase I results/interim"] }
+                    therapeutics: { indicators: ["Early clinical data demonstrates safety"], deliverables: ["Phase I results/interim"] }
                 }
             },
             {
@@ -244,14 +245,14 @@ export const readinessData = {
                 deliverables: ["Production documentation", "Quality certifications"],
                 indicators: {
                     general: ["Full production capability", "Market deployment"],
-                    pharma: ["FDA approval received", "Commercial manufacturing"],
-                    meddevice: ["FDA clearance/approval", "Commercial production"],
+                    therapeutics: ["FDA approval received", "Commercial manufacturing"],
+                    device: ["FDA clearance/approval", "Commercial production"],
                     hardware: ["Mass production achieved", "Supply chain established"],
                     software: ["Scaled deployment", "Enterprise ready"]
                 },
                 healthExtras: {
                     device: { indicators: ["V&V complete and meets clinical performance"], deliverables: ["V&V report package"] },
-                    pharma: { indicators: ["Efficacy evidence aligned to approval pathway"], deliverables: ["Phase II/III plan or results"] }
+                    therapeutics: { indicators: ["Efficacy evidence aligned to approval pathway"], deliverables: ["Phase II/III plan or results"] }
                 }
             }
         ]
@@ -269,16 +270,16 @@ export const readinessData = {
             {
                 level: 1,
                 title: "Initial Market Understanding",
-                definition: "High-level understanding of initial target market and applications.",
-                deliverables: ["Market opportunity brief"],
-                indicators: ["Initial market hypothesis", "Potential applications identified"],
+                definition: "High-level understanding of initial target markets and applications, including applicable regulatory or standards-setting organizations.",
+                deliverables: ["Market opportunity brief", "Notes on regulatory/standards landscape"],
+                indicators: ["Initial market hypothesis", "Potential applications identified", "Applicable regulators or standards bodies named"],
                 healthExtras: { indicators: ["Patient population and unmet need quantified"], deliverables: ["Clinical problem/need brief"] }
             },
             {
                 level: 2,
-                title: "Market Analysis",
-                definition: "Market/segment(s) analysis (TAM, SAM, SOM, growth rates) and overview of in-market competitors",
-                deliverables: ["Market analysis report", "Competitive overview"],
+                title: "Market Analysis & Early Discovery",
+                definition: "Market/segment(s) analyzed with customer discovery started in primary segments.",
+                deliverables: ["Market segments analysis report including TAM, SAM, SOM, and competitors", "Questions and process for customer discovery documented"],
                 indicators: ["TAM/SAM/SOM calculated", "Key competitors identified"],
                 healthExtras: { indicators: ["HCP workflow mapping initiated"], deliverables: ["Provider workflow map (draft)"] }
             },
@@ -293,7 +294,7 @@ export const readinessData = {
             {
                 level: 4,
                 title: "Customer Discovery",
-                definition: "Customer discovery completed with evidence that the target problem is real, frequent, and a pain point that can be addressed.",
+                definition: "Customer discovery results in narrowing market and evidence that the target problem is real.",
                 deliverables: ["Customer discovery report", "Problem validation evidence"],
                 indicators: ["Substantial customer interviews completed", "Problem validated as real, frequent, and painful", "Target customer profile refined based on discovery"],
                 healthExtras: { indicators: ["Value hypothesis tested with providers"], deliverables: ["Value proposition test summary"] }
@@ -302,7 +303,7 @@ export const readinessData = {
                 level: 5,
                 title: "Market Validation",
                 definition: "Active engagement with target customers and ecosystem partners confirms willingness to pay and validates competitive positioning.",
-                deliverables: ["Engagement summary with validation evidence", "Willingness-to-pay documentation"],
+                deliverables: ["Customer engagement summary with validation evidence", "Willingness-to-pay documentation"],
                 indicators: ["Target customers confirm willingness to pay", "Competitive positioning validated through external engagement", "Ecosystem partners engaged and providing input"],
                 healthExtras: { indicators: ["Payer value drivers validated"], deliverables: ["Payer research summary"] }
             },
@@ -310,8 +311,8 @@ export const readinessData = {
                 level: 6,
                 title: "Market Intelligence",
                 definition: "Market barriers, competitive dynamics, and regulatory considerations are well understood and actively monitored.",
-                deliverables: ["Market barrier analysis", "Competitive monitoring process", "Regulatory landscape summary (if applicable)"],
-                indicators: ["Key market barriers identified and accounted for", "Competitive dynamics tracked on ongoing basis", "Regulatory requirements understood (where relevant)"],
+                deliverables: ["Market barrier analysis", "Competitive monitoring process", "Regulatory landscape summary"],
+                indicators: ["Key market barriers identified and accounted for", "Competitive dynamics tracked on ongoing basis", "Regulatory bodies and standards-setting organizations identified and their requirements understood"],
                 healthExtras: { indicators: ["Clinical market barriers and regulatory dynamics mapped"], deliverables: ["Clinical market intelligence summary"] }
             },
             {
@@ -325,9 +326,9 @@ export const readinessData = {
             {
                 level: 8,
                 title: "Ecosystem Validation",
-                definition: "Customer, partner, and ecosystem stakeholder relationships defined and executing. Third-party validation of market position. Adjacent market opportunities identified.",
-                deliverables: ["Stakeholder relationship map", "Third-party validation evidence", "Adjacent market assessment"],
-                indicators: ["Stakeholder strategies defined and being executed", "Third-party or independent validation of market position obtained", "Adjacent or expansion market opportunities documented"],
+                definition: "Customer, partner, regulatory, and ecosystem stakeholder relationships defined and executing. Third-party validation of market position. Adjacent market opportunities identified.",
+                deliverables: ["Stakeholder relationship map", "Third-party validation evidence", "Adjacent market assessment", "Evidence of regulatory or standards-body engagement"],
+                indicators: ["Stakeholder strategies defined and being executed", "Third-party or independent validation of market position obtained", "Adjacent or expansion market opportunities documented", "Regulatory or standards-body relationships are active and managed, not just identified"],
                 healthExtras: { indicators: ["Coverage path identified with payers"], deliverables: ["Coverage strategy brief"] }
             },
             {
@@ -444,10 +445,10 @@ export const readinessData = {
             },
             {
                 level: 2,
-                title: "Core Team Forming",
-                definition: "Core team forming with key technical and business roles identified and hiring priorities set.",
-                deliverables: ["Org chart", "Hiring plan"],
-                indicators: ["Key roles identified", "Initial hires planned"],
+                title: "Founders' Agreement & Core Roles",
+                definition: "Founders' agreement in place defining equity split, roles, and decision-making criteria. Core roles and hiring priorities identified.",
+                deliverables: ["Org chart", "Hiring plan", "Founders agreement or equivalent"],
+                indicators: ["Key roles identified", "Initial hires planned", "Founder ownership and equity agreed and documented"],
                 healthExtras: { indicators: ["PI/site relationship initiated"], deliverables: ["PI/site contact list"] }
             },
             {
@@ -468,10 +469,10 @@ export const readinessData = {
             },
             {
                 level: 5,
-                title: "Founding Team Aligned",
-                definition: "Initial founding team with main needed competencies. Ownership, roles, and alignment agreed.",
-                deliverables: ["Founders agreement or equivalent", "Roles and responsibilities document", "Equity/ownership structure"],
-                indicators: ["Founding team has main needed competencies across key areas", "Ownership and equity agreed and documented", "Roles are clear and team is aligned on vision and goals"],
+                title: "Core Team Operating",
+                definition: "Ownership and roles working as the team operates. Core team functioning, though not all key competencies are yet covered.",
+                deliverables: ["Roles and responsibilities document", "Equity/ownership structure"],
+                indicators: ["Core team functioning with main roles covered, though competency gaps remain", "Roles are clear and team is aligned on vision and goals"],
                 healthExtras: { indicators: ["Regulatory/QA expertise added"], deliverables: ["RA/QA advisor or hire"] }
             },
             {
@@ -528,9 +529,9 @@ export const readinessData = {
             },
             {
                 level: 2,
-                title: "Ideal Customer Defined",
-                definition: "Ideal customer profile and target entry point defined.",
-                deliverables: ["Ideal customer profile", "Entry point rationale"],
+                title: "Ideal Customer Selected",
+                definition: "Ideal customer profiles identified and compared; primary target entry point selected.",
+                deliverables: ["Ideal customer profiles", "Entry point rationale"],
                 indicators: ["Ideal customer profile documented (who, what role, what context)", "Target entry point defined (how you first engage the customer)", "User, buyer, and decision maker identified (if different)"],
                 healthExtras: { indicators: ["Pilot site criteria drafted"], deliverables: ["Site selection criteria"] }
             },
@@ -545,15 +546,15 @@ export const readinessData = {
             {
                 level: 4,
                 title: "Commercial Concept Validation",
-                definition: "Initial validation and refinement of customer entry point and buyer journey.",
-                deliverables: ["Validated buyer journey", "Refined channel assessment"],
+                definition: "Initial validation and refinement of customer entry point and buyer journey, including a first-pass channel economics analysis.",
+                deliverables: ["Validated buyer journey", "Refined channel assessment including economic analysis"],
                 indicators: ["Buyer journey tested against real customer interactions", "Entry point and channel hypothesis refined based on feedback", "Key assumptions about customer acquisition tested"],
                 healthExtras: { indicators: ["Operational plan for in-clinic deployment"], deliverables: ["Deployment plan"] }
             },
             {
                 level: 5,
                 title: "GTM Strategy Defined",
-                definition: "GTM strategy defines the alignment between product, marketing, and sales/business development.",
+                definition: "GTM strategy defines how product, marketing, and sales/bus-dev activities work together, typically founder-led at this stage.",
                 deliverables: ["GTM strategy document", "Product-marketing-sales alignment plan"],
                 indicators: ["GTM strategy articulates how product, marketing, and sales/BD work together", "Roles and responsibilities across GTM functions clarified", "Strategy accounts for venture's specific sales model (direct, channel, government, etc.)"],
                 healthExtras: { indicators: ["Provider champion identified at site"], deliverables: ["Champion brief"] }
@@ -578,7 +579,7 @@ export const readinessData = {
                 level: 8,
                 title: "GTM Optimization",
                 definition: "Marketing, sales, and product processes aligned through active metrics. Growth targets tied to process performance.",
-                deliverables: ["CAC/LTV analysis", "Growth metrics dashboard", "Process performance reports"],
+                deliverables: ["CAC/LTV or comparable analysis", "Growth metrics dashboard", "Process performance reports"],
                 indicators: ["CAC understood and improving", "Growth targets set and tracked against GTM process metrics", "Marketing, sales, and product teams operating from shared data", "Growth becoming predictable"],
                 healthExtras: { indicators: ["Payer engagement in progress"], deliverables: ["Payer meeting notes"] }
             },
@@ -629,9 +630,9 @@ export const readinessData = {
             {
                 level: 4,
                 title: "Business Plan Validation",
-                definition: "Initial validation of business plan with organization structure defined. Revenue model and pricing hypothesis tested.",
-                deliverables: ["Validated business plan elements", "Organization structure document", "Pricing test results or feedback"],
-                indicators: ["Revenue model and pricing tested with potential customers or partners", "Organization structure defined for current stage", "Business plan assumptions being validated against real data"],
+                definition: "Initial validation of business plan. Revenue model and pricing hypothesis tested.",
+                deliverables: ["Validated business plan elements", "Pricing test results or feedback"],
+                indicators: ["Revenue model and pricing tested with potential customers or partners", "Business plan assumptions being validated against real data"],
                 healthExtras: { indicators: ["Clinical process controls and compliance requirements mapped"], deliverables: ["Clinical compliance requirements"] }
             },
             {

@@ -221,9 +221,9 @@
           <div class="progress-notice">
             <h2 id="category-title">Select a category to begin</h2>
 
-            <!-- Technology subtrack -->
+            <!-- TRL subtrack -->
             <div id="industry-selector" class="industry-selector hidden">
-              <label for="industry-select">Technology track</label>
+              <label for="industry-select">TRL track</label>
               <select id="industry-select">
                 <optgroup label="General & Dual-Use">
                   <option value="general">General</option>
@@ -231,13 +231,15 @@
                   <option value="hardware">Hardware</option>
                 </optgroup>
                 <optgroup label="Life Sciences (when enabled)" id="health-track-optgroup">
+                  <option value="health_diagnostics">Diagnostics</option>
                   <option value="health_device">Medical device</option>
-                  <option value="health_pharma">Pharmaceuticals</option>
+                  <option value="health_therapeutics">Therapeutics</option>
                 </optgroup>
               </select>
-              <small class="help-text">
-                When Life Sciences Mode is ON, choose a track to specialize Technology content.
+              <small class="help-text" id="industry-help">
+                When Life Sciences Mode is ON, choose a track to specialize TRL content.
               </small>
+              <small class="help-text track-attribution hidden" id="industry-attribution"></small>
             </div>
           </div>
 

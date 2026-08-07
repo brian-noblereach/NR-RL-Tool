@@ -17,6 +17,7 @@ import {
   getActiveSubmissionCategories,
 } from "./submission-requirements.js";
 import { savePdfSnapshot } from "./pdf-export.js";
+import { getCategoryLabel } from "./category-labels.js";
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
 import { updateSummary } from "./summary.js";
 import { updateIndustrySelectorUI } from "./ui.js";
@@ -348,7 +349,7 @@ function refreshCategoryNotes() {
     input.addEventListener("input", () => setCategoryNote(AppState.currentCategory, input.value));
   }
 
-  host.querySelector(".category-notes-label").textContent = `Notes for ${cat} (optional)`;
+  host.querySelector(".category-notes-label").textContent = `Notes for ${getCategoryLabel(cat)} (optional)`;
   if (host.dataset.cat !== cat) {
     host.querySelector("#category-note-input").value = AppState.categoryNotes?.[cat] || "";
     host.dataset.cat = cat;
@@ -420,12 +421,12 @@ function renderDownload() {
 
   const rows = active.map((cat) => {
     const s = AppState.scores?.[cat];
-    return `<tr><td>${escapeHtml(cat)}</td><td>${s != null ? s : "—"}</td></tr>`;
+    return `<tr><td>${escapeHtml(getCategoryLabel(cat))}</td><td>${s != null ? s : "—"}</td></tr>`;
   }).join("");
 
   const missing = readiness.missingScores.length;
   const partial = missing
-    ? `<p class="flow-note warn">${missing} categor${missing === 1 ? "y is" : "ies are"} unscored (${escapeHtml(readiness.missingScores.join(", "))}). They will show as "—" in the PDF.</p>`
+    ? `<p class="flow-note warn">${missing} categor${missing === 1 ? "y is" : "ies are"} unscored (${escapeHtml(readiness.missingScores.map(getCategoryLabel).join(", "))}). They will show as "—" in the PDF.</p>`
     : "";
 
   let answersHtml = "";

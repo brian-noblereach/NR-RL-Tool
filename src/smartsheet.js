@@ -15,6 +15,7 @@ import {
   normalizeCommentary
 } from "./submission-requirements.js";
 import { normalizeTrackAssignment } from "./qualification-matching.js";
+import { hasSubLevel, formatScore, readScoreCell } from "./score-utils.js";
 
 // Google Apps Script Web App URL (same proxy as Qual Tool)
 const PROXY_URL = "https://script.google.com/macros/s/AKfycbzt7wElvzQv0CNs-icg7QWpxjf4E5FGqWa6KpCY4zSa_thccGNWhw-THLTpnn8GJa2W/exec";
@@ -177,7 +178,7 @@ function buildPayload() {
 
     // Readiness Level scores (0 if not assessed, clamped to valid range)
     RL_IP: clampScore(AppState.scores["IP"]),
-    RL_Technology: clampScore(AppState.scores["Technology"]),
+    RL_Technology: clampTechnologyScore(AppState.scores["Technology"]),
     RL_Market: clampScore(AppState.scores["Market"]),
     RL_Product: clampScore(AppState.scores["Product"]),
     RL_Team: clampScore(AppState.scores["Team"]),
@@ -211,6 +212,19 @@ function clampScore(score) {
   const num = parseInt(score, 10);
   if (isNaN(num)) return null;
   return Math.max(0, Math.min(9, num));
+}
+
+/**
+ * TRL is the only category whose score may carry a sub-level letter (BARDA's
+ * lettered activities on the therapeutics track). A sub-level is written to
+ * Smartsheet verbatim as "3B"; everything else clamps to an integer exactly as
+ * the other nine score columns do.
+ * @param {number|string|null} score
+ * @returns {number|string|null}
+ */
+function clampTechnologyScore(score) {
+  if (hasSubLevel(score)) return formatScore(score);
+  return clampScore(score);
 }
 
 /**
@@ -779,7 +793,8 @@ function processRLAssessments(raw) {
       isHealthRelated: a.isHealthRelated === true || a.isHealthRelated === "true",
       scores: {
         IP: parseInt(a.RL_IP, 10) || 0,
-        Technology: parseInt(a.RL_Technology, 10) || 0,
+        // TRL may carry a sub-level like "3B" on the therapeutics track; keep it.
+        Technology: readScoreCell(a.RL_Technology, { allowSubLevel: true }),
         Market: parseInt(a.RL_Market, 10) || 0,
         Product: parseInt(a.RL_Product, 10) || 0,
         Team: parseInt(a.RL_Team, 10) || 0,
