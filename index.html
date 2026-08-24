@@ -307,6 +307,14 @@
     </div>
     <!-- External flow: score-step navigation footer (populated by external-flow.js) -->
     <div id="score-nav" class="flow-nav" hidden></div>
+
+    <!-- Site footer. Shown on both the internal workspace and the external
+         guided stepper; text is populated from src/data/attributions.js. -->
+    <footer class="site-footer" id="site-footer">
+      <span class="site-footer-notice" id="site-footer-notice"></span>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <button type="button" class="link-btn" id="open-attributions">Attributions &amp; license</button>
+    </footer>
   </div>
 
   <!-- Panel Overlay -->
@@ -369,10 +377,15 @@
 
         <div class="welcome-pilot-notice">
           <p>
-            <strong>This is a pilot release.</strong> We'd love your feedback to improve this tool. 
+            <strong>This is a pilot release.</strong> We'd love your feedback to improve this tool.
             Use the "Share Feedback" button in the banner above.
           </p>
         </div>
+
+        <!-- Licensing + source credits. Outside the if-internal/if-external
+             blocks on purpose: both audiences see this. Populated by main.js
+             from src/data/attributions.js. -->
+        <div class="welcome-about" id="welcome-about"></div>
       </div>
       <div class="modal-footer">
         <label class="dont-show-again">
@@ -558,6 +571,22 @@
         <span class="submit-review-note">Nothing is saved until you confirm this review step.</span>
         <button id="submit-review-cancel" class="btn outline">Cancel</button>
         <button id="submit-review-confirm" class="btn accent" disabled>Submit to Database</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Attributions & License Modal (body populated by main.js from
+       src/data/attributions.js so the modal and the PDF footer cannot drift) -->
+  <div id="attributions-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="attributions-modal-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content attributions-modal-content">
+      <div class="modal-header">
+        <h3 id="attributions-modal-title">Attributions &amp; license</h3>
+        <button id="attributions-modal-close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body" id="attributions-body"></div>
+      <div class="modal-footer">
+        <button id="attributions-done" class="btn">Close</button>
       </div>
     </div>
   </div>

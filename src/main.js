@@ -33,6 +33,7 @@ import { savePdfSnapshot } from "./pdf-export.js";
 import { getCategoryLabel, getCategoryAbbrev } from "./category-labels.js";
 import { startExternalFlow } from "./external-flow.js";
 import { PORTFOLIOS } from "./data/constants.js";
+import { BRL_LICENSE, SOURCE_ATTRIBUTIONS, FOOTER_NOTICE, ABOUT_FRAMEWORK } from "./data/index.js";
 import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchUserAssessments, fetchQualificationRecords, clearUserAssessmentsCache } from "./smartsheet.js";
 import {
   getQualificationMatchResolution,
@@ -183,6 +184,56 @@ function hideNextToast(immediate = false) {
     toast.removeEventListener("transitionend", onEnd);
   };
   toast.addEventListener("transitionend", onEnd);
+}
+
+/**
+ * Populate the site footer and the attributions modal from
+ * src/data/attributions.js. Rendered once at boot; the content is static, and
+ * keeping one source means the modal and the PDF footer cannot drift apart.
+ */
+function renderAttributions() {
+  const notice = document.getElementById("site-footer-notice");
+  if (notice) notice.textContent = FOOTER_NOTICE;
+
+  // Welcome modal summary — the visible surface for the source credits. Shown
+  // to internal and external users alike.
+  const about = document.getElementById("welcome-about");
+  if (about) {
+    about.innerHTML = `
+      <h4>${escapeHtml(ABOUT_FRAMEWORK.heading)}</h4>
+      ${ABOUT_FRAMEWORK.body.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}
+      <p><button type="button" class="link-btn" id="welcome-attributions-link">${escapeHtml(ABOUT_FRAMEWORK.linkLabel)}</button></p>`;
+
+    // Hand off from the welcome modal to the attributions modal rather than
+    // stacking them.
+    document.getElementById("welcome-attributions-link")?.addEventListener("click", () => {
+      hideWelcomeModal();
+      showModal("attributions-modal");
+    });
+  }
+
+  const body = document.getElementById("attributions-body");
+  if (!body) return;
+
+  const licenseHtml = `
+    <section class="attribution-block">
+      <h4>Business Readiness Levels framework</h4>
+      <p>${escapeHtml(BRL_LICENSE.summary)}</p>
+      <ul>${BRL_LICENSE.terms.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>
+      <p><a href="${BRL_LICENSE.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(BRL_LICENSE.name)}</a></p>
+      <p class="attribution-scope">${escapeHtml(BRL_LICENSE.scopeNote)}</p>
+    </section>`;
+
+  const sourcesHtml = SOURCE_ATTRIBUTIONS.map(
+    (source) => `
+    <section class="attribution-block">
+      <h4>${escapeHtml(source.heading)}</h4>
+      ${source.body.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}
+      <p><a href="${source.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.urlLabel)}</a></p>
+    </section>`
+  ).join("");
+
+  body.innerHTML = licenseHtml + sourcesHtml;
 }
 
 function showNextToast(nextCat) {
@@ -1104,6 +1155,13 @@ function setupEventListeners() {
   document.getElementById("welcome-modal-close")?.addEventListener("click", hideWelcomeModal);
   document.getElementById("welcome-get-started")?.addEventListener("click", hideWelcomeModal);
   document.querySelector("#welcome-modal .modal-backdrop")?.addEventListener("click", hideWelcomeModal);
+
+  // Attributions & license modal
+  renderAttributions();
+  document.getElementById("open-attributions")?.addEventListener("click", () => showModal("attributions-modal"));
+  document.getElementById("attributions-modal-close")?.addEventListener("click", () => hideModal("attributions-modal"));
+  document.getElementById("attributions-done")?.addEventListener("click", () => hideModal("attributions-modal"));
+  document.querySelector("#attributions-modal .modal-backdrop")?.addEventListener("click", () => hideModal("attributions-modal"));
 
   // Feedback modal
   document.getElementById("feedback-modal-close")?.addEventListener("click", hideFeedbackModal);

@@ -57,12 +57,42 @@
 // including AI imaging software and diagnostic wearables, is a device under FDA
 // rules (SaMD) and belongs on the device track.
 
+// The NASA note that the general, software, and hardware tracks share. These
+// three carry NO level overrides — `levels: []` — so resolveLevel() returns the
+// shared NASA-derived content in readiness-levels.js untouched. They exist here
+// only to declare provenance and a which-track hint for the selector, so the
+// source is always shown where the level text is actually read.
+const NASA_SOURCE_NOTE =
+  "Levels follow the NASA Technology Readiness Levels (U.S. Government, public domain).";
+
 export const TRL_TRACK_CONTENT = {
+  general: {
+    label: "General",
+    source: "NASA Technology Readiness Levels",
+    sourceNote: NASA_SOURCE_NOTE,
+    trackHint: "General-purpose and dual-use technologies.",
+    levels: [],
+  },
+  software: {
+    label: "Software",
+    source: "NASA Technology Readiness Levels",
+    sourceNote: NASA_SOURCE_NOTE,
+    trackHint: "Software, algorithms, and digital products.",
+    levels: [],
+  },
+  hardware: {
+    label: "Hardware",
+    source: "NASA Technology Readiness Levels",
+    sourceNote: NASA_SOURCE_NOTE,
+    trackHint: "Physical products, devices, and instrumentation.",
+    levels: [],
+  },
+
   therapeutics: {
     label: "Therapeutics",
     source: "BARDA Integrated TRLs for Medical Countermeasure Products (Drugs and Biologics)",
     sourceNote:
-      "This track follows BARDA's medical-countermeasure TRL definitions (drugs and biologics) rather than the NASA TRLs used by the general, software, and hardware tracks. A level is reached only once every activity listed at that level is complete.",
+      "Levels follow BARDA's medical-countermeasure TRLs for drugs and biologics (U.S. Government, public domain). A level is reached only once every activity at that level is complete.",
     trackHint:
       "Drugs and biologics — small molecules, biologics, vaccines, cell and gene therapies.",
     levels: [
@@ -282,7 +312,7 @@ export const TRL_TRACK_CONTENT = {
     label: "Diagnostics",
     source: "BARDA TRLs for Medical Countermeasure Products (Diagnostics and Medical Devices), adapted from the harmonized Q-TRL",
     sourceNote:
-      "This track follows BARDA's Q-TRL definitions for diagnostics rather than the NASA TRLs used by the general, software, and hardware tracks. BARDA's set runs to TRL 8, which ends at FDA clearance or approval; level 9 covers post-market activity. A level is reached only once every activity at that level is complete.",
+      "Levels follow BARDA's Q-TRL definitions for diagnostics (U.S. Government, public domain). BARDA's set ends at TRL 8 with FDA clearance or approval; level 9 covers post-market activity.",
     trackHint:
       "In vitro diagnostics — assays, reagents, instruments, and software acting on a specimen taken from the body. Imaging AI and diagnostic wearables belong on the medical device track.",
     levels: [
@@ -462,7 +492,7 @@ export const TRL_TRACK_CONTENT = {
     source:
       "BARDA Q-TRL level boundaries with device-native content (FDA design controls; NHLBI Catalyze Therapeutic Device TRLs)",
     sourceNote:
-      "This track keeps the level boundaries of BARDA's Q-TRL set for devices but uses device-native content — design controls, verification and validation, and the IDE/510(k)/De Novo/PMA pathway — rather than BARDA's diagnostics wording. BARDA's set runs to TRL 8, which ends at FDA clearance or approval; level 9 covers post-market activity.",
+      "Level boundaries follow BARDA's Q-TRL set for devices (U.S. Government, public domain), with device-specific content in place of BARDA's diagnostics wording. BARDA's set ends at TRL 8 with FDA clearance or approval; level 9 covers post-market activity.",
     trackHint:
       "Devices that act on the patient — implants, catheters, instruments, imaging hardware, wearables, and diagnostic or therapeutic software (SaMD). Specimen-based tests belong on the diagnostics track.",
     levels: [
