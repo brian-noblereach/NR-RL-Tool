@@ -21,6 +21,14 @@ export const IntakeAuth = {
     try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
   },
 
+  /**
+   * True when NobleReach staff signed in with the internal password. Staff
+   * see the reviewer result and pre-call brief on the thank-you screen.
+   */
+  isStaff() {
+    try { return localStorage.getItem(ROLE_KEY) === 'internal'; } catch (e) { return false; }
+  },
+
   clear() {
     try {
       localStorage.removeItem(TOKEN_KEY);
