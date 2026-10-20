@@ -1,10 +1,16 @@
 // auth.js - Access control for pilot distribution
 // Verifies password against Google Apps Script proxy, stores signed token in localStorage.
 // Token is tied to a password version — rotating the password invalidates all sessions.
+// The proxy checks this token on every data action (see proxy-update/Code.gs ACTION_ROLES).
+
+import { PROXY_URL } from './proxy-client.js';
 
 const STORAGE_KEY = 'noblereach_access_token';
 const ROLE_KEY = 'noblereach_user_role';
-const PROXY_URL = 'https://script.google.com/macros/s/AKfycbzt7wElvzQv0CNs-icg7QWpxjf4E5FGqWa6KpCY4zSa_thccGNWhw-THLTpnn8GJa2W/exec';
+
+// Only these roles may use the advisor tool. Founder tokens belong to the
+// intake page (intake.html) and are never accepted here.
+const ADVISOR_ROLES = ['internal', 'external'];
 
 export const Auth = {
   role: null,
@@ -16,6 +22,14 @@ export const Auth = {
     if (this.role) return this.role === 'external';
     return localStorage.getItem(ROLE_KEY) === 'external';
   },
+
+  /**
+   * The stored token, sent with every proxy data action.
+   */
+  getToken() {
+    return localStorage.getItem(STORAGE_KEY) || '';
+  },
+
   /**
    * Check if user has valid access. Called before app init.
    * Returns true if authenticated, false if login needed.
@@ -26,8 +40,8 @@ export const Auth = {
 
     try {
       const result = await this.verifyToken(token);
-      if (result.valid) {
-        this.role = result.role || 'internal';
+      if (result.valid && ADVISOR_ROLES.includes(result.role)) {
+        this.role = result.role;
         localStorage.setItem(ROLE_KEY, this.role);
         return true;
       }
@@ -40,7 +54,9 @@ export const Auth = {
     } catch (e) {
       // Network error — allow access if token exists (offline grace)
       console.warn('[Auth] Verify failed, allowing cached access:', e.message);
-      this.role = localStorage.getItem(ROLE_KEY) || 'internal';
+      const cachedRole = localStorage.getItem(ROLE_KEY);
+      if (!ADVISOR_ROLES.includes(cachedRole)) return false;
+      this.role = cachedRole;
       return true;
     }
   },
@@ -56,8 +72,11 @@ export const Auth = {
       const data = await response.json();
 
       if (data.success && data.token) {
+        if (!ADVISOR_ROLES.includes(data.role)) {
+          return { success: false, error: 'Invalid password' };
+        }
         localStorage.setItem(STORAGE_KEY, data.token);
-        this.role = data.role || 'internal';
+        this.role = data.role;
         localStorage.setItem(ROLE_KEY, this.role);
         return { success: true };
       }
@@ -85,6 +104,18 @@ export const Auth = {
     localStorage.removeItem(ROLE_KEY);
     this.role = null;
     this.showLoginOverlay();
+  },
+
+  /**
+   * The proxy rejected the token (expired, rotated, or missing). Ask the user
+   * to log in again. Local work is already in localStorage, so nothing is lost;
+   * main.js boots only once, so logging back in just closes the overlay.
+   */
+  handleUnauthorized() {
+    console.warn('[Auth] Proxy rejected the session token; asking user to log in again');
+    this.logout();
+    const errorEl = document.getElementById('auth-error');
+    if (errorEl) errorEl.textContent = 'Your session expired. Please log in again. Your work is saved in this browser.';
   },
 
   /**

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <!-- NobleReach Brand Fonts (same as index.html) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=General+Sans:wght@400;500;600;700&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+  <link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&display=swap" rel="stylesheet">
+
+  <title>Venture Readiness Intake | NobleReach</title>
+  <link rel="stylesheet" href="assets/intake.css" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+</head>
+<body>
+  <!-- Founder login. Uses the founder access code; separate session from the
+       advisor tool (see src/intake/intake-auth.js). -->
+  <div id="auth-overlay" class="auth-overlay" hidden>
+    <div class="auth-card">
+      <img src="assets/logo-icon.svg" alt="NobleReach" width="48" height="48">
+      <h2>Venture Readiness Intake</h2>
+      <p class="auth-subtitle">Enter the access code you were given to begin.</p>
+      <form id="auth-form" class="auth-form">
+        <input type="password" id="auth-password" placeholder="Access code" autocomplete="off" required aria-label="Access code">
+        <button type="submit" id="auth-submit" class="btn">Enter</button>
+      </form>
+      <div id="auth-error" class="auth-error" role="alert"></div>
+      <p class="auth-note">Don't have a code? Contact your program or tech transfer office.</p>
+    </div>
+  </div>
+
+  <header class="intake-header">
+    <div class="bar">
+      <img src="assets/logo-icon.svg" alt="" width="28" height="28">
+      <h1>NobleReach Venture Readiness Intake</h1>
+      <button type="button" class="header-link" id="start-over" hidden>Start over</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <nav aria-label="Steps" id="steps-nav"><ol class="rail" id="rail"></ol><p class="railmini" id="railmini"></p></nav>
+    <section id="view" aria-live="polite"></section>
+  </main>
+
+  <!-- License notice. Text comes from src/data/attributions.js. -->
+  <footer class="site-footer">
+    <span id="site-footer-notice"></span><span class="sep" aria-hidden="true">·</span><button type="button" class="link-btn" id="open-attributions">Attributions &amp; license</button>
+  </footer>
+
+  <dialog class="attributions" id="attributions-dialog" aria-labelledby="attributions-title">
+    <div class="dlg-head">
+      <h2 id="attributions-title">Attributions &amp; license</h2>
+      <button type="button" class="icon-btn" id="attributions-close" aria-label="Close">×</button>
+    </div>
+    <div class="dlg-body" id="attributions-body"></div>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script type="module" src="src/intake/intake-app.js"></script>
+</body>
+</html>

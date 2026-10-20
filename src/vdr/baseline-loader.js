@@ -8,9 +8,7 @@ import { Auth } from '../auth.js';
 import { getAllVentures } from '../state.js';
 import { getCategoryAbbrev } from '../category-labels.js';
 import { readScoreCell, scoreRank } from '../score-utils.js';
-
-// Google Apps Script Web App URL (same as main tool)
-const PROXY_URL = "https://script.google.com/macros/s/AKfycbzt7wElvzQv0CNs-icg7QWpxjf4E5FGqWa6KpCY4zSa_thccGNWhw-THLTpnn8GJa2W/exec";
+import { PROXY_URL } from '../proxy-client.js';
 
 // Cache for assessments
 let assessmentsCache = null;
@@ -37,7 +35,8 @@ export async function fetchRLAssessments() {
 
     const requestData = {
       action: 'smartsheet_rl_list',
-      limit: 500 // Get all assessments
+      limit: 500, // Get all assessments
+      token: Auth.getToken()
     };
 
     const encodedData = encodeURIComponent(JSON.stringify(requestData));
@@ -57,6 +56,7 @@ export async function fetchRLAssessments() {
         resolve(assessments);
       } else {
         console.warn('[VDR] Failed to fetch assessments:', response);
+        if (response && response.error === 'unauthorized') Auth.handleUnauthorized();
         resolve([]);
       }
     };

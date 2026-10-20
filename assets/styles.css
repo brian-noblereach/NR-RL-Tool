@@ -1373,6 +1373,24 @@ body {
   color: var(--slate-500);
 }
 
+/* TRL Level 0 - scale begins at 1, greyed out and unselectable */
+.level-card.disabled {
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+
+.level-card.disabled .level-header {
+  cursor: not-allowed;
+}
+
+.level-card.disabled .level-select-btn,
+.level-card.disabled .level-select-btn:hover {
+  background: var(--slate-300);
+  color: var(--slate-600);
+  cursor: not-allowed;
+  transform: none;
+}
+
 .level-title {
   flex: 1;
   font-weight: 700;

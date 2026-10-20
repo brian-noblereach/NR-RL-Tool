@@ -16,9 +16,26 @@ import {
 } from "./submission-requirements.js";
 import { normalizeTrackAssignment } from "./qualification-matching.js";
 import { hasSubLevel, formatScore, readScoreCell } from "./score-utils.js";
+import { PROXY_URL } from "./proxy-client.js";
+import { Auth } from "./auth.js";
 
-// Google Apps Script Web App URL (same proxy as Qual Tool)
-const PROXY_URL = "https://script.google.com/macros/s/AKfycbzt7wElvzQv0CNs-icg7QWpxjf4E5FGqWa6KpCY4zSa_thccGNWhw-THLTpnn8GJa2W/exec";
+/**
+ * Attach the session token. The proxy rejects every data action without one.
+ */
+function withToken(data) {
+  return { ...data, token: Auth.getToken() };
+}
+
+/**
+ * True when the proxy refused the token; prompts the user to log in again.
+ */
+function checkUnauthorized(response) {
+  if (response && response.error === "unauthorized") {
+    Auth.handleUnauthorized();
+    return true;
+  }
+  return false;
+}
 
 // Configuration
 const MAX_STRING_LENGTH = 255;  // Max length for text fields
@@ -63,13 +80,13 @@ export async function submitToSmartsheet() {
     const isUpdate = AppState.isEditingExisting && AppState.smartsheetRowId;
     const action = isUpdate ? "smartsheet_rl_update" : "smartsheet_rl";
 
-    const requestData = {
+    const requestData = withToken({
       action: action,
       ...(isUpdate && { rowId: AppState.smartsheetRowId }),
       ...payload
-    };
+    });
 
-    console.log(`[Smartsheet] ${isUpdate ? "Updating" : "Creating"} assessment:`, requestData);
+    console.log(`[Smartsheet] ${isUpdate ? "Updating" : "Creating"} assessment:`, { ...requestData, token: "[redacted]" });
 
     // Try submission with retry logic
     const result = await submitWithRetry(requestData);
@@ -94,6 +111,10 @@ export async function submitToSmartsheet() {
       const actionMsg = isUpdate ? "updated" : "saved";
       console.log(`[Smartsheet] Assessment ${actionMsg} successfully`);
       return { success: true, message: `Assessment ${actionMsg} to database` };
+    }
+
+    if (checkUnauthorized(result)) {
+      return { success: false, message: "Your session expired. Log in again, then save to the database." };
     }
 
     return {
@@ -250,7 +271,7 @@ async function submitWithRetry(data, maxRetries = MAX_RETRIES) {
       return result;
     }
 
-    if (result.unconfirmed) {
+    if (result.unconfirmed || result.error === "unauthorized") {
       return result;
     }
     lastError = result.error || "Unknown error";
@@ -450,10 +471,10 @@ function fetchFromQualSheet({ dedupe = true, limit = 200 } = {}) {
     let completed = false;
     const callbackName = "rlQualCallback_" + Date.now();
 
-    const requestData = {
+    const requestData = withToken({
       action: "smartsheet_list",
       limit
-    };
+    });
 
     const encodedData = encodeURIComponent(JSON.stringify(requestData));
     const url = `${PROXY_URL}?data=${encodedData}&callback=${callbackName}`;
@@ -519,6 +540,7 @@ function fetchFromQualSheet({ dedupe = true, limit = 200 } = {}) {
         resolve(ventures);
       } else {
         console.warn("[Smartsheet] Failed to fetch from Qual sheet:", response);
+        checkUnauthorized(response);
         resolve([]);
       }
     };
@@ -570,10 +592,10 @@ function fetchFromRLSheet() {
     let completed = false;
     const callbackName = "rlRLCallback_" + Date.now();
 
-    const requestData = {
+    const requestData = withToken({
       action: "smartsheet_rl_list",
       limit: 200
-    };
+    });
 
     const encodedData = encodeURIComponent(JSON.stringify(requestData));
     const url = `${PROXY_URL}?data=${encodedData}&callback=${callbackName}`;
@@ -616,6 +638,7 @@ function fetchFromRLSheet() {
       } else {
         // RL list might not exist yet - that's okay
         console.log("[Smartsheet] No RL assessments found or action not available");
+        checkUnauthorized(response);
         resolve([]);
       }
     };
@@ -709,10 +732,10 @@ export async function fetchUserAssessments(advisorName) {
     let completed = false;
     const callbackName = "userAssessmentsCallback_" + Date.now();
 
-    const requestData = {
+    const requestData = withToken({
       action: "smartsheet_rl_list",
       limit: 500  // Get all assessments, filter client-side
-    };
+    });
 
     const encodedData = encodeURIComponent(JSON.stringify(requestData));
     const url = `${PROXY_URL}?data=${encodedData}&callback=${callbackName}`;
@@ -737,6 +760,7 @@ export async function fetchUserAssessments(advisorName) {
         resolve(userAssessments);
       } else {
         console.warn("[Smartsheet] Failed to fetch assessments:", response);
+        checkUnauthorized(response);
         resolve([]);
       }
     };

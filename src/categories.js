@@ -147,6 +147,20 @@ export function createLevelCard(level, currentScore, industryVal) {
   // indicators, and may add workstreams and lettered activities.
   const resolved = isTech ? resolveLevel("Technology", level, trackKey) : level;
 
+  // The TRL scale begins at 1. Level 0 keeps its slot so the list matches the
+  // other categories, but renders header-only and cannot be selected. An
+  // existing TRL 0 score is left as-is and still shows as selected.
+  if (isTech && level.level === 0) {
+    return `
+    <div class="level-card disabled ${isSelected ? "selected" : ""}" data-level="0">
+      <div class="level-header">
+        <div class="level-number">0</div>
+        <div class="level-title">Level 0: ${resolved.isTrackOverride ? resolved.title : maybeHealth(resolved.title)}</div>
+        <button class="level-select-btn" disabled>TRL scale begins at 1</button>
+      </div>
+    </div>`;
+  }
+
   const baseIndicators = getIndicators(resolved, trackKey);
   const content = getEffectiveContent(AppState.currentCategory, resolved, baseIndicators, trackKey);
 
@@ -306,6 +320,7 @@ function setupLevelCardDelegation() {
     const header = e.target.closest(".level-header");
     if (header && !e.target.classList.contains("level-select-btn")) {
       const card = header.closest(".level-card");
+      if (card.classList.contains("disabled")) return;
       toggleLevel(card);
       return;
     }

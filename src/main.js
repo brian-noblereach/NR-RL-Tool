@@ -42,6 +42,7 @@ import {
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
 import { updateSummary } from "./summary.js";
 import { Auth } from "./auth.js";
+import { PROXY_URL } from "./proxy-client.js";
 import {
   updateIndustrySelectorUI,
   toggleMinimizeSummaryPanel,
@@ -1669,10 +1670,7 @@ async function populatePortfolioDropdown() {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const resp = await fetch(
-      "https://script.google.com/macros/s/AKfycbzt7wElvzQv0CNs-icg7QWpxjf4E5FGqWa6KpCY4zSa_thccGNWhw-THLTpnn8GJa2W/exec?action=portfolios",
-      { signal: controller.signal }
-    );
+    const resp = await fetch(`${PROXY_URL}?action=portfolios`, { signal: controller.signal });
     clearTimeout(timeoutId);
     const data = await resp.json();
     if (data.success && Array.isArray(data.portfolios)) {
@@ -1823,8 +1821,18 @@ function normalBoot() {
 document.addEventListener("DOMContentLoaded", async () => {
   const params = new URLSearchParams(window.location.search);
 
-  // Boot function — mode determined after auth (Auth.role is set)
+  // Boot function — mode determined after auth (Auth.role is set).
+  // Runs once per page load. A later login (after the proxy reports an
+  // expired session) only closes the overlay; if the role changed, reload so
+  // the internal/external UI is rebuilt from scratch.
+  let bootedRole = null;
   function boot() {
+    if (bootedRole) {
+      if (Auth.role !== bootedRole) window.location.reload();
+      return;
+    }
+    bootedRole = Auth.role;
+
     const isVDR = params.get('vdr') === 'true';
     if (isVDR) {
       import('./vdr/vdr-main.js').then(({ initializeVDR }) => {
