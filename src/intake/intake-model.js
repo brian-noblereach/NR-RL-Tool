@@ -74,7 +74,8 @@ const FACILITY_FORMS=['Hardware or physical device','Material, chemistry, or pro
 
 export const ICORPS=['Not in I-Corps','Regional, in progress','Regional, finished','National, in progress','National, finished'];
 export const HOURS=['Under 3','3 to 5','5 to 10','10 to 20','More than 20','Full time'];
-export const OUTCOMES=['Start a company I help lead','Start a company someone else leads','License it to an existing company','Partner with an existing company','Not sure yet'];
+// 'License' and 'Partner' merged into one option at Brian's direction (Oct 2026).
+export const OUTCOMES=['Start a company I help lead','Start a company someone else leads','Work with an existing company (license or partnership)','Not sure yet'];
 export const PRIOR_EXPERIENCE=['Founded or co-founded a company','Licensed a technology','Received an SBIR or STTR award','Worked in industry in a related field','None'];
 export const NS_RELEVANCE=['Defense or intelligence use','Other government agency use','Commercial use','Not sure yet'];
 
@@ -118,6 +119,7 @@ export function displayText(text, screenId, A) {
 }
 
 export const SCREENS=[
+ {id:'changes',type:'changes',sect:"What's changed",when:(v,A)=>!!A.retake},
  {id:'applicant',type:'applicant',sect:'Applicant'},
  {id:'project',type:'project',sect:'Project'},
  {id:'essays',type:'essays',sect:'The technology and the problem'},
@@ -425,7 +427,91 @@ export function createModel(A) {
   return { A, C, by, val, gateVal, scan, itemVisible, screenActive, hasItems, activeScreens, nextScreen, flags: () => flagItems().map(x => x.text), gateFlags: () => gateItems().map(x => x.text), flagItems, gateItems, result };
 }
 
+/* ---------- re-takes: carry forward what hasn't changed ---------- */
+//
+// A re-take opens on the "What's changed" screen. Each section from the last
+// submission defaults to "No change" and is carried forward without being
+// asked again; "Update" shows it pre-filled, and anything can be unchecked
+// (applicants do pivot, and levels can go down). These are always asked again:
+// "You and the project" (time spent goes stale) and "Materials and submit".
+
+export const RETAKE_SECTIONS = [
+  { id: 'applicant', label: 'Your details' },
+  { id: 'project', label: 'Project' },
+  { id: 'essays', label: 'The technology and the problem' },
+  { id: 'cust', label: 'Customers' },
+  { id: 'docs', label: 'Plans on paper' },
+  { id: 'tech', label: 'Technology stage' },
+  { id: 'ip', label: 'Intellectual property' },
+  { id: 'team', label: 'Team' },
+  { id: 'fund', label: 'Funding' },
+  { id: 'reg', label: 'Regulatory' },
+  { id: 'scale', label: 'Traction' }
+];
+
+/**
+ * True when last time's answers for this screen can be carried forward
+ * as they are. False when the screen was never answered, or when an
+ * updated answer changes what the screen asks (company status changes the
+ * Team and Funding items; a different technology form changes the TRL
+ * options and the Regulatory screen).
+ */
+export function canCarry(A, P, id) {
+  if (!P || !P.done || !P.done[id]) return false;
+  const co = x => !!(x.project && x.project.company === 'Yes');
+  if ((id === 'team' || id === 'fund') && co(A) !== co(P)) return false;
+  if ((id === 'tech' || id === 'reg') && track(A) !== track(P)) return false;
+  return true;
+}
+
+const clone = x => (x == null ? x : JSON.parse(JSON.stringify(x)));
+
+/** Copy last time's answers for one screen into A. Call only when canCarry(). */
+export function carryForward(A, P, id) {
+  const sc = SCREENS.find(s => s.id === id);
+  if (id === 'applicant') A.applicant = clone(P.applicant);
+  else if (id === 'project') A.project = clone(P.project);
+  else if (id === 'essays') {
+    A.essays = clone(P.essays);
+    A.problem = P.problem ? clone(P.problem) : { known: !(P.essays && P.essays.noCustomers) };
+  } else if (id === 'tech') {
+    A.stage = P.stage;
+    A.techEv = P.techEv || '';
+    A.facilities = hasFacilities(A) ? (P.facilities || '') : '';
+  } else if (sc && sc.type === 'multi') {
+    A.I = A.I || {};
+    for (const it of sc.items) {
+      if (P.F && it.k in P.F) A.F[it.k] = P.F[it.k];
+      if (P.E && P.E[it.k]) A.E[it.k] = P.E[it.k];
+      if (P.I && it.k in P.I) A.I[it.k] = P.I[it.k];
+    }
+    if (id === 'cust') { A.count = P.count; A.confirm = P.confirm; }
+  }
+  if (P.unsure && P.unsure[id]) A.unsure[id] = true;
+}
+
+/** One line describing last time's answers for a section ("" if never answered). */
+export function sectionSummary(P, id) {
+  if (!P || !P.done || !P.done[id]) return '';
+  const ap = P.applicant || {}, pr = P.project || {};
+  if (id === 'applicant') return [[ap.first, ap.last].filter(Boolean).join(' '), ap.org].filter(Boolean).join(' · ');
+  if (id === 'project') return [pr.title, pr.form, pr.company === 'Yes' ? 'company formed' : 'no company yet'].filter(Boolean).join(' · ');
+  if (id === 'essays') return 'Your three written answers';
+  if (id === 'tech') return P.stage ? trlOptions(P)[P.stage].title : 'None of the milestones yet';
+  const sc = SCREENS.find(s => s.id === id);
+  const n = sc.items.filter(it => P.F && P.F[it.k] === true).length;
+  return n ? `${n} item${n === 1 ? '' : 's'} checked` : 'Nothing checked';
+}
+
 /* ---------- comparisons between two intakes ---------- */
+
+/** Categories whose draft level moved between two submissions: [{cat, before, now}]. */
+export function levelChanges(prevA, A) {
+  const before = createModel(prevA).result(), now = createModel(A).result();
+  return now.cats
+    .filter(c => before.scores[c] != null && now.scores[c] != null && before.scores[c] !== now.scores[c])
+    .map(c => ({ cat: c, before: before.scores[c], now: now.scores[c] }));
+}
 
 /**
  * What changed between a previous intake and this one, in plain language.
@@ -481,11 +567,8 @@ export function buildRow(A, ctx = {}) {
     [COL.applicantName]: [ap.first, ap.last].filter(Boolean).join(' '),
     [COL.email]: ap.email,
     [COL.phone]: ap.phone ? ap.phone + (ap.ext ? ' ext. ' + ap.ext : '') : '',
-    [COL.title]: ap.title,
-    [COL.department]: ap.dept,
     [COL.role]: ap.role,
     [COL.teamMembers]: ap.team,
-    [COL.technologyDomain]: pr.domain === 'Other' ? 'Other: ' + (pr.domainOther || '') : pr.domain,
     [COL.technologyForm]: pr.form,
     [COL.trlTrack]: TRACK_LABEL[r.track],
     [COL.companyFormed]: pr.company,
@@ -524,7 +607,10 @@ export function buildRow(A, ctx = {}) {
     [COL.factsTrue]: Object.keys(C_).filter(k => C_[k] === true).sort().join(', ')
   };
   for (const c of r.cats) row[BRL_COLUMN_BY_CAT[c]] = r.scores[c];
-  if (ctx.previousA) row[COL.changesSincePrevious] = formatDiff(diffFacts(ctx.previousA, A));
+  if (ctx.previousA) {
+    const moved = levelChanges(ctx.previousA, A).map(x => `${NAMES[x.cat]} ${x.before} to ${x.now}`);
+    row[COL.changesSincePrevious] = (moved.length ? 'Level changes: ' + moved.join('; ') + ' | ' : '') + formatDiff(diffFacts(ctx.previousA, A));
+  }
   for (const k of Object.keys(row)) if (row[k] === undefined || row[k] === null || row[k] === '') delete row[k];
   return row;
 }
@@ -544,9 +630,7 @@ export function founderRecap(A) {
     sections.push({ sect: 'Applicant', items: nonEmpty([
       'Name: ' + [ap.first, ap.last].filter(Boolean).join(' '),
       'Email: ' + ap.email,
-      ap.title ? 'Title: ' + ap.title : '',
       'Organization: ' + ap.org,
-      ap.dept ? 'Department: ' + ap.dept : '',
       'Your role: ' + ap.role,
       ap.team ? 'Team members: ' + ap.team : ''
     ]) });
@@ -554,7 +638,6 @@ export function founderRecap(A) {
   if (A.project) {
     sections.push({ sect: 'Project', items: nonEmpty([
       'Project: ' + pr.title,
-      'Technology domain: ' + (pr.domain === 'Other' ? pr.domainOther : pr.domain),
       'Technology form: ' + pr.form,
       pr.company === 'Yes' ? 'Company: ' + pr.companyName + (pr.companyType ? ' (' + pr.companyType + ')' : '') : 'Company formed: ' + pr.company,
       'I-Corps: ' + pr.icorps,

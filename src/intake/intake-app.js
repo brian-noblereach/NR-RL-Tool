@@ -11,11 +11,12 @@
 
 import {
   SCREENS, CATS, NAMES, VERSION, SHOW_LEVELS_TO_FOUNDER, FORMS, ICORPS, HOURS, OUTCOMES,
-  PRIOR_EXPERIENCE, NS_RELEVANCE,
+  PRIOR_EXPERIENCE, NS_RELEVANCE, RETAKE_SECTIONS,
   freshAnswers, closeSet, createModel, track, isHealth, hasFacilities, trlOptions, displayText,
-  buildRow, founderRecap, diffFacts
+  buildRow, founderRecap, diffFacts, canCarry, carryForward, sectionSummary
 } from './intake-model.js';
 import { buildBrief } from './intake-brief.js';
+import { buildQmInput } from './intake-qm.js';
 import { INTAKE_CONFIG as CFG } from './intake-config.js';
 import { IntakeAuth } from './intake-auth.js';
 import { submitIntake, uploadIntakeFile, checkFile, lookupIntake, resendCode, newSubmissionId } from './intake-api.js';
@@ -192,9 +193,17 @@ function plannedUploads() {
 /* ---------- flow ---------- */
 function beginIntake(prev) {
   A = freshAnswers();
-  A.ctx = { source: PARAMS.get('source') || '', portfolio: PARAMS.get('portfolio') || CFG.portfolio || '' };
   H = [];
   P = prev ? prev.answers : null;
+  // Re-take of a submission from this form version family: open on "What's
+  // changed", carry forward unchanged sections, and keep the same email so the
+  // history and return code stay linked.
+  if (P && P.applicant && P.done) {
+    A.retake = true;
+    A.lockedEmail = P.applicant.email || '';
+  }
+  const pctx = (P && P.ctx) || {};
+  A.ctx = { source: PARAMS.get('source') || '', portfolio: PARAMS.get('portfolio') || pctx.portfolio || CFG.portfolio || '' };
   meta = {
     submissionId: newSubmissionId(),
     previous: prev ? { submissionId: prev.submissionId || '', submittedAt: prev.submittedAt || '' } : null
@@ -231,7 +240,8 @@ function back() {
   const wasUnsure = !!A.unsure[id];
   delete A.unsure[id];
 
-  if (id === 'applicant') { A._applicant = A.applicant; delete A.applicant; }
+  if (id === 'changes') { A._changes = A.changeChoices; delete A.changeChoices; A.carry = {}; }
+  else if (id === 'applicant') { A._applicant = A.applicant; delete A.applicant; }
   else if (id === 'project') { A._project = A.project; delete A.project; }
   else if (id === 'essays') { A._essays = A.essays; delete A.essays; delete A.problem; }
   else if (id === 'founder') { A._founder = A.founder; delete A.founder; }
@@ -275,12 +285,62 @@ function render() {
   if (phase === 'start') return renderStart();
   if (phase === 'done') return renderDone();
 
-  const sc = M().nextScreen();
+  let sc = M().nextScreen();
+  // Re-take: sections marked "No change" are carried forward without being
+  // shown, in screen order (so Back still walks through them).
+  let carried = false;
+  while (sc && A.carry && A.carry[sc.id]) {
+    delete A.carry[sc.id];
+    if (!canCarry(A, P, sc.id)) { A.review = Object.assign(A.review || {}, { [sc.id]: true }); break; }
+    carryForward(A, P, sc.id);
+    A.done[sc.id] = true;
+    H.push(sc.id);
+    invalidate();
+    carried = true;
+    sc = M().nextScreen();
+  }
+  if (carried) saveDraft();
   setLayout(true);
   rail(sc);
   if (!sc) return renderSubmit();
-  ({ applicant: renderApplicant, project: renderProject, essays: renderEssays, founder: renderFounder,
+  ({ changes: renderChanges, applicant: renderApplicant, project: renderProject, essays: renderEssays, founder: renderFounder,
      tech: renderTech, multi: renderMulti, materials: renderMaterials })[sc.type](sc);
+  // A carried section that can't be reused as-is (an earlier answer changed what it asks)
+  if (A.review && A.review[sc.id]) {
+    const panel = view().querySelector('.panel');
+    if (panel && !panel.querySelector('.review-note')) {
+      panel.querySelector('.q').insertAdjacentHTML('afterend', '<p class="note review-note">An answer you updated changes this section, so please check it. Your previous answers are filled in.</p>');
+    }
+  }
+}
+
+/* ----- re-take: what's changed? ----- */
+function renderChanges() {
+  const choices = A._changes || {};
+  const rows = RETAKE_SECTIONS.filter(s => P.done && P.done[s.id]);
+  rows.forEach(s => { if (!choices[s.id]) choices[s.id] = 'No change'; });
+  A._changes = choices;
+  view().innerHTML = `<div class="panel"><p class="sect">What's changed</p>
+    <h2 class="q">What's changed since ${esc(fmtDate(meta.previous && meta.previous.submittedAt)) || 'last time'}?</h2>
+    <p class="hint lead">Sections marked <strong>No change</strong> keep your previous answers and won't be asked again. Choose <strong>Update</strong> for anything that's different, including things that are no longer true. Changing direction is normal; it's fine to uncheck items.</p>
+    <div class="changes">${rows.map(s => `<div class="change-row">
+      <div class="change-text"><strong>${esc(s.label)}</strong><span>${esc(sectionSummary(P, s.id))}</span></div>
+      <div class="seg" data-name="${s.id}">${['No change', 'Update'].map(o => `<button type="button" aria-pressed="${choices[s.id] === o}">${o}</button>`).join('')}</div>
+    </div>`).join('')}</div>
+    <p class="hint">Asked again every time: your time and hours, and materials. Sections you didn't answer last time are new this time.</p>
+    <div class="actions"><button class="btn" id="go">Continue</button><button class="btn ghost" id="pivot">We've changed direction: review everything</button><span class="status err" id="err"></span></div></div>`;
+  view().querySelectorAll('.seg').forEach(seg => seg.querySelectorAll('button').forEach(b => {
+    b.onclick = () => { choices[seg.dataset.name] = b.textContent; saveDraft(); renderChanges(); };
+  }));
+  const go = () => {
+    A.changeChoices = choices;
+    A.carry = {};
+    rows.forEach(s => { if (choices[s.id] === 'No change') A.carry[s.id] = true; });
+    delete A._changes;
+    finish('changes');
+  };
+  $('go').onclick = go;
+  $('pivot').onclick = () => { rows.forEach(s => { choices[s.id] = 'Update'; }); go(); };
 }
 
 /* ----- start ----- */
@@ -405,20 +465,21 @@ function renderApplicant() {
       <div class="field"><label class="f" for="first">First name</label><input id="first" type="text" value="${esc(a.first)}" autocomplete="given-name"></div>
       <div class="field"><label class="f" for="last">Last name</label><input id="last" type="text" value="${esc(a.last)}" autocomplete="family-name"></div>
     </div>
-    <div class="field"><label class="f" for="email">Email</label><input id="email" type="email" value="${esc(a.email)}" autocomplete="email"><p class="hint">We send your return code here, so you can pick up from these answers next time.</p></div>
+    ${A.lockedEmail
+      ? `<div class="field"><label class="f" for="email">Email</label><input id="email" type="email" value="${esc(A.lockedEmail)}" readonly aria-readonly="true"><p class="hint">This is the email on file for your earlier submissions, so it stays the same. To use a different email, start a new submission instead.</p></div>`
+      : `<div class="field"><label class="f" for="email">Email</label><input id="email" type="email" value="${esc(a.email)}" autocomplete="email"><p class="hint">We send your return code here, so you can pick up from these answers next time.</p></div>`}
     <div class="row2">
       <div class="field"><label class="f" for="phone">Phone <span class="opt-tag">optional</span></label><input id="phone" type="tel" value="${esc(a.phone)}" autocomplete="tel"></div>
       <div class="field narrow"><label class="f" for="ext">Ext. <span class="opt-tag">optional</span></label><input id="ext" type="text" value="${esc(a.ext)}"></div>
     </div>
-    <div class="field"><label class="f" for="title">Title or academic rank</label><input id="title" type="text" value="${esc(a.title)}"></div>
     <div class="field"><label class="f" for="org">University or organization</label>${orgField}</div>
-    <div class="field"><label class="f" for="dept">Department or college <span class="opt-tag">optional</span></label><input id="dept" type="text" value="${esc(a.dept)}"></div>
     <div class="field"><label class="f">Your role on the project</label>${seg(a, 'role', ['Faculty or PI', 'Co-investigator', 'Postdoc', 'Grad student', 'Founder from outside the university', 'Other'])}</div>
     <div class="field"><label class="f" for="team">Co-investigators or other team members <span class="opt-tag">optional</span></label><textarea id="team" placeholder="Name, title, and department for each">${esc(a.team)}</textarea></div>
     <div class="actions"><button class="btn" id="go">Continue</button><span class="status err" id="err"></span></div></div>`;
   const read = () => {
     const o = Object.assign({}, a);
-    ['first', 'last', 'email', 'phone', 'ext', 'title', 'dept', 'team'].forEach(f => { o[f] = $(f).value.trim(); });
+    ['first', 'last', 'email', 'phone', 'ext', 'team'].forEach(f => { o[f] = $(f).value.trim(); });
+    if (A.lockedEmail) o.email = A.lockedEmail;
     if (CFG.organizations.length) { o.orgPick = $('org').value; o.org = o.orgPick === 'Other' ? $('orgOther').value.trim() : o.orgPick; }
     else o.org = $('org').value.trim();
     return o;
@@ -428,7 +489,7 @@ function renderApplicant() {
   $('go').onclick = () => {
     const o = read();
     A._applicant = o;
-    if (!o.first || !o.last || !o.email || !o.title || !o.org || !o.role) return err('Fill in each required field to continue.');
+    if (!o.first || !o.last || !o.email || !o.org || !o.role) return err('Fill in each required field to continue.');
     if (!EMAIL_RE.test(o.email)) return err('Enter a valid email address.');
     delete A._applicant;
     A.applicant = o;
@@ -439,12 +500,8 @@ function renderApplicant() {
 /* ----- 2. Project ----- */
 function renderProject() {
   const p = A._project || (P && P.project ? { ...P.project } : {});
-  const domains = CFG.domains.concat('Other');
   view().innerHTML = `<div class="panel"><p class="sect">Project</p><h2 class="q">About the project</h2>
     <div class="field"><label class="f" for="ptitle">Project or technology title</label><input id="ptitle" type="text" value="${esc(p.title)}"><p class="hint">No company yet? Use the name you call the project, or a few words describing the technology.</p></div>
-    <div class="field"><label class="f" for="domain">Technology domain</label>
-      <select id="domain"><option value="">Choose...</option>${domains.map(d => `<option ${p.domain === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>
-      <input id="domainOther" type="text" placeholder="Describe the domain" value="${esc(p.domainOther)}" ${p.domain === 'Other' ? '' : 'hidden'}></div>
     <div class="field"><label class="f">What form does the technology take?</label>${seg(p, 'form', FORMS)}</div>
     <div class="field"><label class="f">Has a company been legally formed (incorporated or registered as an LLC)?</label>${seg(p, 'company', ['Yes', 'No', 'Not sure'])}</div>
     ${p.company === 'Yes' ? `<div class="field"><label class="f" for="companyName">Company name and state where it was formed</label><input id="companyName" type="text" value="${esc(p.companyName)}"></div>
@@ -454,20 +511,18 @@ function renderProject() {
     <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
   const read = () => {
     const o = Object.assign({}, p);
-    o.title = $('ptitle').value.trim(); o.domain = $('domain').value; o.domainOther = $('domainOther').value.trim();
+    o.title = $('ptitle').value.trim();
     o.website = $('website').value.trim();
     if ($('companyName')) o.companyName = $('companyName').value.trim();
     return o;
   };
   wireSegs(read, o => { if (o.company !== 'Yes') { delete o.companyName; delete o.companyType; } A._project = o; }, renderProject);
-  $('domain').onchange = () => { A._project = read(); renderProject(); };
   $('go').onclick = () => {
     const o = read();
     A._project = o;
-    if (!o.title || !o.domain || (o.domain === 'Other' && !o.domainOther) || !o.form || !o.company || !o.icorps) return err('Fill in each required field to continue.');
+    if (!o.title || !o.form || !o.company || !o.icorps) return err('Fill in each required field to continue.');
     if (o.company === 'Yes' && !o.companyName) return err('Add the company name and state.');
     if (o.website && !URL_RE.test(o.website)) return err('Websites start with http:// or https://.');
-    if (o.domain !== 'Other') delete o.domainOther;
     delete A._project;
     A.project = o;
     finish('project');
@@ -531,7 +586,8 @@ function renderEssays() {
 
 /* ----- 4. You and the project ----- */
 function renderFounder() {
-  const o = A._founder || (P && P.founder ? { ...P.founder } : {});
+  // On a re-take the time questions are asked fresh: last time's answers go stale.
+  const o = A._founder || (P && P.founder ? { ...P.founder, spent: undefined, engagement: undefined, conflicts: undefined } : {});
   const showRole = o.outcome && o.outcome.startsWith('Start a company');
   const eng = CFG.engagement;
   view().innerHTML = `<div class="panel"><p class="sect">You and the project</p><h2 class="q">About you and why you're doing this</h2>
@@ -741,6 +797,13 @@ const HELP = ['Introductions to potential customers', 'A business co-founder or 
 
 function renderMaterials() {
   const mt = A._materials || { help: P && P.materials && P.materials.help ? [...P.materials.help] : [], ack: false, aiOptOut: !!(P && P.materials && P.materials.aiOptOut) };
+  // Re-take: links from last time carry over (files were attached to the earlier row).
+  if (!A._materials && P && P.uploads && !A.linksCarried) {
+    A.linksCarried = true;
+    const pu = P.uploads;
+    if (pu.deck && pu.deck.link && !slotValue('deck', 0)) setSlot('deck', 0, { link: pu.deck.link });
+    (pu.supporting || []).forEach((x, i) => { if (x && x.link && !slotValue('supporting', i)) setSlot('supporting', i, { link: x.link }); });
+  }
   const deckFromFunding = A.F.f_deck === true && slotValue('deck', 0);
   const h = CFG.submissionHandling;
   view().innerHTML = `<div class="panel"><p class="sect">Materials and submit</p><h2 class="q">Last, add any materials and submit</h2>
@@ -793,8 +856,10 @@ async function doSubmit() {
   render();
   const submittedAt = new Date().toISOString();
   const result = createModel(A).result(H.length);
-  const brief = buildBrief(A, result, CFG, { submissionId: meta.submissionId, submittedAt });
-  const record = buildRow(A, { screensAnswered: H.length, previousA: P, questions: brief.questions });
+  // Re-take: last time's levels, so the brief can show what moved (up or down).
+  const previous = A.retake && P ? { scores: createModel(P).result().scores, submittedAt: meta.previous && meta.previous.submittedAt } : null;
+  const brief = buildBrief(A, result, CFG, { submissionId: meta.submissionId, submittedAt, previous });
+  const record = buildRow(A, { screensAnswered: H.length, previousA: A.retake ? P : null, questions: brief.questions });
   const finalA = cleanA(A);
   const answers = {
     version: VERSION, submissionId: meta.submissionId, submittedAt, A: finalA, H: H.slice(),
@@ -806,7 +871,9 @@ async function doSubmit() {
     const res = await submitIntake({
       submissionId: meta.submissionId,
       previousSubmissionId: (meta.previous && meta.previous.submissionId) || '',
-      record, answers, briefHtml: brief.html, uploads: planned, hp: HP
+      record, answers, briefHtml: brief.html, uploads: planned, hp: HP,
+      // No QM summary for applicants who opted out of AI processing.
+      qmInput: A.materials.aiOptOut ? undefined : buildQmInput(finalA, { submittedAt })
     });
     if (!res || !res.success) throw new Error((res && res.error) || 'Unknown error');
 

@@ -29,11 +29,11 @@ async function call(action, payload, opts) {
 }
 
 /**
- * Create the submission row (answers, record.json, brief). Returns
+ * Create the submission row (answers, record.json, brief, QM summary). Returns
  * { success, submissionId, rowId, returnCode, intakeNumber, emailSent, uploadToken, error? }.
  */
-export function submitIntake({ submissionId, previousSubmissionId, record, answers, briefHtml, uploads, hp }) {
-  return call('intake_submit', { submissionId, previousSubmissionId, record, answers, briefHtml, uploads, hp }, { timeoutMs: 60000 });
+export function submitIntake({ submissionId, previousSubmissionId, record, answers, briefHtml, qmInput, uploads, hp }) {
+  return call('intake_submit', { submissionId, previousSubmissionId, record, answers, briefHtml, qmInput, uploads, hp }, { timeoutMs: 60000 });
 }
 
 function fileToBase64(file) {

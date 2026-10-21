@@ -10,12 +10,15 @@
 // The proxy matches columns by TITLE, so renaming a column is: change the
 // title here, regenerate the template, rename the column in Smartsheet.
 // Titles shared with the QM and RL sheets use their existing names so rows
-// can be joined across tools (Venture Name, Institution, Technology Domain,
-// Technology Description, Venture URL, Portfolio).
+// can be joined across tools (Venture Name, Institution, Technology
+// Description, Venture URL, Portfolio).
+//
+// Every column is filled by the tool (Brian, Oct 2026): form answers, the
+// draft BRL levels derived from them, and rule-based outputs (no generative
+// AI). Columns the team fills by hand are not part of the template.
 //
 // writtenBy: 'server'   - set by the proxy; client values ignored
 //            'app'      - sent by the intake page
-//            'reviewer' - never written by the app; for the review team
 // type is the suggested Smartsheet column type (see the template's guide).
 
 const PORTFOLIO_VALUES = ['Northeastern CRI - 2026', 'Penn State GAP - 2026', 'CBC', 'NSF Mid-South', 'NSF Southeast', 'APL', 'Other'];
@@ -32,6 +35,7 @@ export const COLUMNS = [
   { key: 'portfolio', title: 'Portfolio', group: 'Submission', type: 'Dropdown', options: PORTFOLIO_VALUES, writtenBy: 'app', notes: 'Program, from the intake config or ?portfolio=. Same values as the RL and QM dropdowns.' },
   { key: 'intakeNumber', title: 'Intake Number', group: 'Submission', type: 'Number', writtenBy: 'server', notes: '1 for the first submission from this email, 2 for a re-take, ...' },
   { key: 'previousSubmissionId', title: 'Previous Submission ID', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'The submission a re-take started from.' },
+  { key: 'firstSubmissionId', title: 'First Submission ID', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'The original submission in this re-take chain (its own ID on a first submission). Group or filter by it to see one applicant\'s history.' },
   { key: 'returnCode', title: 'Return Code', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'One per email. Staff can read it here if an applicant loses it.' },
   { key: 'emailSent', title: 'Email Sent', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'Yes, Pending, or Failed: reason.' },
 
@@ -41,13 +45,10 @@ export const COLUMNS = [
   { key: 'email', title: 'Email', group: 'Applicant', type: 'Text', writtenBy: 'server', notes: 'Lowercased.' },
   { key: 'emailDomain', title: 'Email Domain', group: 'Applicant', type: 'Text', writtenBy: 'server', notes: 'For per-institution reports.' },
   { key: 'phone', title: 'Phone', group: 'Applicant', type: 'Text', writtenBy: 'app' },
-  { key: 'title', title: 'Title', group: 'Applicant', type: 'Text', writtenBy: 'app', notes: 'Title or academic rank.' },
-  { key: 'department', title: 'Department', group: 'Applicant', type: 'Text', writtenBy: 'app' },
   { key: 'role', title: 'Role', group: 'Applicant', type: 'Dropdown', options: ['Faculty or PI', 'Co-investigator', 'Postdoc', 'Grad student', 'Founder from outside the university', 'Other'], writtenBy: 'app', notes: 'Role on the project.' },
   { key: 'teamMembers', title: 'Team Members', group: 'Applicant', type: 'Text', writtenBy: 'app', notes: 'Co-investigators and other team members.' },
 
   // Project
-  { key: 'technologyDomain', title: 'Technology Domain', group: 'Project', type: 'Text', writtenBy: 'app', notes: 'Pick list from config, or Other: text. Same title as the QM sheet.' },
   { key: 'technologyForm', title: 'Technology Form', group: 'Project', type: 'Dropdown', options: ['Software', 'Hardware or physical device', 'Material, chemistry, or process', 'Therapeutic', 'Diagnostic', 'Medical device', 'Other'], writtenBy: 'app' },
   { key: 'trlTrack', title: 'TRL Track', group: 'Project', type: 'Dropdown', options: ['General', 'Software', 'Hardware', 'Therapeutics', 'Diagnostics', 'Medical device'], writtenBy: 'app', notes: 'Set by Technology Form.' },
   { key: 'companyFormed', title: 'Company Formed', group: 'Project', type: 'Dropdown', options: ['Yes', 'No', 'Not sure'], writtenBy: 'app' },
@@ -112,11 +113,6 @@ export const COLUMNS = [
   { key: 'changesSincePrevious', title: 'Changes Since Previous', group: 'Re-take', type: 'Text', writtenBy: 'app' },
   { key: 'factsTrue', title: 'Facts True', group: 'Re-take', type: 'Text', writtenBy: 'app', notes: 'Fact keys, so levels can be recomputed if the rules change.' },
 
-  // Reviewer columns: the app never writes these.
-  { key: 'reviewer', title: 'Reviewer', group: 'Reviewer', type: 'Contact List', writtenBy: 'reviewer' },
-  { key: 'ddStatus', title: 'DD Status', group: 'Reviewer', type: 'Dropdown', options: ['Not started', 'In progress', 'Complete'], writtenBy: 'reviewer' },
-  { key: 'interviewDecision', title: 'Interview Decision', group: 'Reviewer', type: 'Dropdown', options: ['Interview', 'Hold', 'Decline'], writtenBy: 'reviewer' },
-  { key: 'notes', title: 'Notes', group: 'Reviewer', type: 'Text', writtenBy: 'reviewer' }
 ];
 
 // COL.ventureName -> 'Venture Name'. Use these, never literal titles.
@@ -127,8 +123,6 @@ export const TITLES = COLUMNS.map(c => c.title);
 // Titles the proxy sets itself; any client value under these is ignored.
 export const SERVER_TITLES = COLUMNS.filter(c => c.writtenBy === 'server').map(c => c.title);
 
-// Titles the app must never write.
-export const REVIEWER_TITLES = COLUMNS.filter(c => c.writtenBy === 'reviewer').map(c => c.title);
 
 // Category -> Draft BRL column, in the order shown on the brief.
 export const BRL_COLUMN_BY_CAT = {

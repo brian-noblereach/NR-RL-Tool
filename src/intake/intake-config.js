@@ -35,15 +35,8 @@ export const INTAKE_CONFIG = {
   organizations: [],
   organizationSuggestions: ['UKY', 'Vandy', 'UoL', 'UTK', 'UCF', 'UF', 'USF', 'Embry Riddle'],
 
-  // Technology domain pick list. Seeded from the Sector values in
-  // S2V_Master_Portfolio (v3/v4). "Other" (with text) is always added.
-  domains: [
-    'Advanced Manufacturing', 'Advanced Materials', 'Aerospace / UAV', 'Biotech',
-    'Chemical / Industrial', 'Communications / RF', 'Cybersecurity', 'Defense',
-    'Defense / Autonomy', 'Diagnostics', 'Digital Health', 'Energy / CleanTech',
-    'Environmental', 'Lab Equipment', 'Medtech', 'Robotics', 'Semiconductor',
-    'Software/AI', 'Space Tech', 'Therapeutics'
-  ],
+  // No technology-domain question: the QM tool's AI assigns domain from the
+  // materials (Brian, Oct 2026). The "Technology Form" question picks the TRL track.
 
   // Written answers. Warn at the limit; block above limit x blockFactor.
   wordLimits: { science: 250, value: 200, impact: 200 },
@@ -106,6 +99,9 @@ export const INTAKE_CONFIG = {
       public_no_patent: 'The work has been presented or published, but no patent application is filed. When was it disclosed, and has the tech transfer office reviewed the patenting risk?',
       private_no_company: 'You reported private investment but no company. Who invested, and into what?'
     },
+    // On a re-take, for each category whose level went down. Keep it neutral:
+    // pivots are normal, and a lower level can mean better information.
+    dropped: '{category} is lower than last time ({before} to {now}). What did you learn that changed your direction?',
     unsure: 'Walk through the {screen} items you weren\'t sure about.',
     evidence: {
       ip3: 'Confirm the application number, filing date, and who owns it.',
