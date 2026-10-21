@@ -76,7 +76,8 @@ export const ICORPS=['Not in I-Corps','Regional, in progress','Regional, finishe
 export const HOURS=['Under 3','3 to 5','5 to 10','10 to 20','More than 20','Full time'];
 // 'License' and 'Partner' merged into one option at Brian's direction (Oct 2026).
 export const OUTCOMES=['Start a company I help lead','Start a company someone else leads','Work with an existing company (license or partnership)','Not sure yet'];
-export const PRIOR_EXPERIENCE=['Founded or co-founded a company','Licensed a technology','Received an SBIR or STTR award','Worked in industry in a related field','None'];
+// 'None' replaced by 'Other' (Brian, Oct 2026): applicants with no prior experience leave it blank.
+export const PRIOR_EXPERIENCE=['Founded or co-founded a company','Licensed a technology','Received an SBIR or STTR award','Worked in industry in a related field','Other'];
 export const NS_RELEVANCE=['Defense or intelligence use','Other government agency use','Commercial use','Not sure yet'];
 
 export function track(A) { return FORM_TRACK[A.project && A.project.form] || 'General'; }

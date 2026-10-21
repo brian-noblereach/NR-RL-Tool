@@ -31,9 +31,7 @@ export const INTAKE_CONFIG = {
   // Example: { hoursPerWeek: 5, months: 6 }
   engagement: null,
 
-  // Optional organization pick list. Empty = free text (with suggestions).
-  organizations: [],
-  organizationSuggestions: ['UKY', 'Vandy', 'UoL', 'UTK', 'UCF', 'UF', 'USF', 'Embry Riddle'],
+  // University or organization is plain free text: no pick list to maintain.
 
   // No technology-domain question: the QM tool's AI assigns domain from the
   // materials (Brian, Oct 2026). The "Technology Form" question picks the TRL track.

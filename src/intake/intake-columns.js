@@ -35,7 +35,7 @@ export const COLUMNS = [
   { key: 'portfolio', title: 'Portfolio', group: 'Submission', type: 'Dropdown', options: PORTFOLIO_VALUES, writtenBy: 'app', notes: 'Program, from the intake config or ?portfolio=. Same values as the RL and QM dropdowns.' },
   { key: 'intakeNumber', title: 'Intake Number', group: 'Submission', type: 'Number', writtenBy: 'server', notes: '1 for the first submission from this email, 2 for a re-take, ...' },
   { key: 'previousSubmissionId', title: 'Previous Submission ID', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'The submission a re-take started from.' },
-  { key: 'firstSubmissionId', title: 'First Submission ID', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'The original submission in this re-take chain (its own ID on a first submission). Group or filter by it to see one applicant\'s history.' },
+  { key: 'ventureId', title: 'Venture ID', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'Readable ID shared across tools, e.g. UCF-SENSORMESH-7K: organization initials, project words, 2 random characters. Created on the first submission and inherited by every re-take; never changes, even if the project is renamed. Use it to link the RL tool, QM, VDR, Salesforce (External ID field), and SharePoint folders.' },
   { key: 'returnCode', title: 'Return Code', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'One per email. Staff can read it here if an applicant loses it.' },
   { key: 'emailSent', title: 'Email Sent', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'Yes, Pending, or Failed: reason.' },
 

@@ -454,10 +454,8 @@ async function loadPrevious(sub) {
 /* ----- 1. Applicant ----- */
 function renderApplicant() {
   const a = A._applicant || (P && P.applicant ? { ...P.applicant } : { org: PARAMS.get('org') || '' });
-  const orgField = CFG.organizations.length
-    ? `<select id="org"><option value="">Choose...</option>${CFG.organizations.concat('Other').map(o => `<option ${a.orgPick === o || (!a.orgPick && a.org === o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>
-       <input id="orgOther" type="text" placeholder="Organization name" value="${esc(a.orgPick === 'Other' ? a.org : '')}" ${a.orgPick === 'Other' ? '' : 'hidden'}>`
-    : `<input id="org" type="text" list="org-list" value="${esc(a.org)}" autocomplete="organization"><datalist id="org-list">${CFG.organizationSuggestions.map(x => `<option value="${esc(x)}">`).join('')}</datalist>`;
+  // Plain free text: no pick list or suggestions to maintain (Brian, Oct 2026).
+  const orgField = `<input id="org" type="text" value="${esc(a.org)}" autocomplete="organization" placeholder="For example, University of Central Florida">`;
   view().innerHTML = `<div class="panel intro"><p class="sect">Applicant</p><h2 class="q">A few details first</h2>
     ${prefillNote()}
     <p>Answer based on what has actually happened so far, not what is planned.</p>
@@ -480,12 +478,10 @@ function renderApplicant() {
     const o = Object.assign({}, a);
     ['first', 'last', 'email', 'phone', 'ext', 'team'].forEach(f => { o[f] = $(f).value.trim(); });
     if (A.lockedEmail) o.email = A.lockedEmail;
-    if (CFG.organizations.length) { o.orgPick = $('org').value; o.org = o.orgPick === 'Other' ? $('orgOther').value.trim() : o.orgPick; }
-    else o.org = $('org').value.trim();
+    o.org = $('org').value.trim();
     return o;
   };
   wireSegs(read, o => { A._applicant = o; }, renderApplicant);
-  if (CFG.organizations.length) $('org').onchange = () => { A._applicant = read(); renderApplicant(); };
   $('go').onclick = () => {
     const o = read();
     A._applicant = o;
@@ -601,7 +597,8 @@ function renderFounder() {
     ${eng ? `<div class="field"><label class="f">Can the project lead take part in a structured engagement of about ${esc(eng.hoursPerWeek)} hours a week for ${esc(eng.months)} months?</label>${seg(o, 'engagement', ['Yes', 'No', 'Not sure'])}
       ${['No', 'Not sure'].includes(o.engagement) ? `<label class="f" for="conflicts" style="margin-top:12px">Note any sabbatical, leave, or other conflicts <span class="opt-tag">optional</span></label><input id="conflicts" type="text" value="${esc(o.conflicts)}">` : ''}</div>` : ''}
     <div class="field"><label class="f">Prior experience <span class="opt-tag">optional, check all that apply</span></label>${checks('prior', PRIOR_EXPERIENCE, o.prior)}
-      <input id="priorDetail" type="text" placeholder="Details (optional)" value="${esc(o.priorDetail)}"></div>
+      <input id="priorDetail" type="text" placeholder="Details, including anything under Other (optional)" value="${esc(o.priorDetail)}">
+      <p class="hint">Leave these blank if none apply.</p></div>
     <div class="field"><label class="f" for="changed">Describe one thing you changed in the technology or plan because of what a customer, mentor, or reviewer told you. <span class="opt-tag">optional</span></label>
       <textarea id="changed" ${o.nothing ? 'disabled' : ''}>${esc(o.changed)}</textarea>
       <label class="chk"><input type="checkbox" id="nothing" ${o.nothing ? 'checked' : ''}><span>Nothing yet</span></label></div>
@@ -620,14 +617,8 @@ function renderFounder() {
     A._founder = x;
   }, renderFounder);
   $('nothing').onchange = () => { A._founder = read(); renderFounder(); };
-  // "None" is exclusive
   view().querySelectorAll('.checks[data-name="prior"] input').forEach(c => {
-    c.onchange = () => {
-      const all = view().querySelectorAll('.checks[data-name="prior"] input');
-      if (c.checked && c.value === 'None') all.forEach(x => { if (x !== c) x.checked = false; });
-      if (c.checked && c.value !== 'None') all.forEach(x => { if (x.value === 'None') x.checked = false; });
-      A._founder = read(); saveDraft();
-    };
+    c.onchange = () => { A._founder = read(); saveDraft(); };
   });
   $('go').onclick = () => {
     const x = read();
