@@ -11,10 +11,12 @@
 
 import {
   SCREENS, CATS, NAMES, VERSION, SHOW_LEVELS_TO_FOUNDER, FORMS, ICORPS, HOURS, OUTCOMES,
-  PRIOR_EXPERIENCE, NS_RELEVANCE, RETAKE_SECTIONS,
+  PRIOR_EXPERIENCE, NS_RELEVANCE, RETAKE_SECTIONS, FULL_TIME, APP_COUNTS, ROSTER_ROLES, ROSTER_TIME,
+  ROLE_OPTIONS, NOT_SURE_YET, SOURCES, SOURCE_ITEMS, CONVERSATIONS, SOURCE_NOT_SURE,
   freshAnswers, closeSet, createModel, track, isHealth, hasFacilities, trlOptions, displayText,
-  buildRow, founderRecap, diffFacts, canCarry, carryForward, sectionSummary
+  buildRow, founderRecap, diffFacts, canCarry, carryForward, sectionSummary, hasNewQuestions
 } from './intake-model.js';
+import { missingRequired, planJump } from './intake-flow.js';
 import { buildBrief } from './intake-brief.js';
 import { buildQmInput } from './intake-qm.js';
 import { INTAKE_CONFIG as CFG } from './intake-config.js';
@@ -43,7 +45,7 @@ let model = null;
 let HP = '';           // honeypot value (never stored)
 // Files live in memory only (too big for browser storage); links and file
 // names are saved in A.uploads.
-const FILES = { deck: [null], supporting: [null, null, null] };
+const FILES = { deck: [null], plan: [null], supporting: [null, null, null] };
 
 const M = () => model || (model = createModel(A));
 const invalidate = () => { model = null; };
@@ -65,6 +67,7 @@ function clearDraft() { store(DRAFT_KEY, null); }
 function cleanA(src) {
   const o = JSON.parse(JSON.stringify(src));
   Object.keys(o).forEach(k => { if (k.startsWith('_')) delete o[k]; });
+  delete o.carry; delete o.carryFrom;   // navigation state, not answers
   return o;
 }
 
@@ -89,15 +92,22 @@ function setLayout(withRail) {
 }
 
 function rail(cur) {
-  const list = M().activeScreens().map(s => s.sect);
+  const screens = M().activeScreens(), list = screens.map(s => s.sect);
   const i = cur ? list.indexOf(cur.sect) : list.length;
-  $('rail').innerHTML = list.map((s, j) => `<li class="${j < i ? 'done' : j === i ? 'now' : ''}">${esc(s)}</li>`).join('');
-  $('railmini').textContent = cur ? `Step ${i + 1} of ${list.length}: ${cur.sect}` : 'Finished';
+  $('rail').innerHTML = screens.map((s, j) => {
+    const cls = [j < i ? 'done' : j === i ? 'now' : '', A.done[s.id] && isMissing(s.id) ? 'missing' : ''].filter(Boolean).join(' ');
+    return `<li class="${cls}">${esc(s.sect)}${cls.includes('missing') ? '<span class="sr-only"> (answers still needed)</span>' : ''}</li>`;
+  }).join('');
+  const left = incompleteScreens().length, toFinish = `${left} section${left === 1 ? '' : 's'} to finish`;
+  $('railmini').textContent = cur ? `Step ${i + 1} of ${list.length}: ${cur.sect}` + (left ? ` · ${toFinish}` : '') : (left ? toFinish : 'Finished');
 }
 
 function backLink() { return H.length ? '<button class="linkish" id="back">Back</button>' : ''; }
 function wireBack() { const b = $('back'); if (b) b.onclick = back; }
 
+function selectHtml(cls, opts, value, label) {
+  return `<select class="${cls}" aria-label="${esc(label)}"><option value="">${esc(label)}</option>${opts.map(o => `<option ${value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+}
 function seg(obj, name, opts) {
   return `<div class="seg" data-name="${name}">${opts.map(o => `<button type="button" aria-pressed="${obj[name] === o}">${esc(o)}</button>`).join('')}</div>`;
 }
@@ -106,6 +116,16 @@ function checks(name, opts, selected) {
 }
 function readChecks(name) {
   return [...view().querySelectorAll(`.checks[data-name="${name}"] input:checked`)].map(i => i.value);
+}
+/* A "not sure" choice that can't be combined: checking it clears the others, and checking another clears it. */
+function wireExclusive(name, exclusive, onChange) {
+  const boxes = [...view().querySelectorAll(`.checks[data-name="${name}"] input`)];
+  boxes.forEach(b => {
+    b.onchange = () => {
+      if (b.checked) boxes.forEach(o => { if (o !== b && (b.value === exclusive || o.value === exclusive)) o.checked = false; });
+      onChange();
+    };
+  });
 }
 function wireSegs(read, save, rerender) {
   view().querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => {
@@ -121,17 +141,17 @@ function prefillNote() {
 }
 
 /* ---------- uploads (file or link per slot) ---------- */
-const SLOT_LABEL = (slot, i) => slot === 'deck' ? 'Pitch deck' : 'Supporting file ' + (i + 1);
+const SLOT_LABEL = (slot, i) => slot === 'deck' ? 'Pitch deck' : slot === 'plan' ? 'Business plan or canvas' : 'Supporting file ' + (i + 1);
 
 function uploadsOf() {
-  A.uploads = A.uploads || { deck: null, supporting: [null, null, null] };
+  A.uploads = A.uploads || { deck: null, plan: null, supporting: [null, null, null] };
   A.uploads.supporting = A.uploads.supporting || [null, null, null];
   return A.uploads;
 }
-function slotValue(slot, i) { const u = uploadsOf(); return slot === 'deck' ? u.deck : u.supporting[i]; }
+function slotValue(slot, i) { const u = uploadsOf(); return slot === 'supporting' ? u.supporting[i] : u[slot]; }
 function setSlot(slot, i, value, file) {
   const u = uploadsOf();
-  if (slot === 'deck') u.deck = value; else u.supporting[i] = value;
+  if (slot === 'supporting') u.supporting[i] = value; else u[slot] = value;
   FILES[slot][i] = file || null;
   saveDraft();
 }
@@ -186,6 +206,7 @@ function plannedUploads() {
     else if (FILES[slot][i]) out.push({ slot, index: i, name: v.name, size: v.size, mimeType: v.type || '' });
   };
   add('deck', 0, u.deck);
+  add('plan', 0, u.plan);
   u.supporting.forEach((v, i) => add('supporting', i, v));
   return out;
 }
@@ -208,7 +229,7 @@ function beginIntake(prev) {
     submissionId: newSubmissionId(),
     previous: prev ? { submissionId: prev.submissionId || '', submittedAt: prev.submittedAt || '' } : null
   };
-  FILES.deck = [null]; FILES.supporting = [null, null, null];
+  FILES.deck = [null]; FILES.plan = [null]; FILES.supporting = [null, null, null];
   phase = 'intake';
   submitState = { status: 'idle' };
   invalidate();
@@ -217,10 +238,86 @@ function beginIntake(prev) {
   window.scrollTo(0, 0);
 }
 
-function finish(id) {
+/**
+ * Commit a screen. `missing` lists required answers still blank: the screen is
+ * kept as finished (so the applicant can look ahead) but marked incomplete,
+ * and submitting waits until it is complete.
+ */
+function finish(id, missing = []) {
   A.done[id] = true;
   H.push(id);
-  delete A._local;
+  A.missing = A.missing || {};
+  if (missing.length) { A.missing[id] = missing; A._skipped = SCREENS.find(s => s.id === id).sect; }
+  else delete A.missing[id];
+  if (A._locals) delete A._locals[id];
+  if (A.review) delete A.review[id];
+  invalidate();
+  saveDraft();
+  render();
+  window.scrollTo(0, 0);
+}
+
+const sectOf = id => SCREENS.find(s => s.id === id).sect;
+const isMissing = id => !!(A.missing && A.missing[id] && A.missing[id].length);
+/* finished screens that still need answers, in order */
+const incompleteScreens = () => H.filter(isMissing);
+
+/**
+ * Put one screen's committed answers (from `src`: A itself, or a snapshot)
+ * into its in-progress state, so the screen shows them again.
+ */
+function toProgress(id, src) {
+  const sc = SCREENS.find(s => s.id === id);
+  const unsure = !!(src.unsure && src.unsure[id]);
+  const copy = x => (x == null ? x : JSON.parse(JSON.stringify(x)));
+  if (id === 'changes') A._changes = copy(src.changeChoices);
+  else if (id === 'applicant') A._applicant = copy(src.applicant);
+  else if (id === 'project') A._project = copy(src.project);
+  else if (id === 'essays') A._essays = copy(src.essays);
+  else if (id === 'founder') A._founder = copy(src.founder);
+  else if (id === 'tech') A._tech = { stage: src.stage == null ? null : src.stage, ev: src.techEv || '', facilities: src.facilities || '', unsure };
+  else if (id === 'materials') A._materials = copy(src.materials);
+  else {
+    const L = { id, user: [], ev: {}, count: '', confirm: null, src: {}, unsure };
+    (sc.items || []).forEach(it => {
+      if (src.F && src.F[it.k] === true && !(src.I && it.k in src.I)) L.user.push(it.k);
+      if (src.E && src.E[it.k]) L.ev[it.k] = src.E[it.k];
+      if (src.src && src.src[it.k]) L.src[it.k] = copy(src.src[it.k]);
+    });
+    if (id === 'cust' && src.count != null) { L.count = String(src.count); L.confirm = src.confirm || null; }
+    if (id === 'team') L.roster = copy(src.team) || [];
+    A._locals = A._locals || {};
+    A._locals[id] = L;
+  }
+}
+
+/* Remove one screen's committed answers. */
+function clearCommitted(id) {
+  const sc = SCREENS.find(s => s.id === id);
+  delete A.done[id];
+  delete A.unsure[id];
+  if (id === 'changes') { delete A.changeChoices; A.carry = {}; }
+  else if (id === 'applicant') delete A.applicant;
+  else if (id === 'project') delete A.project;
+  else if (id === 'essays') { delete A.essays; delete A.problem; }
+  else if (id === 'founder') delete A.founder;
+  else if (id === 'tech') { delete A.stage; delete A.techEv; delete A.facilities; }
+  else if (id === 'materials') delete A.materials;
+  else {
+    (sc.items || []).forEach(it => {
+      delete A.F[it.k]; delete A.E[it.k];
+      if (A.I) delete A.I[it.k];
+      if (A.src) delete A.src[it.k];
+    });
+    if (id === 'cust') { delete A.count; delete A.confirm; }
+    if (id === 'team') delete A.team;
+  }
+}
+
+/* A changed answer is a new submission. */
+function afterRewind() {
+  meta.submissionId = newSubmissionId();
+  submitState = { status: 'idle' };
   invalidate();
   saveDraft();
   render();
@@ -229,51 +326,47 @@ function finish(id) {
 
 /**
  * Go back one screen. The screen's answers move back into its in-progress
- * state so the applicant sees them again rather than a blank form.
+ * state so the applicant sees them again rather than a blank form. Each
+ * checklist screen keeps its own in-progress state (A._locals), so stepping
+ * back over several screens loses nothing.
  */
 function back() {
   const id = H.pop();
   if (!id) return;
-  const sc = SCREENS.find(s => s.id === id);
-  delete A.done[id];
-  delete A._local;
-  const wasUnsure = !!A.unsure[id];
-  delete A.unsure[id];
+  toProgress(id, A);
+  clearCommitted(id);
+  afterRewind();
+}
 
-  if (id === 'changes') { A._changes = A.changeChoices; delete A.changeChoices; A.carry = {}; }
-  else if (id === 'applicant') { A._applicant = A.applicant; delete A.applicant; }
-  else if (id === 'project') { A._project = A.project; delete A.project; }
-  else if (id === 'essays') { A._essays = A.essays; delete A.essays; delete A.problem; }
-  else if (id === 'founder') { A._founder = A.founder; delete A.founder; }
-  else if (id === 'tech') { A._tech = { stage: A.stage, ev: A.techEv || '', facilities: A.facilities || '', unsure: wasUnsure }; delete A.stage; delete A.techEv; delete A.facilities; }
-  else if (id === 'materials') { A._materials = A.materials; delete A.materials; }
-  else {
-    const L = { id, user: [], ev: {}, count: '', confirm: null, unsure: wasUnsure };
-    (sc.items || []).forEach(it => {
-      if (A.F[it.k] === true && !(A.I && it.k in A.I)) L.user.push(it.k);
-      if (A.E[it.k]) L.ev[it.k] = A.E[it.k];
-      delete A.F[it.k]; delete A.E[it.k]; if (A.I) delete A.I[it.k];
-    });
-    if (id === 'cust') {
-      if (A.count != null) { L.count = String(A.count); L.confirm = A.confirm || null; }
-      delete A.count; delete A.confirm;
-    }
-    A._local = L;
+/**
+ * Go back to a finished screen to complete it. The screens after it are set
+ * aside and carried forward again from a snapshot once it is finished, by the
+ * same loop a re-take uses (render()); only screens that are still
+ * incomplete, or that the change affects, are shown again.
+ */
+function jumpTo(id) {
+  const plan = planJump(H, id);
+  if (!plan) return;
+  const snapshot = cleanA(A);
+  while (H[H.length - 1] !== id) {
+    const later = H.pop();
+    clearCommitted(later);
+    if (A._locals) delete A._locals[later];
   }
-
-  // A changed answer is a new submission.
-  meta.submissionId = newSubmissionId();
-  submitState = { status: 'idle' };
-  invalidate();
-  saveDraft();
-  render();
+  H.pop();
+  toProgress(id, A);
+  clearCommitted(id);
+  A.carry = A.carry || {};
+  plan.carry.forEach(x => { A.carry[x] = true; });
+  A.carryFrom = snapshot;
+  afterRewind();
 }
 
 function startOver() {
   if (!confirm('Start over? The answers you have entered so far will be cleared.')) return;
   clearDraft();
   A = freshAnswers(); H = []; P = null; meta = {};
-  FILES.deck = [null]; FILES.supporting = [null, null, null];
+  FILES.deck = [null]; FILES.plan = [null]; FILES.supporting = [null, null, null];
   phase = 'start';
   invalidate();
   render();
@@ -286,30 +379,49 @@ function render() {
   if (phase === 'done') return renderDone();
 
   let sc = M().nextScreen();
-  // Re-take: sections marked "No change" are carried forward without being
-  // shown, in screen order (so Back still walks through them).
+  // Carry forward without showing, in screen order (so Back still walks
+  // through them): sections marked "No change" on a re-take (from P), or the
+  // screens set aside by jumpTo() (from its snapshot).
   let carried = false;
   while (sc && A.carry && A.carry[sc.id]) {
     delete A.carry[sc.id];
-    if (!canCarry(A, P, sc.id)) { A.review = Object.assign(A.review || {}, { [sc.id]: true }); break; }
-    carryForward(A, P, sc.id);
+    const src = A.carryFrom || P;
+    if (A.carryFrom && isMissing(sc.id)) { toProgress(sc.id, src); break; }   // still incomplete: show it
+    if (!canCarry(A, src, sc.id)) {
+      if (A.carryFrom) toProgress(sc.id, src);
+      A.review = Object.assign(A.review || {}, { [sc.id]: !A.carryFrom && hasNewQuestions(P, sc.id) ? 'new' : 'changed' });
+      break;
+    }
+    carryForward(A, src, sc.id);
     A.done[sc.id] = true;
     H.push(sc.id);
     invalidate();
     carried = true;
     sc = M().nextScreen();
   }
+  if (!sc) { delete A.carry; delete A.carryFrom; }   // anything left was for screens no longer asked
   if (carried) saveDraft();
   setLayout(true);
   rail(sc);
-  if (!sc) return renderSubmit();
+  if (!sc) return incompleteScreens().length ? renderReview() : renderSubmit();
   ({ changes: renderChanges, applicant: renderApplicant, project: renderProject, essays: renderEssays, founder: renderFounder,
      tech: renderTech, multi: renderMulti, materials: renderMaterials })[sc.type](sc);
+  const panel = view().querySelector('.panel');
+  // Just skipped required answers on the previous screen
+  if (A._skipped && panel) {
+    panel.querySelector('.sect').insertAdjacentHTML('afterend', `<p class="note skip-note">Skipped for now: required answers on ${esc(A._skipped)}. You'll finish them before you submit.</p>`);
+    delete A._skipped;
+  }
+  // Coming back to an incomplete screen
+  if (isMissing(sc.id) && panel) {
+    panel.querySelector('.q').insertAdjacentHTML('afterend', `<p class="note missing-note">Still needed: ${A.missing[sc.id].map(esc).join('; ')}.</p>`);
+  }
   // A carried section that can't be reused as-is (an earlier answer changed what it asks)
   if (A.review && A.review[sc.id]) {
     const panel = view().querySelector('.panel');
     if (panel && !panel.querySelector('.review-note')) {
-      panel.querySelector('.q').insertAdjacentHTML('afterend', '<p class="note review-note">An answer you updated changes this section, so please check it. Your previous answers are filled in.</p>');
+      const why = A.review[sc.id] === 'new' ? 'This section has a new question since your last submission.' : 'An answer you updated changes this section, so please check it.';
+      panel.querySelector('.q').insertAdjacentHTML('afterend', `<p class="note review-note">${why} Your previous answers are filled in.</p>`);
     }
   }
 }
@@ -472,11 +584,11 @@ function renderApplicant() {
     </div>
     <div class="field"><label class="f" for="org">University or organization</label>${orgField}</div>
     <div class="field"><label class="f">Your role on the project</label>${seg(a, 'role', ['Faculty or PI', 'Co-investigator', 'Postdoc', 'Grad student', 'Founder from outside the university', 'Other'])}</div>
-    <div class="field"><label class="f" for="team">Co-investigators or other team members <span class="opt-tag">optional</span></label><textarea id="team" placeholder="Name, title, and department for each">${esc(a.team)}</textarea></div>
+    <div class="field"><label class="f" for="linkedin">Your LinkedIn or professional profile <span class="opt-tag">optional</span></label><input id="linkedin" type="url" value="${esc(a.linkedin)}" placeholder="https://"><p class="hint">You can list the rest of the team later, under Team.</p></div>
     <div class="actions"><button class="btn" id="go">Continue</button><span class="status err" id="err"></span></div></div>`;
   const read = () => {
     const o = Object.assign({}, a);
-    ['first', 'last', 'email', 'phone', 'ext', 'team'].forEach(f => { o[f] = $(f).value.trim(); });
+    ['first', 'last', 'email', 'phone', 'ext', 'linkedin'].forEach(f => { o[f] = $(f).value.trim(); });
     if (A.lockedEmail) o.email = A.lockedEmail;
     o.org = $('org').value.trim();
     return o;
@@ -485,11 +597,11 @@ function renderApplicant() {
   $('go').onclick = () => {
     const o = read();
     A._applicant = o;
-    if (!o.first || !o.last || !o.email || !o.org || !o.role) return err('Fill in each required field to continue.');
-    if (!EMAIL_RE.test(o.email)) return err('Enter a valid email address.');
+    if (o.email && !EMAIL_RE.test(o.email)) return err('Enter a valid email address.');
+    if (o.linkedin && !URL_RE.test(o.linkedin)) return err('Profile links start with http:// or https://.');
     delete A._applicant;
     A.applicant = o;
-    finish('applicant');
+    finish('applicant', missingRequired('applicant', o));
   };
 }
 
@@ -498,6 +610,9 @@ function renderProject() {
   const p = A._project || (P && P.project ? { ...P.project } : {});
   view().innerHTML = `<div class="panel"><p class="sect">Project</p><h2 class="q">About the project</h2>
     <div class="field"><label class="f" for="ptitle">Project or technology title</label><input id="ptitle" type="text" value="${esc(p.title)}"><p class="hint">No company yet? Use the name you call the project, or a few words describing the technology.</p></div>
+    <div class="field"><label class="f" for="oneLiner">In one sentence, what is it and who is it for?</label>
+      <textarea id="oneLiner" class="short" rows="2" placeholder="For example: A low-cost sensor that warns utilities before transformers overheat.">${esc(p.oneLiner)}</textarea>
+      ${wordHint('oneLiner', p.oneLiner)}</div>
     <div class="field"><label class="f">What form does the technology take?</label>${seg(p, 'form', FORMS)}</div>
     <div class="field"><label class="f">Has a company been legally formed (incorporated or registered as an LLC)?</label>${seg(p, 'company', ['Yes', 'No', 'Not sure'])}</div>
     ${p.company === 'Yes' ? `<div class="field"><label class="f" for="companyName">Company name and state where it was formed</label><input id="companyName" type="text" value="${esc(p.companyName)}"></div>
@@ -508,20 +623,22 @@ function renderProject() {
   const read = () => {
     const o = Object.assign({}, p);
     o.title = $('ptitle').value.trim();
+    o.oneLiner = $('oneLiner').value;
     o.website = $('website').value.trim();
     if ($('companyName')) o.companyName = $('companyName').value.trim();
     return o;
   };
   wireSegs(read, o => { if (o.company !== 'Yes') { delete o.companyName; delete o.companyType; } A._project = o; }, renderProject);
+  wireWordCount('oneLiner', () => { A._project = read(); saveDraft(); });
   $('go').onclick = () => {
     const o = read();
     A._project = o;
-    if (!o.title || !o.form || !o.company || !o.icorps) return err('Fill in each required field to continue.');
-    if (o.company === 'Yes' && !o.companyName) return err('Add the company name and state.');
+    o.oneLiner = o.oneLiner.trim().replace(/\s+/g, ' ');
+    if (wordNote('oneLiner', o.oneLiner).block) return err('Please shorten the one-sentence description.');
     if (o.website && !URL_RE.test(o.website)) return err('Websites start with http:// or https://.');
     delete A._project;
     A.project = o;
-    finish('project');
+    finish('project', missingRequired('project', o));
   };
   wireBack();
 }
@@ -534,19 +651,32 @@ const ESSAYS = [
 ];
 function wordNote(k, text) {
   const limit = CFG.wordLimits[k], n = words(text);
-  const over = n > limit, block = n > Math.floor(limit * CFG.wordLimitBlockFactor);
+  const blockAt = (CFG.wordLimitBlockAt || {})[k] || Math.floor(limit * CFG.wordLimitBlockFactor);
+  const over = n > limit, block = n > blockAt;
   return { n, limit, over, block, html: `${n} / ${limit} words${block ? ' — please shorten this answer' : over ? ' — a little over the limit' : ''}` };
+}
+const wcClass = w => 'hint wc' + (w.block ? ' block' : w.over ? ' over' : '');
+function wordHint(k, text) {
+  const w = wordNote(k, text);
+  return `<p class="${wcClass(w)}" id="wc_${k}">${w.html}</p>`;
+}
+/* live word count under a text box; the count element is wc_{k} */
+function wireWordCount(k, onChange, inputId = k) {
+  $(inputId).oninput = () => {
+    const w = wordNote(k, $(inputId).value), el = $('wc_' + k);
+    el.textContent = w.html;
+    el.className = wcClass(w);
+    onChange();
+  };
 }
 function renderEssays() {
   const e = A._essays || (P && P.essays ? { ...P.essays } : { nsRelevance: [] });
   view().innerHTML = `<div class="panel"><p class="sect">The technology and the problem</p><h2 class="q">Tell us about the work</h2>
-    ${ESSAYS.map(x => {
-      const w = wordNote(x.k, e[x.k]);
-      return `<div class="field"><label class="f" for="es_${x.k}">${esc(x.q)}</label>
+    ${ESSAYS.map(x => `<div class="field"><label class="f" for="es_${x.k}">${esc(x.q)}</label>
         <textarea id="es_${x.k}" class="essay" data-k="${x.k}" rows="7">${esc(e[x.k])}</textarea>
-        <p class="hint wc${w.block ? ' block' : w.over ? ' over' : ''}" id="wc_${x.k}">${w.html}</p>
-        ${x.k === 'value' ? `<label class="chk"><input type="checkbox" id="noCustomers" ${e.noCustomers ? 'checked' : ''}><span>We haven't identified specific customers yet.</span></label>` : ''}</div>`;
-    }).join('')}
+        ${wordHint(x.k, e[x.k])}
+        ${x.k === 'value' ? `<label class="chk"><input type="checkbox" id="noCustomers" ${e.noCustomers ? 'checked' : ''}><span>We haven't identified specific customers yet.</span></label>` : ''}</div>`).join('')}
+    <div class="field"><label class="f">How many different applications or markets are you considering for the technology?</label>${seg(e, 'appCount', APP_COUNTS)}</div>
     <div class="field"><label class="f">Where could the technology be used? <span class="opt-tag">check all that apply</span></label>${checks('ns', NS_RELEVANCE, e.nsRelevance)}</div>
     <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
   const read = () => {
@@ -556,26 +686,20 @@ function renderEssays() {
     o.nsRelevance = readChecks('ns');
     return o;
   };
-  view().querySelectorAll('.essay').forEach(t => {
-    t.oninput = () => {
-      const w = wordNote(t.dataset.k, t.value), el = $('wc_' + t.dataset.k);
-      el.textContent = w.html;
-      el.className = 'hint wc' + (w.block ? ' block' : w.over ? ' over' : '');
-      A._essays = read(); saveDraft();
-    };
-  });
-  view().querySelectorAll('input[type=checkbox]').forEach(c => { c.onchange = () => { A._essays = read(); saveDraft(); }; });
+  ESSAYS.forEach(x => wireWordCount(x.k, () => { A._essays = read(); saveDraft(); }, 'es_' + x.k));
+  wireSegs(read, o => { A._essays = o; }, renderEssays);
+  $('noCustomers').onchange = () => { A._essays = read(); saveDraft(); };
+  wireExclusive('ns', NOT_SURE_YET, () => { A._essays = read(); saveDraft(); });
   $('go').onclick = () => {
     const o = read();
     A._essays = o;
-    if (ESSAYS.some(x => !o[x.k].trim())) return err('Answer all three questions to continue.');
     const tooLong = ESSAYS.find(x => wordNote(x.k, o[x.k]).block);
     if (tooLong) return err('Please shorten the answers marked in red.');
     ESSAYS.forEach(x => { o[x.k] = o[x.k].trim(); });
     delete A._essays;
     A.essays = o;
     A.problem = { known: !o.noCustomers };
-    finish('essays');
+    finish('essays', missingRequired('essays', o));
   };
   wireBack();
 }
@@ -584,16 +708,17 @@ function renderEssays() {
 function renderFounder() {
   // On a re-take the time questions are asked fresh: last time's answers go stale.
   const o = A._founder || (P && P.founder ? { ...P.founder, spent: undefined, engagement: undefined, conflicts: undefined } : {});
-  const showRole = o.outcome && o.outcome.startsWith('Start a company');
+  const roles = ROLE_OPTIONS[o.outcome];
   const eng = CFG.engagement;
   view().innerHTML = `<div class="panel"><p class="sect">You and the project</p><h2 class="q">About you and why you're doing this</h2>
     <p class="hint lead">Filling this out for someone else? Answer for the person who leads the project.</p>
     <div class="field"><label class="f">What's the main reason you want to take this beyond the lab?</label>${seg(o, 'why', ['I want to see it used', 'I want to build a company', 'My funding or department expects it', 'A company or customer asked for it', 'Not sure yet'])}</div>
     <div class="field"><label class="f" for="whyText">In a sentence: why this, and why now? <span class="opt-tag">optional</span></label><input type="text" id="whyText" value="${esc(o.whyText)}"></div>
     <div class="field"><label class="f">What outcome do you want for this technology?</label>${seg(o, 'outcome', OUTCOMES)}</div>
-    ${showRole ? `<div class="field"><label class="f">If a company forms, what role do you want?</label>${seg(o, 'role', ['CEO or business lead', 'Technical lead (CTO or chief scientist)', 'Advisor', 'No role', 'Not sure'])}</div>` : ''}
+    ${roles ? `<div class="field"><label class="f">If a company forms, what role do you want?</label>${seg(o, 'role', roles)}</div>` : ''}
     <div class="field"><label class="f">In the last three months, have you spent time on this outside your research duties?</label>${seg(o, 'spent', ['Yes', 'No'])}</div>
     <div class="field"><label class="f">How many hours a week can you put toward this over the next six months?</label>${seg(o, 'hours', HOURS)}</div>
+    <div class="field"><label class="f">Does anyone plan to work on this full time?</label>${seg(o, 'fullTime', FULL_TIME)}</div>
     ${eng ? `<div class="field"><label class="f">Can the project lead take part in a structured engagement of about ${esc(eng.hoursPerWeek)} hours a week for ${esc(eng.months)} months?</label>${seg(o, 'engagement', ['Yes', 'No', 'Not sure'])}
       ${['No', 'Not sure'].includes(o.engagement) ? `<label class="f" for="conflicts" style="margin-top:12px">Note any sabbatical, leave, or other conflicts <span class="opt-tag">optional</span></label><input id="conflicts" type="text" value="${esc(o.conflicts)}">` : ''}</div>` : ''}
     <div class="field"><label class="f">Prior experience <span class="opt-tag">optional, check all that apply</span></label>${checks('prior', PRIOR_EXPERIENCE, o.prior)}
@@ -612,7 +737,8 @@ function renderFounder() {
     return x;
   };
   wireSegs(read, x => {
-    if (!(x.outcome || '').startsWith('Start a company')) delete x.role;
+    // a role that the chosen outcome doesn't offer is cleared
+    if (!(ROLE_OPTIONS[x.outcome] || []).includes(x.role)) delete x.role;
     if (!['No', 'Not sure'].includes(x.engagement)) delete x.conflicts;
     A._founder = x;
   }, renderFounder);
@@ -623,16 +749,14 @@ function renderFounder() {
   $('go').onclick = () => {
     const x = read();
     A._founder = x;
-    const sr = (x.outcome || '').startsWith('Start a company');
-    const ok = x.why && x.outcome && (!sr || x.role) && x.spent && x.hours && (!eng || x.engagement);
-    if (!ok) return err('Answer each question to continue.');
+    if (!(ROLE_OPTIONS[x.outcome] || []).includes(x.role)) delete x.role;
     x.whyText = (x.whyText || '').trim();
     x.changed = x.nothing ? '' : (x.changed || '').trim();
     x.priorDetail = (x.priorDetail || '').trim();
     if (x.conflicts) x.conflicts = x.conflicts.trim();
     delete A._founder;
     A.founder = x;
-    finish('founder');
+    finish('founder', missingRequired('founder', x, { config: CFG }));
   };
   wireBack();
 }
@@ -651,7 +775,7 @@ function renderTech() {
     ${t.stage >= 4 ? `<div class="field"><label class="f" for="tev">${t.stage >= 7 && A.E.c_proto ? 'Anything to add about where it was tested? (optional; you already named who used the prototype)' : 'Describe the most advanced test or use so far: what was tested, where, and with whom.'}</label><textarea id="tev">${esc(t.ev)}</textarea></div>` : ''}
     ${hasFacilities(A) ? `<div class="field"><label class="f" for="fac">Facilities and equipment for prototype development or validation, and how you'll access any you don't have. <span class="opt-tag">optional</span></label><textarea id="fac">${esc(t.facilities)}</textarea></div>` : ''}
     <label class="chk"><input type="checkbox" id="tu" ${t.unsure ? 'checked' : ''}><span>I'm not sure about this one</span></label>
-    <div class="actions"><button class="btn" id="go" ${t.stage == null ? 'disabled' : ''}>Continue</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
+    <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
   const keep = () => { if ($('tev')) t.ev = $('tev').value; if ($('fac')) t.facilities = $('fac').value; A._tech = t; };
   view().querySelectorAll('.opt').forEach(b => {
     b.onclick = () => { keep(); t.stage = +b.dataset.i; A._tech = t; saveDraft(); renderTech(); if ($('tev')) $('tev').focus(); };
@@ -659,16 +783,15 @@ function renderTech() {
   ['tev', 'fac'].forEach(id => { if ($(id)) $(id).oninput = () => { keep(); saveDraft(); }; });
   $('tu').onchange = () => { t.unsure = $('tu').checked; A._tech = t; };
   $('go').onclick = () => {
-    if (t.stage == null) return;
     keep();
     const ev = (t.ev || '').trim();
-    if (t.stage >= 4 && !ev && !(t.stage >= 7 && A.E.c_proto)) return err('Add a short description of the test.');
+    const missing = missingRequired('tech', { stage: t.stage, ev }, { A });
     delete A._tech;
     A.stage = t.stage;
     A.techEv = t.stage >= 4 ? ev : '';
     A.facilities = hasFacilities(A) ? (t.facilities || '').trim() : '';
     if (t.unsure) A.unsure.tech = true;
-    finish('tech');
+    finish('tech', missing);
   };
   wireBack();
 }
@@ -690,31 +813,61 @@ function renderMulti(sc) {
     }
   };
 
-  let L = A._local && A._local.id === sc.id ? A._local : null;
+  A._locals = A._locals || {};
+  let L = A._locals[sc.id];
   if (!L) {
-    L = A._local = { id: sc.id, user: [], ev: {}, count: '', confirm: null, unsure: false };
+    L = A._locals[sc.id] = { id: sc.id, user: [], ev: {}, count: '', confirm: null, src: {}, unsure: false };
     if (P && P.F) {
       // Re-take: start from last time's checks (only the ones the applicant
       // ticked, not ones that were counted from other answers).
       L.user = sc.items.filter(it => P.F[it.k] === true && !(P.I && it.k in P.I) && !pre.has(it.k)).map(it => it.k);
-      sc.items.forEach(it => { if (P.E && P.E[it.k]) L.ev[it.k] = P.E[it.k]; });
+      sc.items.forEach(it => {
+        if (P.E && P.E[it.k]) L.ev[it.k] = P.E[it.k];
+        if (P.src && P.src[it.k]) L.src[it.k] = JSON.parse(JSON.stringify(P.src[it.k]));
+      });
       if (sc.id === 'cust' && P.count != null) { L.count = String(P.count); L.confirm = P.confirm || null; }
+      if (sc.id === 'team' && P.team) L.roster = JSON.parse(JSON.stringify(P.team));
+      // a plan or canvas link from last time (files were attached to the earlier row)
+      if (sc.id === 'docs' && P.uploads && P.uploads.plan && P.uploads.plan.link && !slotValue('plan', 0)) setSlot('plan', 0, { link: P.uploads.plan.link });
       L.unsure = !!(P.unsure && P.unsure[sc.id]);
       prune(L);
     }
   }
+  if (sc.id === 'team') L.roster = L.roster || [];
+  L.src = L.src || {};
+
+  // Interviews behind a conclusion: the live count on the Customers screen, the saved one elsewhere.
+  const interviews = () => {
+    const raw = sc.id === 'cust' ? L.count : A.count;
+    const n = Number(raw);
+    return raw === '' || raw == null || !(n > 0) ? 0 : Math.floor(n);
+  };
+  // Under a conclusion item the applicant checked: where it came from, and how many said it.
+  const sourceHtml = it => {
+    const s = L.src[it.k] || {}, from = s.from || [], n = interviews();
+    const said = from.includes(CONVERSATIONS)
+      ? `<label class="f" for="said_${it.k}" style="margin-top:10px">${n ? `How many of the ${n} people you interviewed said this?` : 'How many people said this?'}</label>
+         <input type="number" id="said_${it.k}" class="said" min="0" ${n ? `max="${n}"` : ''} step="1" inputmode="numeric" value="${esc(s.said == null ? '' : s.said)}" style="max-width:140px">`
+      : '';
+    return `<div class="sub src-pick"><label class="f">Where does this come from? <span class="opt-tag">pick all that apply</span></label>
+      ${checks('src_' + it.k, SOURCES, from)}${said}</div>`;
+  };
 
   const eff = closeSet([...pre, ...L.user]);
   const vis = sc.items.filter(it => pre.has(it.k) || m.itemVisible(it, eff));
+  // the plan or canvas upload sits under the last of those items that is checked
+  const planHost = vis.filter(it => it.special === 'plan' && eff.has(it.k)).map(it => it.k).pop();
   const row = it => {
     const on = eff.has(it.k), userOn = L.user.includes(it.k), locked = on && !userOn;
     const note = pre.has(it.k) ? 'Covered by an earlier answer' : locked ? 'Included by another item you checked' : '';
     let extra = '';
     if (userOn && it.ev) extra = `<div class="sub"><label class="f" for="ev_${it.k}">${esc(it.ev)}</label><input type="text" id="ev_${it.k}" value="${esc(L.ev[it.k] || '')}"></div>`;
+    if (userOn && SOURCE_ITEMS[it.k]) extra += sourceHtml(it);
+    if (it.k === planHost) extra += `<div class="sub"><label class="f">Upload the plan or canvas <span class="opt-tag">optional</span></label>${slotHtml('plan', 0)}</div>`;
     if (on && it.special === 'count') {
       const n = L.count === '' ? null : Number(L.count);
       extra += `<div class="sub"><label class="f" for="cnt">How many potential customers or users outside your university have you interviewed?</label><input type="number" id="cnt" min="0" step="1" inputmode="numeric" value="${esc(L.count)}" style="max-width:140px">
-      ${n != null && n >= 20 ? `<p class="f" style="margin:12px 0 6px;font-weight:500">Did most of them confirm the problem is real and happens often?</p>${seg(L, 'confirm', ['Yes', 'No', 'Not sure'])}` : ''}</div>`;
+      ${n != null && n > 0 ? `<p class="f" style="margin:12px 0 6px;font-weight:500">Did most of them confirm the problem is real and happens often?</p>${seg(L, 'confirm', ['Yes', 'No', 'Not sure'])}` : ''}</div>`;
     }
     if (on && it.special === 'deck') extra += `<div class="sub"><label class="f">Upload the deck <span class="opt-tag">optional</span></label>${slotHtml('deck', 0)}</div>`;
     return `<div class="item${on ? ' on' : ''}"><label class="chk"><input type="checkbox" data-k="${it.k}" ${on ? 'checked' : ''} ${locked ? 'disabled' : ''}><span>${esc(displayText(it.label, sc.id, A))}${note ? `<span class="lock">${note}</span>` : ''}</span></label>${extra}</div>`;
@@ -722,13 +875,27 @@ function renderMulti(sc) {
   view().innerHTML = `<div class="panel"><p class="sect">${esc(sc.sect)}</p><h2 class="q">${esc(displayText(sc.q, sc.id, A))}</h2><p class="hint lead">Check all that apply. Leave the rest blank.</p>
     <div class="items">${vis.map(row).join('')}</div>
     <label class="chk unsure"><input type="checkbox" id="un" ${L.unsure ? 'checked' : ''}><span>I'm not sure about some of these</span></label>
+    ${sc.id === 'team' ? rosterHtml(L.roster) : ''}
     <div class="actions"><button class="btn" id="go">${vis.some(it => eff.has(it.k)) ? 'Continue' : 'None of these, continue'}</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
 
   const keep = () => {
-    sc.items.forEach(it => { const e = $('ev_' + it.k); if (e) L.ev[it.k] = e.value; });
+    sc.items.forEach(it => {
+      const e = $('ev_' + it.k); if (e) L.ev[it.k] = e.value;
+      if (view().querySelector(`.checks[data-name="src_${it.k}"]`)) {
+        const s = L.src[it.k] = L.src[it.k] || {};
+        s.from = readChecks('src_' + it.k);
+        const said = $('said_' + it.k);
+        if (said) s.said = said.value === '' ? null : Number(said.value); else delete s.said;
+      }
+    });
     if ($('cnt')) L.count = $('cnt').value;
+    if (sc.id === 'team') L.roster = readRoster();
   };
-  view().querySelectorAll('.items input[type=checkbox]').forEach(x => {
+  if (sc.id === 'team') wireRoster(L, keep, () => renderMulti(sc));
+  // source picks: "Not sure" is exclusive; picking conversations shows the count
+  Object.keys(SOURCE_ITEMS).forEach(k => wireExclusive('src_' + k, SOURCE_NOT_SURE, () => { keep(); saveDraft(); renderMulti(sc); }));
+  view().querySelectorAll('.said').forEach(x => { x.oninput = () => { keep(); saveDraft(); }; });
+  view().querySelectorAll('.items input[data-k]').forEach(x => {
     x.onchange = () => {
       keep();
       const k = x.dataset.k;
@@ -742,9 +909,15 @@ function renderMulti(sc) {
   });
   if ($('cnt')) {
     $('cnt').oninput = () => {
-      const before = Number(L.count) >= 20;
+      const before = Number(L.count) > 0;
       L.count = $('cnt').value;
-      if ((Number(L.count) >= 20) !== before) { keep(); renderMulti(sc); $('cnt').focus(); }
+      if ((Number(L.count) > 0) !== before) { keep(); renderMulti(sc); $('cnt').focus(); return; }
+      // the "of N" wording under the price item follows the count, in place
+      const said = $('said_c_price'), n = interviews();
+      if (said) {
+        view().querySelector('label[for="said_c_price"]').textContent = n ? `How many of the ${n} people you interviewed said this?` : 'How many people said this?';
+        if (n) said.max = n; else said.removeAttribute('max');
+      }
     };
   }
   view().querySelectorAll('.seg[data-name="confirm"] button').forEach(b => { b.onclick = () => { keep(); L.confirm = b.textContent; renderMulti(sc); }; });
@@ -754,14 +927,39 @@ function renderMulti(sc) {
     keep();
     const eff2 = closeSet([...pre, ...L.user]);
     const vis2 = sc.items.filter(it => pre.has(it.k) || m.itemVisible(it, eff2));
-    const missing = vis2.filter(it => L.user.includes(it.k) && it.ev && !(L.ev[it.k] || '').trim());
-    if (missing.length) return err('Fill in the detail under each checked item.');
-    if (eff2.has('c_talk') && vis2.some(it => it.k === 'c_talk')) {
-      const n = Number(L.count);
-      if (L.count === '' || n < 0) return err('Enter how many people you have interviewed.');
-      if (n >= 20 && !L.confirm) return err('Answer whether most confirmed the problem.');
-      A.count = Math.floor(n);
-      A.confirm = n >= 20 ? L.confirm : null;
+    // Wrong answers stop here; missing ones are allowed and marked (see finish()).
+    if (vis2.some(it => it.special === 'plan')) {
+      if (!vis2.some(it => it.special === 'plan' && eff2.has(it.k))) setSlot('plan', 0, null);
+      else if (fileMissing('plan', 0)) return err('Choose the plan or canvas file again, or remove it.');
+    }
+    let roster = null;
+    if (sc.id === 'team') {
+      roster = L.roster.map(p => ({ name: (p.name || '').trim(), role: p.role || '', time: p.time || '', link: (p.link || '').trim(), expertise: (p.expertise || '').trim() }))
+        .filter(p => p.name || p.role || p.time || p.link || p.expertise);
+      if (roster.some(p => p.link && !URL_RE.test(p.link))) return err('Profile links start with http:// or https://.');
+    }
+    const talking = eff2.has('c_talk') && vis2.some(it => it.k === 'c_talk');
+    if (talking && L.count !== '' && !(Number(L.count) >= 0)) return err('Enter how many people you have interviewed, as a number.');
+    const n = interviews();
+    for (const k of Object.keys(SOURCE_ITEMS)) {
+      const s = L.src[k];
+      if (!L.user.includes(k) || !s || s.said == null) continue;
+      if (!(s.said >= 0)) return err('Enter how many people said it, as a number.');
+      if (n && s.said > n) return err('The number who said it can\'t be more than the ' + n + ' people you interviewed.');
+    }
+    const missing = missingRequired(sc.id, { visible: vis2, eff: eff2, user: L.user, ev: L.ev, count: L.count, confirm: L.confirm, src: L.src, roster: L.roster }, { A, config: CFG });
+    if (talking) {
+      if (L.count !== '') A.count = Math.floor(Number(L.count)); else delete A.count;
+      if (n > 0 && L.confirm) A.confirm = L.confirm; else delete A.confirm;
+    }
+    A.src = A.src || {};
+    for (const k of Object.keys(SOURCE_ITEMS)) {
+      if (!vis2.some(it => it.k === k)) continue;
+      const s = L.src[k];
+      if (L.user.includes(k) && s && (s.from || []).length) {
+        A.src[k] = { from: s.from.slice() };
+        if (s.from.includes(CONVERSATIONS) && s.said != null) A.src[k].said = Math.floor(s.said);
+      } else delete A.src[k];
     }
     if (vis2.some(it => it.special === 'deck')) {
       if (!eff2.has('f_deck')) setSlot('deck', 0, null);
@@ -771,28 +969,69 @@ function renderMulti(sc) {
     A.I = A.I || {};
     vis2.forEach(it => {
       A.F[it.k] = eff2.has(it.k);
-      if (L.user.includes(it.k) && it.ev) A.E[it.k] = L.ev[it.k].trim();
+      if (L.user.includes(it.k) && it.ev) {
+        const text = (L.ev[it.k] || '').trim();
+        if (text) A.E[it.k] = text; else delete A.E[it.k];
+      }
       if (eff2.has(it.k) && !L.user.includes(it.k)) {
         const src = pre.has(it.k) ? by0[it.k] : L.user.find(u => closeSet([u]).has(it.k));
         A.I[it.k] = src || '';
       }
     });
     if (L.unsure) A.unsure[sc.id] = true;
-    finish(sc.id);
+    if (roster) A.team = roster;
+    finish(sc.id, missing);
   };
   wireBack();
+}
+
+/* ----- team roster (Team screen; optional) ----- */
+function rosterHtml(roster) {
+  // An earlier submission's free-text team list, so it can be re-entered here.
+  const legacy = P && !P.team && P.applicant && P.applicant.team;
+  return `<div class="field roster"><label class="f">Who is working on this? <span class="opt-tag">optional</span></label>
+    <p class="hint">List the other people on the team. Don't include yourself.</p>
+    ${legacy ? `<p class="note">Last time you listed: ${esc(legacy)}</p>` : ''}
+    ${roster.map((p, i) => `<div class="person" data-i="${i}">
+      <input type="text" class="r-name" value="${esc(p.name)}" placeholder="Name" aria-label="Name">
+      ${selectHtml('r-role', ROSTER_ROLES, p.role, 'Role')}
+      ${selectHtml('r-time', ROSTER_TIME, p.time, 'Time')}
+      <input type="url" class="r-link" value="${esc(p.link)}" placeholder="LinkedIn or profile link (optional)" aria-label="LinkedIn or profile link (optional)">
+      <input type="text" class="r-exp" value="${esc(p.expertise)}" placeholder="Expertise (optional)" aria-label="Expertise (optional)">
+      <button type="button" class="linkish r-remove">Remove</button>
+    </div>`).join('')}
+    <button type="button" class="btn ghost small" id="add-person">Add a person</button></div>`;
+}
+function readRoster() {
+  return [...view().querySelectorAll('.roster .person')].map(el => ({
+    name: el.querySelector('.r-name').value, role: el.querySelector('.r-role').value, time: el.querySelector('.r-time').value,
+    link: el.querySelector('.r-link').value, expertise: el.querySelector('.r-exp').value
+  }));
+}
+function wireRoster(L, keep, rerender) {
+  view().querySelectorAll('.roster input, .roster select').forEach(x => { x.oninput = x.onchange = () => { keep(); saveDraft(); }; });
+  view().querySelectorAll('.roster .r-remove').forEach(b => {
+    b.onclick = () => { keep(); L.roster.splice(+b.closest('.person').dataset.i, 1); saveDraft(); rerender(); };
+  });
+  $('add-person').onclick = () => {
+    keep(); L.roster.push({}); saveDraft(); rerender();
+    const rows = view().querySelectorAll('.roster .r-name');
+    rows[rows.length - 1].focus();
+  };
 }
 
 /* ----- 12. Materials and submit ----- */
 const HELP = ['Introductions to potential customers', 'A business co-founder or CEO', 'IP or licensing guidance', 'Help applying for SBIR/STTR or grants', 'Investor introductions', 'Product or engineering help', 'Regulatory or certification guidance', 'A mentor in my industry'];
 
 function renderMaterials() {
-  const mt = A._materials || { help: P && P.materials && P.materials.help ? [...P.materials.help] : [], ack: false, aiOptOut: !!(P && P.materials && P.materials.aiOptOut) };
+  const mt = A._materials || { help: P && P.materials && P.materials.help ? [...P.materials.help] : [], ack: false, aiOptOut: !!(P && P.materials && P.materials.aiOptOut), anythingElse: '' };
   // Re-take: links from last time carry over (files were attached to the earlier row).
   if (!A._materials && P && P.uploads && !A.linksCarried) {
     A.linksCarried = true;
     const pu = P.uploads;
     if (pu.deck && pu.deck.link && !slotValue('deck', 0)) setSlot('deck', 0, { link: pu.deck.link });
+    // the plan link, when Plans on paper was carried forward without being shown
+    if (pu.plan && pu.plan.link && !slotValue('plan', 0) && (A.F.d_bmc || A.F.d_plan)) setSlot('plan', 0, { link: pu.plan.link });
     (pu.supporting || []).forEach((x, i) => { if (x && x.link && !slotValue('supporting', i)) setSlot('supporting', i, { link: x.link }); });
   }
   const deckFromFunding = A.F.f_deck === true && slotValue('deck', 0);
@@ -803,20 +1042,26 @@ function renderMaterials() {
       <p class="hint" style="margin:0 0 8px">Publications, white papers, prototype images, or videos. Files up to ${Math.round(CFG.uploads.maxBytes / 1048576)} MB; for anything bigger, share a link.</p>
       ${Array.from({ length: CFG.uploads.maxSupporting }, (_, i) => slotHtml('supporting', i)).join('')}</div>
     <div class="field"><label class="f">What would help most right now? <span class="opt-tag">check all that apply</span></label>${checks('help', HELP, mt.help)}</div>
+    <div class="field"><label class="f" for="anythingElse">Anything else we should know? <span class="opt-tag">optional</span></label>
+      <textarea id="anythingElse" rows="4">${esc(mt.anythingElse)}</textarea>
+      ${wordHint('anythingElse', mt.anythingElse)}</div>
     <div class="handling"><h3>${esc(h.heading)}</h3>${h.paragraphs.map(x => `<p>${esc(x)}</p>`).join('')}
       <label class="chk"><input type="checkbox" id="ack" ${mt.ack ? 'checked' : ''}><span>${esc(h.ackLabel)} <span class="opt-tag">required</span></span></label>
       <label class="chk"><input type="checkbox" id="optout" ${mt.aiOptOut ? 'checked' : ''}><span>${esc(h.optOutLabel)} <span class="opt-tag">optional</span></span></label></div>
     <div class="hp" aria-hidden="true"><label for="company_fax">Leave this field empty</label><input type="text" id="company_fax" name="company_fax" tabindex="-1" autocomplete="off" value="${esc(HP)}"></div>
-    <div class="actions"><button class="btn" id="go">Submit</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
-  const read = () => ({ help: readChecks('help'), ack: $('ack').checked, aiOptOut: $('optout').checked });
+    <div class="actions"><button class="btn" id="go">${incompleteScreens().length ? 'Continue' : 'Submit'}</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
+  const read = () => ({ help: readChecks('help'), ack: $('ack').checked, aiOptOut: $('optout').checked, anythingElse: $('anythingElse').value });
   view().querySelectorAll('input[type=checkbox]').forEach(x => { x.onchange = () => { A._materials = read(); saveDraft(); }; });
+  wireWordCount('anythingElse', () => { A._materials = read(); saveDraft(); });
   $('company_fax').oninput = () => { HP = $('company_fax').value; };
   wireSlots(() => { A._materials = read(); renderMaterials(); });
   $('go').onclick = () => {
     const x = read();
     A._materials = x;
+    if (wordNote('anythingElse', x.anythingElse).block) return err('Please shorten your note under "Anything else".');
+    x.anythingElse = x.anythingElse.trim();
     if (!x.ack) return err('Please confirm you\'ve read how NobleReach handles your submission.');
-    const lost = [['deck', 0], ...Array.from({ length: CFG.uploads.maxSupporting }, (_, i) => ['supporting', i])].find(([s, i]) => fileMissing(s, i));
+    const lost = [['deck', 0], ['plan', 0], ...Array.from({ length: CFG.uploads.maxSupporting }, (_, i) => ['supporting', i])].find(([s, i]) => fileMissing(s, i));
     if (lost) return err('Choose ' + SLOT_LABEL(lost[0], lost[1]).toLowerCase() + ' again, or remove it.');
     // A deck added here counts as "A pitch deck" (Funding).
     if (slotValue('deck', 0)) A.F.f_deck = true;
@@ -829,6 +1074,21 @@ function renderMaterials() {
 }
 
 /* ----- submit ----- */
+/* ----- before you submit: sections skipped with required answers missing ----- */
+function renderReview() {
+  const ids = incompleteScreens();
+  view().innerHTML = `<div class="panel"><p class="sect">Before you submit</p>
+    <h2 class="q">A few answers are still needed</h2>
+    <p class="hint lead">You skipped some required questions. Finish them, and you'll be able to submit. Everything else you entered is saved.</p>
+    <div class="review-list">${ids.map(id => `<div class="review-row">
+      <div class="review-text"><strong>${esc(sectOf(id))}</strong><span>${A.missing[id].map(esc).join('; ')}</span></div>
+      <button type="button" class="btn ghost small" data-goto="${id}">Go to</button></div>`).join('')}</div>
+    <div class="actions"><button class="btn" id="finish-missing">Finish missing answers</button>${backLink()}</div></div>`;
+  view().querySelectorAll('[data-goto]').forEach(b => { b.onclick = () => jumpTo(b.dataset.goto); });
+  $('finish-missing').onclick = () => jumpTo(ids[0]);
+  wireBack();
+}
+
 function renderSubmit() {
   const st = submitState;
   const msg = st.status === 'error'
@@ -843,6 +1103,7 @@ function renderSubmit() {
 }
 
 async function doSubmit() {
+  if (incompleteScreens().length) return render();   // never submit with required answers missing
   submitState = { status: 'sending' };
   render();
   const submittedAt = new Date().toISOString();
@@ -1102,6 +1363,8 @@ async function boot() {
   const draft = load(DRAFT_KEY);
   if (draft && draft.A) {
     A = draft.A; H = draft.H || []; P = draft.P || null; meta = draft.meta || {};
+    // drafts from before gen-1.2 kept one checklist screen's in-progress state
+    if (A._local) { A._locals = Object.assign({}, A._locals, { [A._local.id]: A._local }); delete A._local; }
     if (!meta.submissionId) meta.submissionId = newSubmissionId();
     phase = 'intake';
   } else {

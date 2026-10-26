@@ -794,6 +794,7 @@ function loadAssessmentIntoState(assessment) {
     startupInterest: assessment.StartupInterest,
     callNotes: assessment.CallNotes,
   });
+  AppState.categoryNotes = { ...(assessment.categoryNotes || {}) };
 
   // Smartsheet integration fields
   AppState.ventureId = assessment.ventureId || generateVentureId();
@@ -1103,6 +1104,9 @@ function setupEventListeners() {
       updateSubmissionStatusUI();
     });
   });
+
+  // Per-category notes box (built by external-flow.js) marks the save as changed.
+  document.getElementById("category-notes")?.addEventListener("input", () => updateSubmissionStatusUI());
 
   document.getElementById("call-notes")?.addEventListener("input", (e) => {
     setCommentaryField("callNotes", e.target.value);

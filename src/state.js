@@ -173,6 +173,12 @@ export function generateStateHash() {
     stateForHash.trackAssignment = reportingMetadata.trackAssignment;
   }
 
+  // Only when present, so ventures saved before notes existed keep their hash.
+  const notes = Object.entries(AppState.categoryNotes || {})
+    .map(([cat, text]) => [cat, String(text || "").trim()])
+    .filter(([, text]) => text);
+  if (notes.length) stateForHash.categoryNotes = Object.fromEntries(notes);
+
   const stateStr = JSON.stringify(stateForHash);
   // Simple hash function
   let hash = 0;
@@ -258,7 +264,7 @@ export const AppState = {
   scores: {},
   goalLevels: {},
   commentary: createEmptyCommentary(),
-  categoryNotes: {},  // External flow: optional per-category justification { [category]: text }
+  categoryNotes: {},  // Optional per-category justification { [category]: text }
   isHealthRelated: false,
   // Which TRL track the Technology category is scored against (DOM option value
   // from #industry-select). Persisted because the life-sciences tracks render
@@ -488,12 +494,15 @@ export function setCommentaryField(field, value) {
   saveCurrentVenture();
 }
 
-// External flow: optional per-category justification note. Not trimmed here so
-// trailing spaces while typing aren't eaten; trim at PDF time instead.
+// Optional per-category justification note (both modes; saved to the RL sheet's
+// Notes_* columns). Not trimmed here so trailing spaces while typing aren't
+// eaten; trim at PDF/save time instead.
+export const CATEGORY_NOTE_MAX = 500;
+
 export function setCategoryNote(category, text) {
   if (!category) return;
   if (!AppState.categoryNotes) AppState.categoryNotes = {};
-  AppState.categoryNotes[category] = String(text || "");
+  AppState.categoryNotes[category] = String(text || "").slice(0, CATEGORY_NOTE_MAX);
   saveCurrentVenture();
 }
 

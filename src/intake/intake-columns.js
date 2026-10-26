@@ -30,7 +30,7 @@ export const COLUMNS = [
   // Submission
   { key: 'submissionId', title: 'Submission ID', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'Unique per submission. Shown to the applicant.' },
   { key: 'submittedAt', title: 'Submitted At', group: 'Submission', type: 'Text', writtenBy: 'server', notes: 'ISO timestamp (UTC). Keep as Text, or switch to Date if you only need the day.' },
-  { key: 'formVersion', title: 'Form Version', group: 'Submission', type: 'Text', writtenBy: 'app', notes: 'Question-model version, e.g. gen-1.0.' },
+  { key: 'formVersion', title: 'Form Version', group: 'Submission', type: 'Text', writtenBy: 'app', notes: 'Question-model version, e.g. gen-1.2.' },
   { key: 'source', title: 'Source', group: 'Submission', type: 'Text', writtenBy: 'app', notes: 'From the ?source= link parameter.' },
   { key: 'portfolio', title: 'Portfolio', group: 'Submission', type: 'Dropdown', options: PORTFOLIO_VALUES, writtenBy: 'app', notes: 'Program, from the intake config or ?portfolio=. Same values as the RL and QM dropdowns.' },
   { key: 'intakeNumber', title: 'Intake Number', group: 'Submission', type: 'Number', writtenBy: 'server', notes: '1 for the first submission from this email, 2 for a re-take, ...' },
@@ -45,8 +45,9 @@ export const COLUMNS = [
   { key: 'email', title: 'Email', group: 'Applicant', type: 'Text', writtenBy: 'server', notes: 'Lowercased.' },
   { key: 'emailDomain', title: 'Email Domain', group: 'Applicant', type: 'Text', writtenBy: 'server', notes: 'For per-institution reports.' },
   { key: 'phone', title: 'Phone', group: 'Applicant', type: 'Text', writtenBy: 'app' },
+  { key: 'linkedin', title: 'Applicant LinkedIn', group: 'Applicant', type: 'Text', writtenBy: 'app', notes: 'LinkedIn or other professional profile link (optional).' },
   { key: 'role', title: 'Role', group: 'Applicant', type: 'Dropdown', options: ['Faculty or PI', 'Co-investigator', 'Postdoc', 'Grad student', 'Founder from outside the university', 'Other'], writtenBy: 'app', notes: 'Role on the project.' },
-  { key: 'teamMembers', title: 'Team Members', group: 'Applicant', type: 'Text', writtenBy: 'app', notes: 'Co-investigators and other team members.' },
+  { key: 'teamMembers', title: 'Team Members', group: 'Applicant', type: 'Text', writtenBy: 'app', notes: 'One person per line: name, role, time commitment, profile link, expertise. Older submissions hold free text.' },
 
   // Project
   { key: 'technologyForm', title: 'Technology Form', group: 'Project', type: 'Dropdown', options: ['Software', 'Hardware or physical device', 'Material, chemistry, or process', 'Therapeutic', 'Diagnostic', 'Medical device', 'Other'], writtenBy: 'app' },
@@ -58,10 +59,12 @@ export const COLUMNS = [
   { key: 'ventureUrl', title: 'Venture URL', group: 'Project', type: 'Text', writtenBy: 'app', notes: 'Website. Same title as the QM sheet.' },
 
   // Written answers
+  { key: 'oneLiner', title: 'One-Line Description', group: 'Written answers', type: 'Text', writtenBy: 'app', notes: 'What it is and who it is for, in one sentence (required, up to 40 words).' },
   { key: 'technologyDescription', title: 'Technology Description', group: 'Written answers', type: 'Text', writtenBy: 'app', notes: 'Key innovation and underlying science (250 words). Same title as the QM sheet.' },
   { key: 'valueProposition', title: 'Value Proposition', group: 'Written answers', type: 'Text', writtenBy: 'app', notes: 'Problem, target customers, why alternatives fall short (200 words).' },
   { key: 'impact', title: 'Impact and National Security', group: 'Written answers', type: 'Text', writtenBy: 'app', notes: 'Societal or economic impact and national security relevance (200 words).' },
   { key: 'nationalSecurityRelevance', title: 'National Security Relevance', group: 'Written answers', type: 'Text', writtenBy: 'app', notes: 'Picks, separated by ; (Defense or intelligence use, Other government agency use, Commercial use, Not sure yet).' },
+  { key: 'applicationsConsidered', title: 'Applications Considered', group: 'Written answers', type: 'Dropdown', options: ['One', '2 to 3', 'More than 3', 'Not sure'], writtenBy: 'app', notes: 'How many applications or markets they are considering for the technology.' },
 
   // Founder
   { key: 'outcomeWanted', title: 'Outcome Wanted', group: 'Founder', type: 'Text', writtenBy: 'app' },
@@ -70,6 +73,7 @@ export const COLUMNS = [
   { key: 'whyText', title: 'Why (their words)', group: 'Founder', type: 'Text', writtenBy: 'app' },
   { key: 'timeSpent', title: 'Time Spent Last 3 Months', group: 'Founder', type: 'Dropdown', options: ['Yes', 'No'], writtenBy: 'app' },
   { key: 'hoursPerWeek', title: 'Hours per Week', group: 'Founder', type: 'Dropdown', options: ['Under 3', '3 to 5', '5 to 10', '10 to 20', 'More than 20', 'Full time'], writtenBy: 'app' },
+  { key: 'fullTimePlans', title: 'Full-Time Plans', group: 'Founder', type: 'Dropdown', options: ['Already', 'Within 12 months', 'Later', 'No plans'], writtenBy: 'app', notes: 'Does anyone plan to work on this full time?' },
   { key: 'engagementCommitment', title: 'Engagement Commitment', group: 'Founder', type: 'Dropdown', options: ['Yes', 'No', 'Not sure'], writtenBy: 'app', notes: 'Blank when the config sets no engagement terms.' },
   { key: 'conflicts', title: 'Conflicts', group: 'Founder', type: 'Text', writtenBy: 'app', notes: 'Sabbatical, leave, or other conflicts.' },
   { key: 'priorExperience', title: 'Prior Experience', group: 'Founder', type: 'Text', writtenBy: 'app' },
@@ -98,13 +102,16 @@ export const COLUMNS = [
   { key: 'countedFromOther', title: 'Counted From Other Answers', group: 'Evidence', type: 'Text', writtenBy: 'app' },
   { key: 'doneAhead', title: 'Done Ahead of Next Level', group: 'Evidence', type: 'Text', writtenBy: 'app' },
   { key: 'alsoDone', title: 'Also Done', group: 'Evidence', type: 'Text', writtenBy: 'app' },
+  { key: 'discoverySources', title: 'Discovery Sources', group: 'Evidence', type: 'Text', writtenBy: 'app', notes: 'Where each conclusion came from (first market, why customers would choose them, price), and how many interviewees said it.' },
 
   // Funding history (stored, not scored)
   { key: 'grantsReceived', title: 'Grants Received', group: 'Funding history', type: 'Text', writtenBy: 'app', notes: 'Agency, amount, and period for each grant.' },
   { key: 'privateInvestment', title: 'Private Investment Received', group: 'Funding history', type: 'Text', writtenBy: 'app', notes: 'Source and amount.' },
+  { key: 'programsAndAwards', title: 'Programs and Awards', group: 'Funding history', type: 'Text', writtenBy: 'app', notes: 'Other accelerators or programs, awards, and competitions, with dates.' },
 
   // Other
   { key: 'helpWanted', title: 'Help Wanted', group: 'Other', type: 'Text', writtenBy: 'app' },
+  { key: 'anythingElse', title: 'Anything Else', group: 'Other', type: 'Text', writtenBy: 'app', notes: 'Optional closing comments (up to 200 words).' },
   { key: 'aiOptOut', title: 'AI Processing Opt-Out', group: 'Other', type: 'Dropdown', options: ['Yes', 'No'], writtenBy: 'app', notes: 'Yes = do not send this row or its attachments to any AI tool (including the QM tool). Check before any AI step.' },
   { key: 'uploadFileNames', title: 'Upload File Names', group: 'Uploads', type: 'Text', writtenBy: 'server', notes: 'Attached files and submitted links.' },
   { key: 'uploadStatus', title: 'Upload Status', group: 'Uploads', type: 'Text', writtenBy: 'server', notes: 'Per file: attached, or failed with the reason.' },

@@ -136,9 +136,8 @@ export function savePdfSnapshot(options = {}) {
     y += lh;
   });
 
-  // Per-category notes (external flow). Internal mode never populates
-  // categoryNotes, so this section simply doesn't appear there. Included for
-  // both first and follow-up assessments since notes are scoring justifications.
+  // Per-category notes (both modes). Included for both first and follow-up
+  // assessments since notes are scoring justifications.
   const noteRows = getActiveSubmissionCategories(AppState, readinessData)
     .map((cat) => [cat, String((AppState.categoryNotes && AppState.categoryNotes[cat]) || "").trim()])
     .filter(([, note]) => note);

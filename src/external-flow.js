@@ -8,7 +8,7 @@
 // and the VDR renderers. Step/stage visibility is driven by a single
 // `body[data-flow-step]` attribute that the CSS keys off of.
 
-import { AppState, saveCurrentVenture, setCommentaryField, setCategoryNote, resetActiveVenture } from "./state.js";
+import { AppState, saveCurrentVenture, setCommentaryField, setCategoryNote, resetActiveVenture, CATEGORY_NOTE_MAX } from "./state.js";
 import { readinessData } from "./data/index.js";
 import {
   getSubmissionReadiness,
@@ -296,9 +296,7 @@ function enterScore() {
     updateSummary();
   }
   renderScoreNav();
-  // Build/refresh the per-category notes box. Needed here because at boot
-  // initializeApp() already set currentCategory (firing categoryDisplayUpdated
-  // before our listener existed), so re-entering Score otherwise wouldn't build it.
+  // Build/refresh the per-category notes box on entering Score.
   refreshCategoryNotes();
 }
 
@@ -322,10 +320,14 @@ function renderScoreNav() {
   });
 }
 
-// Optional per-category note shown under the level cards on the Score step.
+// Optional per-category note shown above the level cards, in both modes.
 // Refreshed whenever the displayed category changes (via the categoryDisplayUpdated
-// event from categories.js). Built once, then label + value are updated in place so
-// re-renders for the same category (e.g. after picking a level) don't clobber typing.
+// event from categories.js). Registered at module load so it also runs in internal
+// mode, which never calls startExternalFlow(). Built once, then label + value are
+// updated in place so re-renders for the same category (e.g. after picking a level)
+// don't clobber typing.
+window.addEventListener("categoryDisplayUpdated", () => refreshCategoryNotes());
+
 function refreshCategoryNotes() {
   const host = document.getElementById("category-notes");
   if (!host) return;
@@ -341,17 +343,20 @@ function refreshCategoryNotes() {
   if (!host.dataset.built) {
     host.innerHTML = `
       <label class="category-notes-label" for="category-note-input"></label>
-      <textarea id="category-note-input" class="category-notes-input" rows="3"
-        placeholder="Optional: why this level? Evidence, caveats, or context for this category. Included in the PDF."></textarea>
+      <textarea id="category-note-input" class="category-notes-input" rows="3" maxlength="${CATEGORY_NOTE_MAX}"
+        placeholder="Why this level? Evidence, caveats, or context for this category (up to ${CATEGORY_NOTE_MAX} characters)."></textarea>
     `;
     host.dataset.built = "1";
     const input = host.querySelector("#category-note-input");
     input.addEventListener("input", () => setCategoryNote(AppState.currentCategory, input.value));
   }
 
-  host.querySelector(".category-notes-label").textContent = `Notes for ${getCategoryLabel(cat)} (optional)`;
-  if (host.dataset.cat !== cat) {
-    host.querySelector("#category-note-input").value = AppState.categoryNotes?.[cat] || "";
+  host.querySelector(".category-notes-label").textContent = `Notes for ${getCategoryLabel(cat)} (optional, up to ${CATEGORY_NOTE_MAX} characters)`;
+  // Re-sync from state unless the advisor is typing here, so switching or
+  // loading a venture on the same category doesn't leave the old note showing.
+  const input = host.querySelector("#category-note-input");
+  if (host.dataset.cat !== cat || document.activeElement !== input) {
+    input.value = AppState.categoryNotes?.[cat] || "";
     host.dataset.cat = cat;
   }
 }
@@ -545,11 +550,6 @@ export function startExternalFlow() {
       setTimeout(renderScoreNav, 0);
     }
   }, true);
-
-  // Refresh the per-category notes box whenever the displayed category changes.
-  window.addEventListener("categoryDisplayUpdated", () => {
-    if (isExternalFlowActive) refreshCategoryNotes();
-  });
 
   // Our flow owns VDR navigation (vdr-main.js only registers under ?vdr=true).
   // The VDR's own screens dispatch these events; we reinterpret them against

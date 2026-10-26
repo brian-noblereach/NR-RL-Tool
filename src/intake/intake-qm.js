@@ -11,7 +11,7 @@
 // and phone. Applicants who opt out of AI processing get no qm-input.md (the
 // client skips it and the proxy refuses it).
 
-import { SCREENS, closure, trlOptions, track, TRACK_LABEL, isHealth } from './intake-model.js';
+import { SCREENS, closure, trlOptions, track, TRACK_LABEL, isHealth, rosterLines, sourceText } from './intake-model.js';
 
 const SECTION_FOR_SCREEN = {
   cust: 'Customer discovery',
@@ -34,8 +34,9 @@ function factsFor(A, C, screenId) {
     .filter(it => C[it.k] === true && !(it.company && !(A.project && A.project.company === 'Yes')))
     .map(it => {
       let text = it.label;
-      if (it.k === 'c_talk' && A.count != null) text += ` (${A.count} interviews outside the university` + (A.count >= 20 && A.confirm ? `; most confirmed the problem: ${A.confirm}` : '') + ')';
+      if (it.k === 'c_talk' && A.count != null) text += ` (${A.count} interviews outside the university` + (A.confirm ? `; most confirmed the problem: ${A.confirm}` : '') + ')';
       if (A.E && A.E[it.k]) text += ': ' + A.E[it.k];
+      if (sourceText(A, it.k)) text += ' (source: ' + sourceText(A, it.k) + ')';
       return text;
     });
 }
@@ -51,6 +52,7 @@ export function buildQmInput(A, meta = {}) {
 
   out.push(`# ${pr.title || 'Untitled project'}`);
   out.push('');
+  if (pr.oneLiner) out.push(pr.oneLiner, '');
   out.push(`Prepared from the applicant's own answers on the NobleReach application${meta.submittedAt ? ' (submitted ' + String(meta.submittedAt).slice(0, 10) + ')' : ''}. These are self-reported and not yet verified.`);
 
   out.push('', '## Organization and status');
@@ -67,11 +69,13 @@ export function buildQmInput(A, meta = {}) {
 
   out.push('', '## People');
   out.push(bullets([
-    `${name}${ap.role ? ', ' + ap.role : ''}${ap.org ? ', ' + ap.org : ''} (applicant)`,
-    ap.team ? `Other team members: ${ap.team}` : '',
+    `${name}${ap.role ? ', ' + ap.role : ''}${ap.org ? ', ' + ap.org : ''} (applicant)${ap.linkedin ? ': ' + ap.linkedin : ''}`,
+    ...rosterLines(A.team).map(x => 'Team member: ' + x),
+    ap.team && !A.team ? `Other team members: ${ap.team}` : '',
     (fo.prior || []).length ? `Applicant's prior experience: ${fo.prior.join('; ')}${fo.priorDetail ? ' (' + fo.priorDetail + ')' : ''}` : '',
     fo.outcome ? `Outcome the applicant wants: ${fo.outcome}${fo.role ? ', with the applicant as ' + fo.role : ''}` : '',
-    fo.hours ? `Time available: ${fo.hours} hours a week over the next six months` : ''
+    fo.hours ? `Time available: ${fo.hours} hours a week over the next six months` : '',
+    fo.fullTime ? `Anyone planning to work on it full time: ${fo.fullTime}` : ''
   ]));
 
   out.push('', '## Technology');
@@ -93,7 +97,8 @@ export function buildQmInput(A, meta = {}) {
   out.push('', '## Applications and impact');
   out.push(bullets([
     es.impact ? `Societal or economic impact and national security relevance: ${es.impact}` : '',
-    (es.nsRelevance || []).length ? `Where it could be used: ${es.nsRelevance.join('; ')}` : ''
+    (es.nsRelevance || []).length ? `Where it could be used: ${es.nsRelevance.join('; ')}` : '',
+    es.appCount ? `Number of applications or markets being considered: ${es.appCount}` : ''
   ]));
 
   const screens = isHealth(A) ? ['cust', 'docs', 'ip', 'team', 'fund', 'reg', 'scale'] : ['cust', 'docs', 'ip', 'team', 'fund', 'scale'];
@@ -104,6 +109,9 @@ export function buildQmInput(A, meta = {}) {
     out.push(`Asked: "${SCREENS.find(s => s.id === id).q}" The applicant checked:`);
     out.push(bullets(facts));
   }
+
+  const extra = A.materials && A.materials.anythingElse;
+  if (extra) out.push('', '## Anything else the applicant added', extra);
 
   return out.join('\n') + '\n';
 }

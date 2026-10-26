@@ -15,7 +15,7 @@
 // then capped at maxQuestions. If fewer than minQuestions qualify, more of the
 // lowest categories are added.
 
-import { CATS, NAMES, TRACK_LABEL } from './intake-model.js';
+import { CATS, NAMES, TRACK_LABEL, SOURCE_ITEMS, sourceText } from './intake-model.js';
 
 const EVIDENCE_ORDER = ['ip3', 'c_wtp', 'c_paid', 'c_talk', 'c_proto'];
 
@@ -47,8 +47,16 @@ export function selectQuestions(A, result, config, previous = null) {
 
   // 1. gate signals
   for (const g of result.gateItems) push(b.gate[g.id] && fill(b.gate[g.id], { hours: hours.toLowerCase() }));
-  // 2. review flags
-  for (const f of result.flagItems) push(b.flag[f.id]);
+  // 2. review flags. Per-claim discovery flags ({item}) become one question,
+  //    or one merged question when more than one claim is flagged.
+  const claims = result.flagItems.filter(f => f.item);
+  for (const f of result.flagItems) {
+    if (!f.item) { push(b.flag[f.id]); continue; }
+    if (f !== claims[0]) continue;
+    push(claims.length === 1
+      ? fill(b.flag[f.id], { item: f.item, said: f.said, count: f.count })
+      : fill(b.claimsMerged, { list: claims.map(c => c.text).join('; ') }));
+  }
   // 2b. levels that went down since the last submission
   if (previous && previous.scores) {
     for (const c of result.cats) {
@@ -98,6 +106,14 @@ export function buildBriefHtml(A, result, questions, meta = {}) {
     return `<td class="n${prev[c] != null && prev[c] !== result.scores[c] ? ' moved' : ''}">${esc(v)}</td>`;
   };
   const prevHead = prev ? `<th>Last time${meta.previous.submittedAt ? ' (' + esc(String(meta.previous.submittedAt).slice(0, 10)) + ')' : ''}</th>` : '';
+  // Customer discovery: each conclusion next to where it came from.
+  const claimRows = Object.entries(SOURCE_ITEMS).filter(([k]) => result.facts[k] === true)
+    .map(([k, item]) => `<tr><td>${esc(item)}</td><td>${esc(sourceText(A, k) || 'Not asked (counted from another answer)')}</td></tr>`).join('');
+  const discovery = A.count != null || claimRows
+    ? `<h2>Customer discovery</h2>
+<p>Interviews outside the university: ${esc(A.count != null ? A.count : 'none reported')}${A.confirm ? ' &middot; Most confirmed the problem: ' + esc(A.confirm) : ''}</p>
+${claimRows ? `<table><thead><tr><th>Claim</th><th>Where it came from</th></tr></thead><tbody>${claimRows}</tbody></table>` : ''}`
+    : '';
   const rows = result.cats.map(c => `<tr><td>${esc(NAMES[c])}</td><td class="n">${esc(result.scores[c])}</td>${prevCell(c)}<td>${esc(result.next[c] || '')}</td></tr>`).join('');
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Pre-call brief: ${esc(pr.title)}</title>
@@ -107,12 +123,14 @@ h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px;color:#024A
 .meta{color:#475569;font-size:13px;margin:0 0 16px}table{border-collapse:collapse;width:100%}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}th{font-size:12px;color:#475569}
 td.n{font-weight:700;width:56px}td.moved{color:#9a3412}.muted{color:#64748b}ol li,ul li{margin:0 0 6px}
-.note{font-size:12px;color:#64748b;margin-top:24px}
+.note{font-size:12px;color:#64748b;margin-top:24px}.lede{font-size:16px;margin:0 0 6px}
 </style></head><body>
 <h1>${esc(pr.title || 'Untitled project')}</h1>
+${pr.oneLiner ? `<p class="lede">${esc(pr.oneLiner)}</p>` : ''}
 <p class="meta">${esc(name)} &middot; ${esc(ap.org)} &middot; I-Corps: ${esc(pr.icorps)} &middot; TRL track: ${esc(TRACK_LABEL[result.track])}${meta.submissionId ? ' &middot; ' + esc(meta.submissionId) : ''}${meta.submittedAt ? ' &middot; ' + esc(String(meta.submittedAt).slice(0, 10)) : ''}</p>
 <h2>Questions for the call</h2>
 ${questions.length ? `<ol>${questions.map(q => `<li>${esc(q)}</li>`).join('')}</ol>` : '<p class="muted">None generated.</p>'}
+${discovery}
 <h2>Draft BRL levels (from the applicant's answers)</h2>
 <table><thead><tr><th>Category</th><th>Level</th>${prevHead}<th>Next level needs</th></tr></thead><tbody>${rows}</tbody></table>
 <h2>Gate signals</h2>

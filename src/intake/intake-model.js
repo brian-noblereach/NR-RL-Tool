@@ -7,7 +7,13 @@
 //
 // History: ported from docs/venture-intake.html (phys-0.4), then merged with
 // Katy Lenshin's application per docs/superpowers/specs/2026-10-20-venture-
-// intake-merge-spec.md (gen-1.0).
+// intake-merge-spec.md (gen-1.0). gen-1.1 (Oct 2026) added the one-line
+// description, LinkedIn, the team roster, full-time plans, the number of
+// applications considered, optional revenue and publication details, other
+// programs and awards, the business plan upload, and "anything else".
+// gen-1.2 added where customer-discovery conclusions came from (SOURCE_ITEMS),
+// the confirm pick at any interview count, role choices by outcome, and the
+// discovery review flags.
 //
 // CONTENT RULE (CLAUDE.md rule 1c): the wording in TRACK_OPTS, NEXT, IMPLIES,
 // SCREENS, and the gate-signal / flag text is Brian's. Prototype strings are
@@ -18,11 +24,12 @@
 // Answers state `A`:
 //   { applicant, project, essays, problem:{known}, founder, stage, techEv,
 //     facilities, F:{fact:bool}, E:{fact:text}, I:{fact:source}, count,
-//     confirm, unsure:{screenId:true}, materials, uploads, ctx:{source,portfolio},
-//     done:{screenId:true} }
+//     confirm, team:[{name,role,time,link,expertise}], unsure:{screenId:true},
+//     materials, uploads, ctx:{source,portfolio}, done:{screenId:true} }
 
 import { TRL_TRACK_CONTENT } from '../data/trl-tracks.js';
 import { COL, BRL_COLUMN_BY_CAT } from './intake-columns.js';
+import { INTAKE_CONFIG } from './intake-config.js';
 
 /* ---------- question model: facts, screens, scoring ---------- */
 export const CATS=['TRL','IP','Product','Market','GTM','Business','Team','Funding','Regulatory'];
@@ -79,6 +86,25 @@ export const OUTCOMES=['Start a company I help lead','Start a company someone el
 // 'None' replaced by 'Other' (Brian, Oct 2026): applicants with no prior experience leave it blank.
 export const PRIOR_EXPERIENCE=['Founded or co-founded a company','Licensed a technology','Received an SBIR or STTR award','Worked in industry in a related field','Other'];
 export const NS_RELEVANCE=['Defense or intelligence use','Other government agency use','Commercial use','Not sure yet'];
+// gen-1.1 picks (Brian, Oct 2026).
+export const FULL_TIME=['Already','Within 12 months','Later','No plans'];
+export const APP_COUNTS=['One','2 to 3','More than 3','Not sure'];
+export const ROSTER_ROLES=['Co-founder or co-PI','Team member','Student','Advisor','Board member'];
+export const ROSTER_TIME=['Full time','Part time','Occasional'];
+// gen-1.2 (Brian, Oct 2026). The role choices depend on the outcome, so a
+// "help lead" answer can't be paired with "Advisor" or "No formal role".
+export const ROLE_OPTIONS={
+ 'Start a company I help lead':['CEO or business lead','Technical lead (CTO or chief scientist)','Not sure'],
+ 'Start a company someone else leads':['Technical lead (CTO or chief scientist)','Advisor','No formal role','Not sure'],
+};
+// Exclusive choices: picking one clears the others in the same list.
+export const NOT_SURE_YET='Not sure yet';
+// Where a customer-discovery conclusion came from. Asked under each item in
+// SOURCE_ITEMS when the applicant checks it (not when it is implied).
+export const CONVERSATIONS='Customer conversations';
+export const SOURCE_NOT_SURE='Not sure';
+export const SOURCES=[CONVERSATIONS,'Our own experience','Published research or reports','An advisor or partner',SOURCE_NOT_SURE];
+export const SOURCE_ITEMS={d_first:'First market',d_why:'Why customers would choose you',c_price:'Price'};
 
 export function track(A) { return FORM_TRACK[A.project && A.project.form] || 'General'; }
 export function isHealth(A) { return HEALTH_TRACKS.includes(track(A)); }
@@ -135,7 +161,7 @@ export const SCREENS=[
    {k:'c_price',cat:'Business',lvl:4,label:'Tested a specific price with them'},
    {k:'c_wtp',cat:'Market',lvl:5,label:'Received a letter of intent, purchase order, or a written price they would accept',ev:'Which organization?'},
    {k:'c_paid',cat:'Business',lvl:5,label:'One paid for a test sale, paid pilot, or contract',ev:'Who paid, and for what?',showIf:s=>s.has('c_wtp')||s.has('c_price')},
-   {k:'c_rev',cat:'Business',lvl:6,label:'You earn ongoing revenue from the model you plan to grow',showIf:s=>s.has('c_paid')},
+   {k:'c_rev',cat:'Business',lvl:6,label:'You earn ongoing revenue from the model you plan to grow',ev:'Roughly how much per year? (optional)',evOptional:true,showIf:s=>s.has('c_paid')},
  ]},
  {id:'docs',type:'multi',sect:'Plans on paper',q:'Which of these have you worked out and written down?',items:[
    {k:'d_product',cat:'Product',lvl:2,label:'The product you would sell, who would buy it, and why they would want it'},
@@ -146,8 +172,8 @@ export const SCREENS=[
    {k:'d_comp',cat:'Market',lvl:2,label:'Your main competitors'},
    {k:'d_why',cat:'Market',lvl:3,label:'Why a customer would choose you over the best option they have today'},
    {k:'d_barriers',cat:'Market',lvl:6,label:'The main barriers to entering this market (regulations, certifications, incumbents, procurement rules), with a regular way to track competitors'},
-   {k:'d_bmc',cat:'Business',lvl:2,label:'Revenue sources and main costs (a business model canvas or similar)'},
-   {k:'d_plan',cat:'Business',lvl:3,label:'A business plan with revenue and cost estimates and milestones for the next 12 to 18 months'},
+   {k:'d_bmc',cat:'Business',lvl:2,label:'Revenue sources and main costs (a business model canvas or similar)',special:'plan'},
+   {k:'d_plan',cat:'Business',lvl:3,label:'A business plan with revenue and cost estimates and milestones for the next 12 to 18 months',special:'plan'},
    {k:'d_gtmplan',cat:'GTM',lvl:5,label:'A go-to-market plan that says who handles product, marketing, and sales'},
    {k:'d_roadmap',cat:'Product',lvl:6,label:'A product roadmap shaped by user feedback, and a pricing strategy',showIf:s=>s.has('d_product')},
  ]},
@@ -165,7 +191,7 @@ export const SCREENS=[
    {k:'ip_search',label:'A search for related patents (prior art or landscape search)'},
    {k:'ip_fto',label:'A freedom-to-operate review'},
    {k:'ip_soft',label:'Software copyright or trade secret protection'},
-   {k:'ip_public',label:'The work has been presented or published publicly'},
+   {k:'ip_public',label:'The work has been presented or published publicly',ev:'Link or DOI (optional)',evOptional:true},
  ]},
  {id:'team',type:'multi',sect:'Team',q:'Which of these describe the people working on this?',items:[
    {k:'t_commit',cat:'Team',lvl:1,label:'At least one person spends regular time moving this toward a business, beyond the research itself'},
@@ -180,9 +206,10 @@ export const SCREENS=[
  ]},
  {id:'fund',type:'multi',sect:'Funding',q:'Which of these funding steps have you taken?',items:[
    {k:'f1',cat:'Funding',lvl:1,label:'You can name the funding options that fit your stage (SBIR/STTR, angels, venture capital, strategic partners) and what each expects'},
-   {k:'f_applied',label:'Applied for SBIR/STTR or other grants'},
-   {k:'f_received',label:'Received SBIR/STTR or other grant funding',ev:'List each grant: agency, amount, and period.'},
+   {k:'f_applied',label:'Applied for grants or other non-dilutive funding'},
+   {k:'f_received',label:'Received grants or other non-dilutive funding (SBIR/STTR, gap funds, prizes)',ev:'List each grant: agency, amount, and period.'},
    {k:'f_private',label:'Received angel, venture capital, or other private investment',ev:'Source and amount.'},
+   {k:'f_programs',label:'Taken part in other accelerators or programs, or won awards or competitions',ev:'Which ones, and when?'},
    {k:'f_proj',label:'A 12-month financial projection'},
    {k:'f_cap',company:true,label:'A cap table showing who owns what share of the company'},
    {k:'f_deck',label:'A pitch deck',special:'deck'},
@@ -224,7 +251,7 @@ export const SCREENS=[
 /* ---------- constants ---------- */
 
 // Question-model version recorded with every submission.
-export const VERSION = 'gen-1.0';
+export const VERSION = 'gen-1.2';
 
 // Applicants do not see numeric levels (workshop guidance, Oct 2026; merge
 // spec open decision 1). Flip only with sign-off.
@@ -356,17 +383,37 @@ export function createModel(A) {
   function activeScreens() { return SCREENS.filter(s => A.done[s.id] || (screenActive(s) && hasItems(s))); }
   function nextScreen() { return SCREENS.find(s => !A.done[s.id] && screenActive(s) && hasItems(s)); }
 
-  /* consistency flags for the reviewer: [{id, text}] */
+  /* consistency flags for the reviewer: [{id, text}]; per-claim flags also carry {item, said, count} */
   function flagItems() {
     const f = [], v = k => val(k) === true, help = (A.materials && A.materials.help) || [];
-    const add = (id, text) => f.push({ id, text });
+    const add = (id, text, extra) => f.push(Object.assign({ id, text }, extra));
+    const n = A.count || 0;
     if ((v('c_paid') || v('c_rev')) && !(A.count > 0)) add('paid_no_interviews', 'Reports a paid pilot or revenue but no customer interviews counted');
     if (v('c_rev') && A.project && A.project.company !== 'Yes') add('revenue_no_company', 'Reports ongoing revenue but no company formed');
     if (v('t_full') && help.includes('A business co-founder or CEO')) add('team_vs_help', 'Says the team has experienced business leadership but asks for a business co-founder or CEO');
     if ((A.stage || 0) >= 7 && val('c_proto') !== true) add('trl_no_proto', 'Technology answer says it was tested with real users, but no outside user is reported trying a working prototype');
-    if (A.count >= 20 && A.confirm !== 'Yes') add('interviews_unconfirmed', '20 or more interviews, but most did not clearly confirm the problem (' + (A.confirm || 'no answer') + ')');
+    // Asked at any count since gen-1.2; an older 20+ submission with no answer still counts.
+    if (n > 0 && A.confirm !== 'Yes' && (A.confirm || n >= 20)) add('interviews_unconfirmed', 'Most interviews did not clearly confirm the problem (' + n + ' interviews; ' + (A.confirm || 'no answer') + ')');
     if (v('ip_public') && val('ip3') !== true) add('public_no_patent', 'Presented or published publicly with no patent application filed (possible bar to patenting)');
     if (v('f_private') && !companyFormed(A)) add('private_no_company', 'Private investment received but no company formed');
+    if (A.essays && ['2 to 3', 'More than 3'].includes(A.essays.appCount) && val('d_first') !== true) add('many_apps_no_first', "Considering several applications but hasn't chosen a first market");
+
+    // Customer discovery: conclusions vs. the conversations behind them (gen-1.2).
+    const talked = v('c_talk') && n > 0;
+    for (const [k, item] of Object.entries(SOURCE_ITEMS)) {
+      const s = A.src && A.src[k];
+      if (!v(k) || !s || !(s.from || []).length) continue;
+      if (s.from.includes(SOURCE_NOT_SURE)) { add('claim_source_unsure', item + ': source not sure', { item }); continue; }
+      if (!s.from.includes(CONVERSATIONS)) continue;
+      if (!talked) add('claim_conversations_none', item + ': says it came from customer conversations, but no interviews are reported', { item });
+      else if (s.said != null && (s.said * 2 < n || s.said < 5)) add('claim_thin_support', item + ': based on ' + s.said + ' of ' + n + ' interviews', { item, said: s.said, count: n });
+    }
+    if ((v('d_first') || v('d_why')) && !talked) add('claims_no_interviews', 'Has written down a first market or why customers would choose them, without customer conversations');
+    if (A.essays && A.essays.noCustomers && (v('d_first') || v('d_why'))) add('no_customers_but_claims', 'Says no specific customers are identified yet, but has chosen a first market or a reason customers would choose them');
+    const icorps = (A.project && A.project.icorps) || '';
+    const floor = INTAKE_CONFIG.icorpsInterviewFloor || {};
+    const kind = icorps.split(',')[0];
+    if (/finished$/.test(icorps) && floor[kind] != null && n < floor[kind]) add('icorps_few_interviews', 'Finished ' + kind + ' I-Corps with ' + n + ' customer interviews');
     return f;
   }
 
@@ -383,6 +430,7 @@ export function createModel(A) {
     if (o.spent === 'No' && ['10 to 20', 'More than 20', 'Full time'].includes(o.hours)) add('plans_hours_no_time', 'Plans ' + (o.hours === 'Full time' ? 'to work full time' : o.hours.toLowerCase() + ' hours a week') + ' on it but has spent no time on it yet');
     if (o.hours === 'Under 3') add('low_hours', 'Under 3 hours a week available');
     if (o.outcome === 'Start a company I help lead' && ['Under 3', '3 to 5'].includes(o.hours)) add('lead_low_hours', 'Wants to help lead a company with under 5 hours a week');
+    if ((o.outcome || '').startsWith('Start a company') && o.fullTime === 'No plans') add('no_full_time', 'Wants to start a company, but no one plans to work on it full time');
     if (o.nothing && /finished$/.test(icorps)) add('icorps_nothing_changed', 'Finished I-Corps but reports nothing changed from customer or mentor feedback');
     if (['No', 'Not sure'].includes(o.engagement)) add('engagement', "Can't commit, or isn't sure they can commit, to the engagement");
     return f;
@@ -403,10 +451,10 @@ export function createModel(A) {
     const evidence = [];
     if (A.techEv) evidence.push({ q: 'Most advanced test or use', a: A.techEv });
     if (A.facilities) evidence.push({ q: 'Facilities and equipment', a: A.facilities });
-    if (A.count != null) evidence.push({ q: 'Customer interviews outside the university', a: String(A.count) + (A.count >= 20 ? ' (most confirmed the problem: ' + (A.confirm || '') + ')' : '') });
+    if (A.count != null) evidence.push({ q: 'Customer interviews outside the university', a: String(A.count) + (A.confirm ? ' (most confirmed the problem: ' + A.confirm + ')' : '') });
     for (const [k, a] of Object.entries(A.E)) evidence.push({ q: LABEL[k], a });
     if (companyFormed(A)) evidence.push({ q: 'Company name and state', a: A.project.companyName });
-    const extras = ['ip_search', 'ip_fto', 'ip_soft', 'ip_public', 'f_applied', 'f_received', 'f_private'].filter(k => C[k] === true).map(k => LABEL[k]);
+    const extras = ['ip_search', 'ip_fto', 'ip_soft', 'ip_public', 'f_applied', 'f_received', 'f_private', 'f_programs'].filter(k => C[k] === true).map(k => LABEL[k]);
     const progress = [];
     for (const c of cats) {
       const s = scan(c);
@@ -451,14 +499,31 @@ export const RETAKE_SECTIONS = [
 ];
 
 /**
+ * True when a section answered on an earlier form version is missing a
+ * question that is now required (gen-1.1: the one-line description and the
+ * number of applications; gen-1.2: where a conclusion came from, and the
+ * confirm pick under 20 interviews), so it has to be shown again.
+ */
+export function hasNewQuestions(P, id) {
+  if (id === 'project') return !(P.project && P.project.oneLiner);
+  if (id === 'essays') return !(P.essays && P.essays.appCount);
+  const ticked = k => !!(P.F && P.F[k] === true && !(P.I && k in P.I));
+  const unsourced = k => ticked(k) && !(P.src && P.src[k] && (P.src[k].from || []).length);
+  if (id === 'docs') return unsourced('d_first') || unsourced('d_why');
+  if (id === 'cust') return unsourced('c_price') || (ticked('c_talk') && P.count > 0 && !P.confirm);
+  return false;
+}
+
+/**
  * True when last time's answers for this screen can be carried forward
- * as they are. False when the screen was never answered, or when an
- * updated answer changes what the screen asks (company status changes the
- * Team and Funding items; a different technology form changes the TRL
- * options and the Regulatory screen).
+ * as they are. False when the screen was never answered, when it has a
+ * new required question, or when an updated answer changes what the screen
+ * asks (company status changes the Team and Funding items; a different
+ * technology form changes the TRL options and the Regulatory screen).
  */
 export function canCarry(A, P, id) {
   if (!P || !P.done || !P.done[id]) return false;
+  if (hasNewQuestions(P, id)) return false;
   const co = x => !!(x.project && x.project.company === 'Yes');
   if ((id === 'team' || id === 'fund') && co(A) !== co(P)) return false;
   if ((id === 'tech' || id === 'reg') && track(A) !== track(P)) return false;
@@ -467,11 +532,18 @@ export function canCarry(A, P, id) {
 
 const clone = x => (x == null ? x : JSON.parse(JSON.stringify(x)));
 
-/** Copy last time's answers for one screen into A. Call only when canCarry(). */
+/**
+ * Copy one screen's answers from P into A. Call only when canCarry(). P is the
+ * previous submission on a re-take, or a snapshot of this one when the
+ * applicant jumps back to finish a skipped section ("You and the project" and
+ * "Materials" are only ever carried from a snapshot).
+ */
 export function carryForward(A, P, id) {
   const sc = SCREENS.find(s => s.id === id);
   if (id === 'applicant') A.applicant = clone(P.applicant);
   else if (id === 'project') A.project = clone(P.project);
+  else if (id === 'founder') A.founder = clone(P.founder);
+  else if (id === 'materials') A.materials = clone(P.materials);
   else if (id === 'essays') {
     A.essays = clone(P.essays);
     A.problem = P.problem ? clone(P.problem) : { known: !(P.essays && P.essays.noCustomers) };
@@ -485,8 +557,10 @@ export function carryForward(A, P, id) {
       if (P.F && it.k in P.F) A.F[it.k] = P.F[it.k];
       if (P.E && P.E[it.k]) A.E[it.k] = P.E[it.k];
       if (P.I && it.k in P.I) A.I[it.k] = P.I[it.k];
+      if (P.src && P.src[it.k]) { A.src = A.src || {}; A.src[it.k] = clone(P.src[it.k]); }
     }
     if (id === 'cust') { A.count = P.count; A.confirm = P.confirm; }
+    if (id === 'team' && P.team) A.team = clone(P.team);
   }
   if (P.unsure && P.unsure[id]) A.unsure[id] = true;
 }
@@ -501,7 +575,8 @@ export function sectionSummary(P, id) {
   if (id === 'tech') return P.stage ? trlOptions(P)[P.stage].title : 'None of the milestones yet';
   const sc = SCREENS.find(s => s.id === id);
   const n = sc.items.filter(it => P.F && P.F[it.k] === true).length;
-  return n ? `${n} item${n === 1 ? '' : 's'} checked` : 'Nothing checked';
+  const people = id === 'team' && P.team && P.team.length ? ` · ${P.team.length} ${P.team.length === 1 ? 'person' : 'people'} listed` : '';
+  return (n ? `${n} item${n === 1 ? '' : 's'} checked` : 'Nothing checked') + people;
 }
 
 /* ---------- comparisons between two intakes ---------- */
@@ -539,10 +614,26 @@ export function formatDiff(d) {
 
 function joinList(xs, sep = '; ') { return (xs || []).filter(Boolean).join(sep); }
 
+/** The team roster, one person per line: "Name — role, time, link, expertise". */
+export function rosterLines(team) {
+  return (team || []).filter(p => p && p.name)
+    .map(p => p.name + ' — ' + [p.role, p.time, p.link, p.expertise].filter(Boolean).join(', '));
+}
+
+/** Where a checked conclusion item came from, e.g. "customer conversations (12 of 25 said this)"; "" if not asked. */
+export function sourceText(A, k) {
+  const s = A.src && A.src[k];
+  if (!s || !(s.from || []).length) return '';
+  const n = A.count || 0;
+  const said = s.said == null ? '' : ' (' + s.said + (n > 0 ? ' of ' + n : '') + ' said this)';
+  return s.from.map(x => x.toLowerCase()).join(', ') + said;
+}
+
 function uploadNames(A) {
   const u = A.uploads || {}, out = [];
   const name = (x) => x ? (x.link ? x.link : x.name) : '';
   if (u.deck) out.push('Pitch deck: ' + name(u.deck));
+  if (u.plan) out.push('Business plan or canvas: ' + name(u.plan));
   (u.supporting || []).forEach((x, i) => { if (x) out.push('Supporting ' + (i + 1) + ': ' + name(x)); });
   return out;
 }
@@ -568,8 +659,11 @@ export function buildRow(A, ctx = {}) {
     [COL.applicantName]: [ap.first, ap.last].filter(Boolean).join(' '),
     [COL.email]: ap.email,
     [COL.phone]: ap.phone ? ap.phone + (ap.ext ? ' ext. ' + ap.ext : '') : '',
+    [COL.linkedin]: ap.linkedin,
     [COL.role]: ap.role,
-    [COL.teamMembers]: ap.team,
+    // The roster (gen-1.1); a re-take that carried an older Team section keeps its free text.
+    [COL.teamMembers]: A.team ? rosterLines(A.team).join('\n') : ap.team,
+    [COL.oneLiner]: pr.oneLiner,
     [COL.technologyForm]: pr.form,
     [COL.trlTrack]: TRACK_LABEL[r.track],
     [COL.companyFormed]: pr.company,
@@ -581,12 +675,14 @@ export function buildRow(A, ctx = {}) {
     [COL.valueProposition]: es.value,
     [COL.impact]: es.impact,
     [COL.nationalSecurityRelevance]: joinList(es.nsRelevance),
+    [COL.applicationsConsidered]: es.appCount,
     [COL.outcomeWanted]: fo.outcome,
     [COL.roleWanted]: fo.role,
     [COL.mainReason]: fo.why,
     [COL.whyText]: fo.whyText,
     [COL.timeSpent]: fo.spent,
     [COL.hoursPerWeek]: fo.hours,
+    [COL.fullTimePlans]: fo.fullTime,
     [COL.engagementCommitment]: fo.engagement,
     [COL.conflicts]: fo.conflicts,
     [COL.priorExperience]: joinList(fo.prior) + (fo.priorDetail ? ' (' + fo.priorDetail + ')' : ''),
@@ -602,7 +698,11 @@ export function buildRow(A, ctx = {}) {
     [COL.alsoDone]: joinList(r.extras),
     [COL.grantsReceived]: C_.f_received === true ? (A.E.f_received || 'Yes') : '',
     [COL.privateInvestment]: C_.f_private === true ? (A.E.f_private || 'Yes') : '',
+    [COL.programsAndAwards]: C_.f_programs === true ? (A.E.f_programs || 'Yes') : '',
+    [COL.discoverySources]: Object.entries(SOURCE_ITEMS).filter(([k]) => C_[k] === true && sourceText(A, k))
+      .map(([k, item]) => item + ': ' + sourceText(A, k)).join('; '),
     [COL.helpWanted]: joinList(ma.help),
+    [COL.anythingElse]: ma.anythingElse,
     [COL.aiOptOut]: ma.aiOptOut ? 'Yes' : 'No',
     [COL.uploadFileNames]: uploadNames(A).join('\n'),
     [COL.factsTrue]: Object.keys(C_).filter(k => C_[k] === true).sort().join(', ')
@@ -633,12 +733,14 @@ export function founderRecap(A) {
       'Email: ' + ap.email,
       'Organization: ' + ap.org,
       'Your role: ' + ap.role,
-      ap.team ? 'Team members: ' + ap.team : ''
+      ap.linkedin ? 'LinkedIn or profile: ' + ap.linkedin : '',
+      ap.team && !A.team ? 'Team members: ' + ap.team : ''
     ]) });
   }
   if (A.project) {
     sections.push({ sect: 'Project', items: nonEmpty([
       'Project: ' + pr.title,
+      pr.oneLiner ? 'In one sentence: ' + pr.oneLiner : '',
       'Technology form: ' + pr.form,
       pr.company === 'Yes' ? 'Company: ' + pr.companyName + (pr.companyType ? ' (' + pr.companyType + ')' : '') : 'Company formed: ' + pr.company,
       'I-Corps: ' + pr.icorps,
@@ -650,7 +752,8 @@ export function founderRecap(A) {
       'Key innovation: ' + es.science,
       'Problem and customers: ' + es.value + (es.noCustomers ? ' (specific customers not yet identified)' : ''),
       'Impact: ' + es.impact,
-      (es.nsRelevance || []).length ? 'Relevance: ' + es.nsRelevance.join(', ') : ''
+      (es.nsRelevance || []).length ? 'Relevance: ' + es.nsRelevance.join(', ') : '',
+      es.appCount ? 'Applications or markets considered: ' + es.appCount : ''
     ]) });
   }
   if (A.founder) {
@@ -659,6 +762,7 @@ export function founderRecap(A) {
       'Outcome you want: ' + fo.outcome + (fo.role ? ', as ' + fo.role : ''),
       'Time on this in the last three months: ' + fo.spent,
       'Hours a week available: ' + fo.hours,
+      fo.fullTime ? 'Anyone planning to work on it full time: ' + fo.fullTime : '',
       fo.engagement ? 'Engagement commitment: ' + fo.engagement + (fo.conflicts ? ' (' + fo.conflicts + ')' : '') : '',
       (fo.prior || []).length ? 'Prior experience: ' + fo.prior.join(', ') : '',
       fo.nothing ? 'Changed from feedback: Nothing yet' : (fo.changed ? 'Changed from feedback: ' + fo.changed : '')
@@ -679,8 +783,10 @@ export function founderRecap(A) {
         let text = displayText(it.label, sc.id, A);
         if (it.k === 'c_talk' && A.count != null) text += ' (' + A.count + ' interviews)';
         if (A.E[it.k]) text += ': ' + A.E[it.k];
+        if (sourceText(A, it.k)) text += ' (from: ' + sourceText(A, it.k) + ')';
         return text;
       });
+    if (sc.id === 'team') items.unshift(...rosterLines(A.team));
     sections.push({ sect: sc.sect, items: items.length ? items : ['None yet'] });
   }
 
@@ -689,6 +795,7 @@ export function founderRecap(A) {
     sections.push({ sect: 'Materials', items: nonEmpty([
       files.length ? 'Files and links: ' + files.join('; ') : 'No files or links added',
       'What would help most: ' + ((ma.help || []).join(', ') || 'Nothing selected'),
+      ma.anythingElse ? 'Anything else: ' + ma.anythingElse : '',
       ma.aiOptOut ? 'You opted out of AI processing' : ''
     ]) });
   }

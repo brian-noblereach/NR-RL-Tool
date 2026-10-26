@@ -3655,9 +3655,8 @@ body.external-mode #btn-export-pdf {
 body.external-mode .if-external { display: block; }
 body.external-mode .if-internal { display: none; }
 
-/* External-only per-category note, shown under the level cards on the Score step */
-.category-notes { display: none; }
-body.external-mode .category-notes {
+/* Per-category note, shown above the level cards (both modes) */
+.category-notes {
   display: block;
   margin: 0 0 16px;
   padding: 12px 16px;

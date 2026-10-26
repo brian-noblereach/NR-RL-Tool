@@ -36,9 +36,11 @@ export const INTAKE_CONFIG = {
   // No technology-domain question: the QM tool's AI assigns domain from the
   // materials (Brian, Oct 2026). The "Technology Form" question picks the TRL track.
 
-  // Written answers. Warn at the limit; block above limit x blockFactor.
-  wordLimits: { science: 250, value: 200, impact: 200 },
+  // Written answers. Warn at the limit; block above limit x blockFactor,
+  // or at wordLimitBlockAt where one is set.
+  wordLimits: { science: 250, value: 200, impact: 200, oneLiner: 30, anythingElse: 200 },
   wordLimitBlockFactor: 1.25,
+  wordLimitBlockAt: { oneLiner: 40 },
 
   uploads: {
     maxBytes: 20 * 1024 * 1024,
@@ -69,6 +71,10 @@ export const INTAKE_CONFIG = {
     optOutLabel: 'Don\'t use AI tools to process my files or written answers.'
   },
 
+  // Review flag "finished I-Corps with few interviews": fewer than this many
+  // customer interviews after finishing each kind of I-Corps.
+  icorpsInterviewFloor: { Regional: 20, National: 100 },
+
   // Thank-you screen: what happens next.
   nextSteps: 'The NobleReach team reviews every submission. If your project is a fit for a readiness interview, someone from the team will email you to set up a call.',
 
@@ -86,7 +92,8 @@ export const INTAKE_CONFIG = {
       low_hours: 'With under 3 hours a week, what would you realistically get done over the next six months?',
       lead_low_hours: 'You want to help lead a company with only {hours} hours a week. Who else would carry the work?',
       icorps_nothing_changed: 'You finished I-Corps but reported no changes from feedback. What did the customer interviews tell you?',
-      engagement: 'Can the project lead commit to the engagement? What would need to change to make the time?'
+      engagement: 'Can the project lead commit to the engagement? What would need to change to make the time?',
+      no_full_time: 'Who would work on this full time, and when could that happen?'
     },
     flag: {
       paid_no_interviews: 'You reported a paid pilot or revenue but no customer interviews. Who are these customers, and how did you find them?',
@@ -95,8 +102,18 @@ export const INTAKE_CONFIG = {
       trl_no_proto: 'You said the technology has been tested with real users, but no outside user tried a prototype. Who tested it, and where?',
       interviews_unconfirmed: 'Most of your interviews did not clearly confirm the problem. What did you hear instead?',
       public_no_patent: 'The work has been presented or published, but no patent application is filed. When was it disclosed, and has the tech transfer office reviewed the patenting risk?',
-      private_no_company: 'You reported private investment but no company. Who invested, and into what?'
+      private_no_company: 'You reported private investment but no company. Who invested, and into what?',
+      many_apps_no_first: 'Of the applications you\'re considering, which would you pursue first, and why?',
+      // Customer discovery (gen-1.2). The per-claim ones ({item}) merge into
+      // claimsMerged when more than one claim is flagged.
+      claim_thin_support: '{item}: {said} of the {count} people you interviewed said this. How did you get from those conversations to that conclusion?',
+      claim_source_unsure: '{item}: what is that conclusion based on?',
+      claim_conversations_none: '{item}: who did you talk to, and how many?',
+      claims_no_interviews: 'What did you base your first market and your advantage over alternatives on?',
+      no_customers_but_claims: 'You said you haven\'t identified specific customers, but you\'ve picked a first market. Who is it, and how did you choose it?',
+      icorps_few_interviews: 'I-Corps usually involves many more interviews. What did yours tell you, and what\'s left to test?'
     },
+    claimsMerged: 'Walk through how you reached these: {list}.',
     // On a re-take, for each category whose level went down. Keep it neutral:
     // pivots are normal, and a lower level can mean better information.
     dropped: '{category} is lower than last time ({before} to {now}). What did you learn that changed your direction?',

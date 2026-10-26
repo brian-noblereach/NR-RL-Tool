@@ -6,8 +6,23 @@ import {
   AppState,
   saveCurrentVenture,
   getCurrentAssessmentNumber,
-  recordSubmission
+  recordSubmission,
+  CATEGORY_NOTE_MAX
 } from "./state.js";
+
+// Category key -> RL sheet notes column (matched by title in Code.gs).
+const NOTE_FIELDS = {
+  IP: "Notes_IP",
+  Technology: "Notes_Technology",
+  Market: "Notes_Market",
+  Product: "Notes_Product",
+  Team: "Notes_Team",
+  "Go-to-Market": "Notes_GTM",
+  Business: "Notes_Business",
+  Funding: "Notes_Funding",
+  "Mission Impact": "Notes_MissionImpact",
+  Regulatory: "Notes_Regulatory"
+};
 import { readinessData } from "./data/index.js";
 import {
   getSubmissionReadiness,
@@ -217,6 +232,10 @@ function buildPayload() {
       StartupInterest: commentary.startupInterest,
       CallNotes: commentary.callNotes
     }),
+
+    // Per-category notes, every assessment. Always sent (blank clears the cell).
+    ...Object.fromEntries(Object.entries(NOTE_FIELDS).map(([cat, field]) =>
+      [field, sanitizeString(AppState.categoryNotes?.[cat], CATEGORY_NOTE_MAX)])),
 
     // Submission tracking
     submissionTimestamp: new Date().toISOString()
@@ -836,7 +855,8 @@ function processRLAssessments(raw) {
         coachability: a.Coachability || "",
         startupInterest: a.StartupInterest || "",
         callNotes: a.CallNotes || ""
-      }
+      },
+      categoryNotes: Object.fromEntries(Object.entries(NOTE_FIELDS).map(([cat, field]) => [cat, a[field] || ""]))
     }))
     .sort((a, b) => {
       // Sort by date descending (most recent first)

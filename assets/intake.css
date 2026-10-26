@@ -168,6 +168,32 @@ ul.uploads li.up-failed strong { color: var(--danger); }
 .change-row .seg button { padding: 6px 12px; font-size: 14px; }
 input[readonly] { background: var(--bg); color: var(--muted); }
 
+/* skip ahead: incomplete screens and the "Before you submit" list */
+.rail li.missing::before { background: var(--warn-soft); border-color: var(--warn); }
+.rail li.missing::after { content: "!"; position: absolute; left: 6px; top: 2px; font-size: 11px; font-weight: 700; color: var(--warn); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.review-list { display: grid; gap: 8px; margin: 0 0 12px; }
+.review-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+.review-text { display: flex; flex-direction: column; min-width: 0; }
+.review-text span { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 520px) { .review-row { grid-template-columns: 1fr; } .review-row .btn { justify-self: start; } }
+
+/* where a conclusion came from */
+.src-pick .checks { margin-top: 4px; }
+
+/* one-line description */
+textarea.short { min-height: 0; }
+
+/* team roster: name, role, time on one line; link and expertise below */
+.roster { margin-top: 22px; }
+.person { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.25fr) minmax(0, .8fr); gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 0 0 10px; }
+.person .r-link, .person .r-exp { grid-column: span 3; }
+.person .r-remove { justify-self: start; grid-column: span 3; }
+@media (max-width: 520px) {
+  .person { grid-template-columns: 1fr; }
+  .person .r-link, .person .r-exp, .person .r-remove { grid-column: auto; }
+}
+
 /* ---------- start screen ---------- */
 .choices { display: grid; gap: 12px; margin: 8px 0 0; }
 .choice { border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
