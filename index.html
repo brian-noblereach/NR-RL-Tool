@@ -131,16 +131,17 @@
       <div class="workspace-fields-row">
         <div class="venture-name">
           <label for="venture-name">Venture name <span class="required">*</span></label>
-          <input type="text" id="venture-name" placeholder="Type a new name, or choose a saved name if it appears" list="venture-names-list" autocomplete="off" required />
+          <!-- Pick list over #venture-name (internal only; filled from both Smartsheets) -->
+          <select id="venture-pick" class="name-pick" aria-label="Venture name" hidden></select>
+          <input type="text" id="venture-name" placeholder="New venture name" autocomplete="off" required />
           <small class="help-text">Selecting a name here does not load a saved assessment. Use Find Saved Assessment to edit database scores.</small>
-          <datalist id="venture-names-list">
-            <!-- Populated dynamically from Qualification Tool Smartsheet -->
-          </datalist>
         </div>
 
         <div class="advisor-name-field">
           <label for="advisor-name">Advisor name <span class="required">*</span></label>
-          <input type="text" id="advisor-name" placeholder="Your name" required />
+          <!-- Pick list over #advisor-name (internal only; filled from the RL sheet) -->
+          <select id="advisor-pick" class="name-pick" aria-label="Advisor name" hidden></select>
+          <input type="text" id="advisor-name" placeholder="Your name" autocomplete="off" required />
         </div>
 
         <div class="portfolio-field">
@@ -500,9 +501,8 @@
         <p class="load-assessment-intro">Select a previously submitted assessment to edit. Changes will update the existing database entry.</p>
 
         <div class="load-assessment-search">
-          <input type="text" id="load-assessment-search" placeholder="Search by venture name..." autocomplete="off" />
+          <input type="text" id="load-assessment-search" placeholder="Search venture, advisor, or portfolio..." autocomplete="off" />
         </div>
-
         <div class="load-assessment-list" id="load-assessment-list">
           <div class="load-assessment-loading">
             <div class="spinner"></div>

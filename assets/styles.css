@@ -676,6 +676,11 @@ body {
   box-shadow: 0 0 0 3px rgba(0,130,165,0.1);
 }
 
+/* "Add new…" text box sits under its pick list */
+.workspace-fields-row .name-pick:not([hidden]) + input {
+  margin-top: 6px;
+}
+
 .workspace-fields-row .help-text {
   display: block;
   margin-top: 5px;
@@ -2549,9 +2554,40 @@ body {
   color: #92400e;
 }
 
-.load-assessment-badge.assessment-num {
-  background: var(--slate-200);
-  color: var(--slate-600);
+.load-assessment-rounds {
+  display: grid;
+  gap: 6px;
+}
+
+/* One row per round: "#2 · date time" above its scores; click opens it */
+.round-chip {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.round-chip-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--slate-700);
+}
+
+.round-chip:hover .round-chip-label {
+  color: var(--nr-teal-2);
+}
+
+.round-chip:hover .load-assessment-card-scores {
+  border-color: var(--nr-teal-1);
+}
+
+.load-assessment-card .start-round-btn {
+  margin-top: 10px;
 }
 
 .load-assessment-card-meta {

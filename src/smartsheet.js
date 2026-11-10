@@ -722,26 +722,16 @@ let userAssessmentsCacheTime = 0;
 const USER_ASSESSMENTS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
 
 /**
- * Fetch all RL assessments submitted by a specific advisor
- * Used for "Load from Database" feature to edit previously submitted assessments
- * @param {string} advisorName - Advisor name to filter by
+ * Fetch all RL assessments, newest first. Filtering by advisor happens in the
+ * Load Assessment modal, so a name spelled differently never hides saved work.
+ * Also feeds the advisor-name suggestions.
  * @returns {Promise<Array<{rowId, ventureId, ventureName, advisorName, portfolio, assessmentNumber, assessmentDate, isHealthRelated, scores}>>}
  */
-export async function fetchUserAssessments(advisorName) {
-  if (!advisorName || !advisorName.trim()) {
-    console.warn("[Smartsheet] No advisor name provided for fetch");
-    return [];
-  }
-
-  const normalizedAdvisor = advisorName.trim().toLowerCase();
-
+export async function fetchAllAssessments() {
   // Check cache
   const now = Date.now();
   if (userAssessmentsCache && (now - userAssessmentsCacheTime < USER_ASSESSMENTS_CACHE_TTL)) {
-    console.log("[Smartsheet] Returning cached user assessments");
-    return userAssessmentsCache.filter(a =>
-      a.advisorName && a.advisorName.toLowerCase() === normalizedAdvisor
-    );
+    return userAssessmentsCache;
   }
 
   console.log("[Smartsheet] Fetching user assessments from database...");
@@ -770,13 +760,8 @@ export async function fetchUserAssessments(advisorName) {
         userAssessmentsCache = allAssessments;
         userAssessmentsCacheTime = Date.now();
 
-        // Filter by advisor name
-        const userAssessments = allAssessments.filter(a =>
-          a.advisorName && a.advisorName.toLowerCase() === normalizedAdvisor
-        );
-
-        console.log(`[Smartsheet] Found ${userAssessments.length} assessments for ${advisorName}`);
-        resolve(userAssessments);
+        console.log(`[Smartsheet] Loaded ${allAssessments.length} assessments`);
+        resolve(allAssessments);
       } else {
         console.warn("[Smartsheet] Failed to fetch assessments:", response);
         checkUnauthorized(response);
@@ -833,6 +818,7 @@ function processRLAssessments(raw) {
       trackAssignment: normalizeTrackAssignment(a.trackAssignment),
       assessmentNumber: parseInt(a.assessmentNumber, 10) || 1,
       assessmentDate: a.assessmentDate || a.submissionTimestamp || "",
+      submissionTimestamp: a.submissionTimestamp || "",  // last saved (date + time)
       isHealthRelated: a.isHealthRelated === true || a.isHealthRelated === "true",
       scores: {
         IP: parseInt(a.RL_IP, 10) || 0,

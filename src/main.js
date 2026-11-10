@@ -34,7 +34,7 @@ import { getCategoryLabel, getCategoryAbbrev } from "./category-labels.js";
 import { startExternalFlow } from "./external-flow.js";
 import { PORTFOLIOS } from "./data/constants.js";
 import { BRL_LICENSE, SOURCE_ATTRIBUTIONS, FOOTER_NOTICE, ABOUT_FRAMEWORK } from "./data/index.js";
-import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchUserAssessments, fetchQualificationRecords, clearUserAssessmentsCache } from "./smartsheet.js";
+import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchAllAssessments,fetchQualificationRecords, clearUserAssessmentsCache } from "./smartsheet.js";
 import {
   getQualificationMatchResolution,
   normalizeTrackAssignment
@@ -312,6 +312,8 @@ function syncUIFromState() {
     advisorInput.value = AppState.advisorName || savedAdvisor;
     AppState.advisorName = advisorInput.value;
   }
+  syncPickList("venture-pick", "venture-name");
+  syncPickList("advisor-pick", "advisor-name");
 
   // Sync portfolio dropdown
   const portfolioSelect = document.getElementById("portfolio-select");
@@ -590,7 +592,7 @@ function updateStartNewAssessmentButton() {
 
   if (status.submitted && !status.hasChanges) {
     btn.disabled = false;
-    btn.title = `Start Assessment #${AppState.currentAssessmentNumber + 1} for this same venture after it has progressed`;
+    btn.title = "Start the next assessment round for this same venture after it has progressed";
   } else {
     btn.disabled = true;
     btn.title = "Save the current assessment to the database before starting a new round";
@@ -600,9 +602,22 @@ function updateStartNewAssessmentButton() {
 /* -------------------------
    Start New Assessment
 --------------------------*/
-function showStartNewAssessmentModal() {
+// Rounds belong to a venture + advisor pair (how the sheet links them).
+// Works on assessment rows and on AppState, which share the field names.
+const roundKey = a => [a.ventureName, a.advisorName]
+  .map(s => (s || "").trim().replace(/\s+/g, " ").toLowerCase()).join("|");
+
+// Next round = highest round saved for this venture + advisor, plus one, so
+// starting a round from an older one can't create a duplicate number.
+async function nextRoundNumber() {
+  const key = roundKey(AppState);
+  const saved = (await fetchAllAssessments()).filter(a => roundKey(a) === key).map(a => a.assessmentNumber);
+  return Math.max(AppState.currentAssessmentNumber || 1, ...saved) + 1;
+}
+
+async function showStartNewAssessmentModal() {
   const currentNum = AppState.currentAssessmentNumber;
-  const nextNum = currentNum + 1;
+  const nextNum = await nextRoundNumber();
 
   document.getElementById("current-num").textContent = currentNum;
   document.getElementById("current-num-2").textContent = currentNum;
@@ -612,8 +627,8 @@ function showStartNewAssessmentModal() {
   showModal("start-new-modal");
 }
 
-function handleStartNewAssessment() {
-  incrementAssessmentNumber();
+async function handleStartNewAssessment() {
+  incrementAssessmentNumber(await nextRoundNumber());
 
   // Clear scores for fresh assessment
   AppState.scores = {};
@@ -639,26 +654,14 @@ function handleStartNewAssessment() {
 /* -------------------------
    Load Assessment from Database
 --------------------------*/
-let pendingLoadAssessment = null;  // Store assessment to load after warning confirmation
+let pendingLoad = null;  // Load to run after the replace-warning confirmation
 
 async function showLoadAssessmentModal() {
   if (Auth.isExternal()) return;
-  const advisorName = AppState.advisorName || loadAdvisorPreference();
-
-  if (!advisorName || !advisorName.trim()) {
-    showToast("Please enter your Advisor Name first", "error");
-    document.getElementById("advisor-name")?.focus();
-    return;
-  }
-
   showModal("load-assessment-modal");
   renderLoadAssessmentLoading();
 
-  // Fetch user's assessments
-  const assessments = await fetchUserAssessments(advisorName);
-  renderLoadAssessmentList(assessments);
-
-  // Setup search filter
+  const assessments = await fetchAllAssessments();
   setupLoadAssessmentSearch(assessments);
 }
 
@@ -684,96 +687,113 @@ function renderLoadAssessmentList(assessments) {
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
-        <h4>No Assessments Found</h4>
-        <p>You haven't submitted any assessments to the database yet.</p>
+        <h4>No Assessments Match</h4>
+        <p>Try a different search.</p>
       </div>
     `;
     return;
   }
 
-  const html = assessments.map(a => `
-    <div class="load-assessment-card" data-row-id="${a.rowId}">
+  // One card per venture + advisor. Input is newest first, so cards are too.
+  const groups = new Map();
+  for (const a of assessments) {
+    const k = roundKey(a);
+    groups.has(k) ? groups.get(k).push(a) : groups.set(k, [a]);
+  }
+  const cards = [...groups.values()].map(rounds => rounds.sort((x, y) =>
+    x.assessmentNumber - y.assessmentNumber ||
+    String(x.submissionTimestamp || x.assessmentDate).localeCompare(String(y.submissionTimestamp || y.assessmentDate))
+  ));
+
+  listEl.innerHTML = cards.map((rounds, i) => {
+    const latest = rounds.at(-1);
+    return `
+    <div class="load-assessment-card" data-i="${i}">
       <div class="load-assessment-card-header">
-        <h4>${escapeHtml(a.ventureName)}</h4>
-        ${a.portfolio ? `<span class="load-assessment-badge portfolio">${escapeHtml(a.portfolio)}</span>` : ""}
-        ${a.isHealthRelated ? `<span class="load-assessment-badge health">Health</span>` : ""}
-        ${a.assessmentNumber > 1 ? `<span class="load-assessment-badge assessment-num">#${a.assessmentNumber}</span>` : ""}
+        <h4>${escapeHtml(latest.ventureName)}</h4>
+        ${latest.portfolio ? `<span class="load-assessment-badge portfolio">${escapeHtml(latest.portfolio)}</span>` : ""}
+        ${latest.isHealthRelated ? `<span class="load-assessment-badge health">Health</span>` : ""}
       </div>
       <div class="load-assessment-card-meta">
-        <span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="16" y1="2" x2="16" y2="6"></line>
-            <line x1="8" y1="2" x2="8" y2="6"></line>
-            <line x1="3" y1="10" x2="21" y2="10"></line>
-          </svg>
-          ${formatAssessmentDate(a.assessmentDate)}
-        </span>
+        ${latest.advisorName ? `<span>${escapeHtml(latest.advisorName)}</span>` : ""}
+        <span>${rounds.length} round${rounds.length === 1 ? "" : "s"}</span>
       </div>
-      <div class="load-assessment-card-scores">
-        ${formatScoresCompact(a.scores, a.isHealthRelated)}
+      <div class="load-assessment-rounds">
+        ${rounds.map(r => `
+        <button type="button" class="round-chip" data-row-id="${r.rowId}" title="Open round #${r.assessmentNumber}">
+          <span class="round-chip-label">#${r.assessmentNumber} · ${formatRoundTime(r)}</span>
+          <span class="load-assessment-card-scores">${formatScoresCompact(r.scores, r.isHealthRelated)}</span>
+        </button>`).join("")}
       </div>
-    </div>
-  `).join("");
+      <button type="button" class="btn small outline start-round-btn">Start round #${latest.assessmentNumber + 1}</button>
+    </div>`;
+  }).join("");
 
-  listEl.innerHTML = html;
-
-  // Add click handlers
-  listEl.querySelectorAll(".load-assessment-card").forEach(card => {
-    card.addEventListener("click", () => {
-      const rowId = card.dataset.rowId;
-      const assessment = assessments.find(a => String(a.rowId) === String(rowId));
-      if (assessment) {
-        handleLoadAssessmentClick(assessment);
-      }
-    });
-  });
+  // Card opens the latest round, a chip opens that round, the button starts the next.
+  listEl.onclick = (e) => {
+    const card = e.target.closest(".load-assessment-card");
+    if (!card) return;
+    const rounds = cards[card.dataset.i];
+    const chip = e.target.closest(".round-chip");
+    if (e.target.closest(".start-round-btn")) handleLoadAssessmentClick(rounds.at(-1), true);
+    else handleLoadAssessmentClick(chip ? rounds.find(r => String(r.rowId) === chip.dataset.rowId) : rounds.at(-1));
+  };
 }
 
+// Date + time the round was last saved; date only for rows without a timestamp.
+function formatRoundTime(r) {
+  const t = new Date(r.submissionTimestamp);
+  return r.submissionTimestamp && !isNaN(t)
+    ? t.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
+    : formatAssessmentDate(r.assessmentDate);
+}
+
+// Search matches venture, advisor, or portfolio (partial, case-insensitive),
+// so "brian" finds "Brian Hayt".
 function setupLoadAssessmentSearch(allAssessments) {
   const searchInput = document.getElementById("load-assessment-search");
   if (!searchInput) return;
 
   searchInput.value = "";
+
+  const apply = () => {
+    const term = searchInput.value.toLowerCase().trim();
+    renderLoadAssessmentList(allAssessments.filter(a =>
+      !term || [a.ventureName, a.advisorName, a.portfolio].some(f => (f || "").toLowerCase().includes(term))
+    ));
+  };
+
+  // Assign (not addEventListener) so reopening the modal doesn't stack listeners.
   let debounceTimer;
-
-  searchInput.addEventListener("input", () => {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      const searchTerm = searchInput.value.toLowerCase().trim();
-
-      const filtered = allAssessments.filter(a =>
-        !searchTerm || a.ventureName.toLowerCase().includes(searchTerm)
-      );
-
-      renderLoadAssessmentList(filtered);
-    }, 200);
-  });
+  searchInput.oninput = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(apply, 200); };
+  apply();
 }
 
-function handleLoadAssessmentClick(assessment) {
+// startRound: load the venture's latest round, then open the next round blank.
+function handleLoadAssessmentClick(assessment, startRound = false) {
+  const load = () => {
+    loadAssessmentIntoState(assessment);
+    if (startRound) handleStartNewAssessment();
+  };
   // Check if there's current work that would be lost
   const hasCurrentWork = Object.values(AppState.scores || {}).some(s => s != null);
 
   if (hasCurrentWork) {
     // Show warning modal
-    pendingLoadAssessment = assessment;
+    pendingLoad = load;
     document.getElementById("replace-current-venture").textContent =
       AppState.ventureName || "Unnamed Assessment";
     hideModal("load-assessment-modal");
     showModal("replace-warning-modal");
   } else {
-    // Load directly
-    loadAssessmentIntoState(assessment);
+    load();
     hideModal("load-assessment-modal");
   }
 }
 
 function confirmLoadAssessment() {
-  if (pendingLoadAssessment) {
-    loadAssessmentIntoState(pendingLoadAssessment);
-    pendingLoadAssessment = null;
-  }
+  pendingLoad?.();
+  pendingLoad = null;
   hideModal("replace-warning-modal");
 }
 
@@ -1003,6 +1023,9 @@ function setupEventListeners() {
       hideModal("submit-review-modal");
     }
   });
+
+  wirePickList("venture-pick", "venture-name");
+  wirePickList("advisor-pick", "advisor-name");
 
   // Venture name binding with auto-save and portfolio auto-fill
   const nameInput = document.getElementById("venture-name");
@@ -1698,42 +1721,97 @@ async function populatePortfolioDropdown() {
   }
 }
 
-/**
- * Populate venture name autocomplete from both Smartsheets.
- * Filters to only show ventures associated with the current advisor.
- * Shows nothing if no advisor name is entered.
+/* ---------- Name pick lists (venture + advisor) ----------
+ * A <select> of known names plus "Add new…", sitting over the real text input.
+ * The input stays the source of truth: state handlers, the external stepper and
+ * the loaders all read and write it. The input is shown only for "Add new…", or
+ * when there is no list (external mode, fetch failed, nothing saved yet).
  */
-async function populateVentureNameAutocomplete() {
-  const datalist = document.getElementById("venture-names-list");
-  if (!datalist) return;
+const PICK_NEW = "__new__";
 
-  const advisor = (AppState.advisorName || "").trim().toLowerCase();
-
-  // No advisor name → empty suggestions (user can still type freely)
-  if (!advisor) {
-    datalist.innerHTML = "";
+function setPickList(selectId, inputId, options, newLabel) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  if (!select || !input) return;
+  if (!options.length) {
+    select.hidden = true;
+    input.hidden = false;
     return;
   }
+  const placeholder = new Option("Select...", "");
+  placeholder.disabled = true;
+  select.replaceChildren(placeholder, ...options.map(([value, label]) => new Option(label, value)), new Option(newLabel, PICK_NEW));
+  select.hidden = false;
+  syncPickList(selectId, inputId);
+}
+
+// Point the select at the input's current value. A name that isn't in the list
+// (a loaded assessment, a just-added name) is added so it still shows.
+function syncPickList(selectId, inputId) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  if (!select || !input || select.hidden) return;
+  const v = input.value.trim();
+  if (!v) {
+    select.value = "";
+  } else {
+    const match = [...select.options].find(o => o.value !== PICK_NEW && o.value.toLowerCase() === v.toLowerCase());
+    if (match) select.value = match.value;
+    else select.insertBefore(new Option(v, v, true, true), select.lastElementChild);
+  }
+  input.hidden = true;
+}
+
+function wirePickList(selectId, inputId) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  if (!select || !input) return;
+  select.addEventListener("change", () => {
+    if (select.value === PICK_NEW) {
+      // Keep the current value until they type, so the venture isn't blanked.
+      input.hidden = false;
+      input.focus();
+      input.select();
+      return;
+    }
+    input.hidden = true;
+    input.value = select.value;
+    // Same events a typed name fires: autosave, header, portfolio auto-fill.
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+/**
+ * Fill the advisor pick list with names already in the RL sheet.
+ * Spelling comes from each advisor's most recent save (list is newest first);
+ * names differing only in case are merged.
+ */
+async function populateAdvisorNames() {
+  const names = new Map();
+  for (const a of await fetchAllAssessments()) {
+    const n = (a.advisorName || "").trim();
+    if (n && !names.has(n.toLowerCase())) names.set(n.toLowerCase(), n);
+  }
+  const sorted = [...names.values()].sort((a, b) => a.localeCompare(b));
+  setPickList("advisor-pick", "advisor-name", sorted.map(n => [n, n]), "Add new advisor...");
+}
+
+/**
+ * Fill the venture pick list from both Smartsheets, limited to ventures the
+ * current advisor has assessed (partial name match). No advisor → no list.
+ */
+async function populateVentureNameAutocomplete() {
+  const advisor = (AppState.advisorName || "").trim().toLowerCase();
 
   try {
-    const ventures = await fetchVentureData();
-
-    // Filter to ventures this advisor has previously assessed
+    const ventures = advisor ? await fetchVentureData() : [];
     const myVentures = ventures.filter(v =>
-      v.advisorNames && v.advisorNames.includes(advisor)
+      (v.advisorNames || []).some(n => n.includes(advisor))
     );
-
-    // Clear and repopulate
-    datalist.innerHTML = "";
-    myVentures.forEach(v => {
-      const opt = document.createElement("option");
-      opt.value = v.name;
-      if (v.portfolio) {
-        opt.label = `${v.name} (${v.portfolio})`;
-      }
-      datalist.appendChild(opt);
-    });
-
+    setPickList("venture-pick", "venture-name",
+      myVentures.map(v => [v.name, v.portfolio ? `${v.name} (${v.portfolio})` : v.name]),
+      "Add new venture...");
     console.log(`[Autocomplete] ${myVentures.length} ventures for advisor "${advisor}" (${ventures.length} total)`);
   } catch (error) {
     console.warn("[Autocomplete] Failed to load venture names:", error);
@@ -1792,10 +1870,6 @@ function applyExternalMode() {
     pdfBtn.title = 'Review the assessment, optionally add call commentary, and download a PDF';
   }
 
-  // Clear venture name suggestions (no Smartsheet data for external)
-  const datalist = document.getElementById('venture-names-list');
-  if (datalist) datalist.innerHTML = '';
-
   console.log('[External Mode] Applied external mode restrictions');
 }
 
@@ -1814,8 +1888,9 @@ function normalBoot() {
   ensureNextToastDom();
 
   if (!isExternal) {
-    // Load venture name autocomplete in background (non-blocking)
+    // Load venture name and advisor name suggestions in background (non-blocking)
     populateVentureNameAutocomplete();
+    populateAdvisorNames();
   } else {
     // External advisors get the guided stepper (Setup → Score → … → VDR).
     startExternalFlow();

@@ -143,10 +143,11 @@ export function getCurrentAssessmentNumber() {
   return AppState.currentAssessmentNumber || 1;
 }
 
-// Increment assessment number (when starting new assessment)
+// Move to the next assessment round (when starting new assessment).
+// `next` is the database-derived round number; falls back to current + 1.
 // IMPORTANT: Also resets edit mode so next submission creates a NEW row
-export function incrementAssessmentNumber() {
-  AppState.currentAssessmentNumber = (AppState.currentAssessmentNumber || 1) + 1;
+export function incrementAssessmentNumber(next) {
+  AppState.currentAssessmentNumber = next || (AppState.currentAssessmentNumber || 1) + 1;
   AppState.lastSubmissionTimestamp = null;
   AppState.lastSubmittedStateHash = null;
   AppState.commentary = createEmptyCommentary();
