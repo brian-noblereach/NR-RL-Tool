@@ -3164,7 +3164,7 @@ body.external-mode .if-internal { display: none; }
 .flow-step { display: none; }
 body[data-flow-step="setup"] #step-setup,
 body[data-flow-step="questions"] #step-questions,
-body[data-flow-step="download"] #step-download,
+body[data-flow-step="download"] #step-download { display: block; }
 
 /* The Score step reuses #app-view; hidden on every other external step */
 body.external-mode #app-view { display: none; }
