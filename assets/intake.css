@@ -247,3 +247,25 @@ dialog.attributions .icon-btn { background: none; border: none; font-size: 22px;
 .auth-form button { white-space: nowrap; }
 .auth-error { color: var(--danger); font-size: 13px; min-height: 20px; margin-top: 12px; }
 .auth-note { font-size: 12px; color: var(--muted); margin: 16px 0 0; }
+
+/* gen-3.0: two parts, the evidence screen, "What's this?" lines */
+.rail li.part-label { padding-left: 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.rail li.part-label::before { display: none; }
+.item .whats { display: inline-block; margin: 0 0 4px 27px; padding: 0; font-size: 13px; }
+.whats { font-size: 13px; padding: 0 0 0 6px; }
+.help-line { margin: 2px 0 8px 27px; font-size: 13px; }
+.field > .help-line, .hint > .help-line { margin-left: 0; }
+.known { border-bottom: 1px solid var(--line); padding-bottom: 16px; margin-bottom: 18px; }
+.ev-head { font-size: 15px; margin: 22px 0 8px; color: var(--nr-navy-1); }
+.ev-item { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; }
+.ev-item input[type=text], .ev-item textarea { width: 100%; }
+.you-said { margin: 0 0 8px; font-size: 14px; color: var(--muted); font-style: italic; }
+.cover-intro { margin: 0; }
+.cover { margin: 2px 0 8px 18px; padding: 0; font-size: 14px; color: var(--muted); }
+.cover li { margin: 0 0 2px; }
+/* Part 2 is the default next step (Oct 30, 2026) */
+.rail li.next-part { color: var(--muted); }
+.rail li.next-part::before { border-style: dashed; }
+.part2-intro { margin-top: 4px; }
+.later-note p { margin: 0 0 6px; }
+.later-note p:last-child { margin: 0; }

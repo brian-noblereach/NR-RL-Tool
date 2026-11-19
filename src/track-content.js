@@ -1,11 +1,11 @@
 // track-content.js - TRL track resolution.
 // Added August 2026 with the BARDA-aligned life-sciences tracks.
 //
-// The TRL (Technology) category is scored against a track. The general,
-// software, and hardware tracks share the NASA TRL titles and definitions in
-// readiness-levels.js and differ only in their indicators. The three
-// life-sciences tracks additionally override titles, definitions, and — for
-// therapeutics — workstreams and lettered activities, from trl-tracks.js.
+// The TRL (Technology) category is scored against a track. The general track
+// uses the shared DoD TRL text in readiness-levels.js; software and hardware
+// override it with the DoD guidebook's per-level descriptions. The three
+// life-sciences tracks override titles, definitions, and — for therapeutics —
+// workstreams and lettered activities. Overrides come from trl-tracks.js.
 
 import { TRL_TRACK_CONTENT } from "./data/index.js";
 

@@ -29,11 +29,22 @@ async function call(action, payload, opts) {
 }
 
 /**
- * Create the submission row (answers, record.json, brief, QM summary). Returns
- * { success, submissionId, rowId, returnCode, intakeNumber, emailSent, uploadToken, error? }.
+ * Part 1: create the submission row (answers, record.json, brief). Returns
+ * { success, submissionId, rowId, returnCode, intakeNumber, emailSent, rowToken, error? }.
+ * rowToken is bound to this row; Part 2 and the file uploads carry it.
  */
-export function submitIntake({ submissionId, previousSubmissionId, record, answers, briefHtml, qmInput, uploads, hp }) {
-  return call('intake_submit', { submissionId, previousSubmissionId, record, answers, briefHtml, qmInput, uploads, hp }, { timeoutMs: 60000 });
+export function submitIntake({ submissionId, previousSubmissionId, record, answers, briefHtml, hp }) {
+  return call('intake_submit', { submissionId, previousSubmissionId, record, answers, briefHtml, hp }, { timeoutMs: 60000 });
+}
+
+/**
+ * Part 2: add the written answers, materials, rebuilt brief and QM summary to
+ * the row the token names. The proxy never changes the draft levels or the AI
+ * opt-out here. Returns { success, duplicate?, error? }; error 'expired' when
+ * the token has run out (look the submission up again with the return code).
+ */
+export function completeIntake({ rowToken, record, answers, briefHtml, qmInput, uploads }) {
+  return call('intake_complete', { rowToken, record, answers, briefHtml, qmInput, uploads }, { timeoutMs: 60000 });
 }
 
 function fileToBase64(file) {
@@ -49,9 +60,9 @@ function fileToBase64(file) {
  * Upload one file to the submission row. Returns { success, error? }.
  * Large files are slow over a home connection, hence the long timeout.
  */
-export async function uploadIntakeFile({ uploadToken, slot, index, file }) {
+export async function uploadIntakeFile({ rowToken, slot, index, file }) {
   const dataBase64 = await fileToBase64(file);
-  return call('intake_upload', { uploadToken, slot, index, name: file.name, mimeType: file.type || '', dataBase64 }, { timeoutMs: 300000 });
+  return call('intake_upload', { rowToken, slot, index, name: file.name, mimeType: file.type || '', dataBase64 }, { timeoutMs: 300000 });
 }
 
 /**
@@ -71,8 +82,9 @@ export function checkFile(file) {
 }
 
 /**
- * Email + return code. Without submissionId: { submissions: [...] }.
- * With submissionId: { answers, submittedAt }.
+ * Email + return code. Without submissionId: { submissions: [{ ..., status }] }.
+ * With submissionId: { answers, submittedAt, status, rowToken? }; rowToken only
+ * while Part 2 is still to be done.
  */
 export function lookupIntake({ email, code, submissionId }) {
   return call('intake_lookup', { email, code, submissionId });

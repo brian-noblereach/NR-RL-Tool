@@ -1,78 +1,82 @@
 # Business Readiness Level (BRL) Assessment Tool
 
-A web-based assessment tool for evaluating science-based venture readiness across nine business dimensions. Built for [NobleReach Foundation](https://noblereach.org)'s Science-to-Venture advisors to track and submit structured readiness level assessments.
+A web-based assessment tool for evaluating science-based venture readiness across independent business dimensions. Built for [NobleReach Foundation](https://noblereach.org)'s Science-to-Venture advisors to track and submit structured readiness level assessments.
 
 ## Overview
 
-Advisors use this tool to score ventures on a 0–9 scale across nine categories, generating narrative summaries and persisting results to a central Smartsheet database via a Google Apps Script proxy.
+Advisors use this tool to score ventures on a 0–9 scale (TRL: 1–9) in each category and save the results to a central Smartsheet database through a Google Apps Script proxy. Categories are scored independently; there is no composite score.
+
+Level definitions follow the NobleReach BRL framework, November 2026 version.
 
 ### Assessment Categories
 
 | Category | Description |
 |----------|-------------|
-| IP | Intellectual property strategy and protection |
-| Technology | Technical development and validation |
-| Market | Market research, sizing, and validation |
+| IP | Intellectual property strategy and protection, by patent or trade secret |
+| Technology (TRL) | Technology readiness, levels 1–9, by track: general, software, and hardware (DoD Technology Readiness Assessment Guidebook) or diagnostics, medical device, and therapeutics (BARDA) |
+| Market | Market understanding, sizing, and validation |
 | Product | Product definition and development |
 | Team | Team composition and capabilities |
 | Go-to-Market | Distribution, sales, and channel strategy |
-| Business | Business model, legal structure, and operations |
-| Funding | Funding strategy, fundraising, and financial planning |
-| Mission Impact | Identification of, alignment to, and progress against a core mission — covering both mission-oriented work (social/community impact) and national-security/dual-use ventures |
-| Regulatory | Regulatory pathway and compliance (health ventures only) |
+| Business | Business model, entity formation, and operations |
+| Funding | Funding strategy, fundraising, and capital deployment |
+| Regulatory | Regulatory pathway and compliance (Life Science ventures only) |
 
-Each level (0–9) includes a definition, deliverables, and progress indicators. Level 0 represents a deliberate "Not Started" assessment, distinct from categories that have not yet been evaluated.
+Each level includes a definition, deliverables, and progress indicators (TRL levels carry definitions only). Level 0 represents a deliberate "Not Started" assessment, distinct from categories that have not yet been evaluated.
 
-### Health Mode
+Mission Impact is part of the framework but is temporarily not offered in the tool while it is being reworked. Existing Mission Impact scores are kept.
 
-Toggling "Health-Related Venture" activates the Regulatory category and applies health-specific terminology and indicators across all categories (e.g., "users" becomes "patients," "MVP" becomes "clinical prototype").
+### Life Science ventures
+
+Marking a venture as a "Life Science venture" activates the Regulatory category, enables the life-sciences TRL tracks, and shows the framework's Life Science level text (for example, "Stakeholder Discovery" in place of "Customer Discovery").
+
+### Dual-use ventures
+
+A dual-use venture is taking the same core technology to both commercial customers and government buyers or users (such as defense, homeland security or other agencies). Marking a venture as "Dual-use" scores Market, Product and Go-to-Market separately for Commercial and Government, against the same definitions; the two scores are never combined. The Government Product score follows the Commercial one until the advisor scores it separately. A venture that serves only government isn't dual-use and is scored once, as usual. Dual-use scoring is built but hidden in the current release (`DUAL_USE_ENABLED` in `src/applications.js`).
 
 ## Features
 
 - **Password-protected access** — Token-based authentication with periodic rotation
-- **Multi-venture management** — Create, switch between, and delete venture assessments
-- **Auto-save** — All scores persist to localStorage automatically
-- **Smartsheet integration** — Submit assessments to a central database; supports both new submissions and updates to existing rows
-- **Assessment versioning** — Track multiple assessment rounds per venture
-- **Narrative summary** — Auto-generated plain-language description of the venture's readiness profile
+- **Venture picker** — Advisors choose a venture from the database (filtered to their own by default, with portfolio, "not scored since", and search), then edit one of their saved assessments or start a new one. Ventures that aren't listed can be added, with a check for similar names first
+- **Shared Venture ID** — The intake's readable ID (for example `UCF-SENSORMESH-7K`) links the intake, assessments and other tools
+- **Graduation** — Archived portfolios and ventures marked Graduated or Inactive are hidden by default
+- **Auto-save** — Scores persist to localStorage; unsaved work can be resumed from the picker
+- **Smartsheet integration** — Submit assessments to a central database; edits update the existing row and record when it was last edited
+- **Assessment versioning** — Track multiple assessment rounds per venture, each stamped with the BRL framework version it was scored under
 - **Portfolio tagging** — Assign ventures to program portfolios (fetched from backend)
 - **Venture name autocomplete** — Pre-populates from existing database entries
-- **Export** — Copy summary text or download assessment data
-- **Responsive layout** — Works on desktop and tablet screens
-
-### VDR Companion Mode
-
-Accessed via `?vdr=true`, this mode lets associates load a baseline RL assessment from the database and set engagement goals per category, producing a Venture Development Roadmap (VDR) document.
+- **PDF export** — Download the assessment, with license and source notices
+- **Guided stepper** — External advisors score through Setup → Score → Questions → Download, saving locally only
+- **Venture intake** — A separate applicant page (`intake.html`)
 
 ## Project Structure
 
 ```
-rl-tool-v06/
-├── index.html              # Single-page application shell
-├── assets/
-│   ├── styles.css          # All styling (responsive, auth, level cards, VDR)
-│   ├── favicon.svg
-│   └── logo-icon.svg
+rl-tool-v07/
+├── index.html              # Advisor tool
+├── intake.html             # Venture intake (applicants)
+├── assets/                 # Styles and icons
 ├── src/
 │   ├── main.js             # App entry point, boot sequence, event wiring
 │   ├── auth.js             # Password authentication module
 │   ├── state.js            # Central AppState, localStorage persistence, venture CRUD
-│   ├── categories.js       # Category grid and level card rendering
-│   ├── summary.js          # VentureDescriptionGenerator (narrative output)
-│   ├── smartsheet.js       # Smartsheet submission via JSONP through GAS proxy
-│   ├── ui.js               # Panel controls, view toggles, print/export
-│   ├── transform.js        # Health term mapping transform
-│   └── data/
-│       ├── index.js         # Data barrel export
-│       ├── readiness-levels.js  # Level definitions for all 9 categories (0–9)
-│       └── constants.js     # Health extras, term mappings, portfolio list
-├── src/vdr/                # VDR Companion Mode modules
-│   ├── vdr-main.js         # VDR boot and navigation
-│   ├── vdr-state.js        # VDR-specific state management
-│   ├── baseline-loader.js  # Fetch and select baseline assessments
-│   ├── goal-setting.js     # Per-category goal level selection
-│   ├── vdr-generator.js    # VDR document generation
-│   └── vdr-export.js       # VDR export (copy/download)
+│   ├── categories.js       # Category list and level card rendering
+│   ├── venture-picker.js   # Venture picker (internal step 1)
+│   ├── venture-directory.js # Picker filtering and sorting
+│   ├── external-flow.js    # Guided stepper for external advisors
+│   ├── pdf-export.js       # Assessment PDF
+│   ├── smartsheet.js       # Smartsheet submission via the GAS proxy
+│   ├── transform.js        # Life Science level text
+│   ├── proxy-client.js     # The GAS proxy URL (single source)
+│   ├── data/
+│   │   ├── readiness-levels.js      # Level definitions (generated from the BRL workbook)
+│   │   ├── trl-levels.generated.js  # Per-track TRL definitions (generated)
+│   │   ├── trl-tracks.js            # TRL track metadata and sources
+│   │   ├── attributions.js          # License and source notices
+│   │   └── constants.js             # Portfolio fallback list
+│   └── intake/             # Venture intake modules
+├── tests/                  # node:assert test scripts (node tests/<name>.test.js)
+├── tools/                  # Generators, run by hand
 └── proxy-update/
     └── Code.gs             # Google Apps Script proxy source (deployed separately)
 ```
@@ -82,24 +86,30 @@ rl-tool-v06/
 The tool is a static single-page application with no build step. All JavaScript uses ES modules loaded directly by the browser.
 
 **Data flow:**
-1. Advisor authenticates (token stored in localStorage, shared with Qualification Tool)
+1. Advisor authenticates (token stored in localStorage, shared with the Qualification Tool)
 2. Scores are saved to `AppState` and auto-persisted to localStorage
-3. On "Save to Database," scores are submitted to Smartsheet via JSONP through the GAS proxy
+3. On "Save to Database," scores are submitted to Smartsheet through the GAS proxy
 4. Portfolio options and venture names are fetched from the GAS proxy on load
 
-**Backend:** The Google Apps Script proxy (`proxy-update/Code.gs`) handles authentication, Smartsheet read/write operations, and portfolio management. It is deployed as a web app and shared across NobleReach tools.
+**Level content:** `src/data/readiness-levels.js` and `src/data/trl-levels.generated.js` are generated from the BRL master workbook with `python tools/make-brl-data.py "<workbook.xlsx>"`. Don't edit them by hand.
+
+**Backend:** The Google Apps Script proxy (`proxy-update/Code.gs`) handles authentication, Smartsheet read/write operations, portfolio management, and the venture intake. It is deployed as a web app.
 
 ## Deployment
 
-This is a static site. Deploy the root directory to any static host (GitHub Pages, Netlify, S3, SharePoint, etc.). No build step required.
+This is a static site. Deploy the root directory to any static host (GitHub Pages, Netlify, S3, etc.). No build step required.
 
 The GAS proxy must be deployed separately as a Google Apps Script web app. See `proxy-update/Code.gs` for the current source.
 
 ## Configuration
 
-- **Proxy URL** — Hardcoded in `src/auth.js`, `src/main.js`, `src/smartsheet.js`, and `src/vdr/baseline-loader.js`. Update all references if the GAS deployment changes.
+- **Proxy URL** — `PROXY_URL` in `src/proxy-client.js` is the only place it lives.
 - **Portfolios** — Fetched from the GAS proxy at runtime. The local fallback list is in `src/data/constants.js`.
 - **Password rotation** — Managed server-side in the GAS proxy. Rotating the password invalidates existing tokens after their expiry window.
+
+## License
+
+The BRL framework text (level definitions, deliverables, and indicators) is © NobleReach Foundation and licensed [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). TRL definitions are U.S. Government works in the public domain. See the tool's "Attributions & license" link for full notices.
 
 ## Browser Support
 

@@ -27,8 +27,9 @@
 // protectable expression, plus a handful of short functional dimension names.
 // The level text, the 0-9 scale, and the title/definition/deliverables/
 // indicators structure are NobleReach's own. Where the two are most alike —
-// the Technology dimension — both trace independently to NASA's public-domain
-// TRL definitions.
+// the Technology dimension — both trace independently to the U.S. Government's
+// public-domain TRL scale (NASA's original, which DoD adopted and now publishes
+// in its TRA Guidebook).
 // ---------------------------------------------------------------------------
 
 // What is and is not covered
@@ -63,13 +64,13 @@ export const BRL_LICENSE = {
 
 export const SOURCE_ATTRIBUTIONS = [
   {
-    id: "nasa",
+    id: "dod",
     heading: "Technology Readiness Levels — general, software, and hardware tracks",
-    url: "https://www.nasa.gov/directorates/somd/space-communications-navigation-program/technology-readiness-levels/",
-    urlLabel: "nasa.gov",
+    url: "https://www.cto.mil/wp-content/uploads/2025/03/TRA-Guide-Feb2025-Cleared.pdf",
+    urlLabel: "cto.mil — TRA Guidebook (Feb 2025)",
     body: [
-      "The TRL category's general, software, and hardware tracks adopt the NASA Technology Readiness Level definitions (TRL 1–9), which remain the common anchor for readiness conversations with federal agencies and university partners.",
-      "NASA TRL definitions are a work of the U.S. Government and are in the public domain. NASA does not endorse this tool.",
+      "The TRL category's general, software, and hardware tracks adopt the Technology Readiness Level definitions (TRL 1–9) in the Department of Defense Technology Readiness Assessment Guidebook (Office of the Under Secretary of Defense for Research and Engineering, February 2025), which remain the common anchor for readiness conversations with federal agencies and university partners. The general track uses the short TRL definitions; the software and hardware tracks add the guidebook's descriptions for each level.",
+      "The guidebook is a work of the U.S. Government, approved for public release, and is in the public domain. The Department of Defense does not endorse this tool.",
     ],
   },
   {
@@ -105,7 +106,7 @@ export const ABOUT_FRAMEWORK = {
   heading: "About this framework",
   body: [
     "The Business Readiness Levels are © NobleReach Foundation and licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA 4.0). The copyright covers the written level definitions, deliverables, and indicators — not the framework's name or its underlying method.",
-    "Technology Readiness Level definitions come from NASA for the general, software, and hardware tracks, and from BARDA for the diagnostics, medical device, and therapeutics tracks. Both are U.S. Government works in the public domain, and neither agency endorses this tool.",
+    "Technology Readiness Level definitions come from the Department of Defense Technology Readiness Assessment Guidebook (February 2025) for the general, software, and hardware tracks, and from BARDA for the diagnostics, medical device, and therapeutics tracks. Both are U.S. Government works in the public domain, and neither agency endorses this tool.",
     "The multi-dimensional approach — scoring a venture independently across several readiness dimensions rather than as one composite score — was inspired in part by the KTH Innovation Readiness Level™, developed by KTH Innovation. The BRL level text is independently authored.",
   ],
   linkLabel: "Full attributions & license",
@@ -116,8 +117,8 @@ export const ABOUT_FRAMEWORK = {
 export const EXPORT_ATTRIBUTION_LINES = [
   "Business Readiness Levels text (level definitions, deliverables, indicators) © NobleReach",
   "Foundation, licensed CC BY-NC-SA 4.0 (creativecommons.org/licenses/by-nc-sa/4.0/):",
-  "Attribution, NonCommercial, ShareAlike. TRL definitions adapted from NASA (general tracks)",
-  "and BARDA/HHS (life-sciences tracks), both U.S. Government works in the public domain.",
+  "Attribution, NonCommercial, ShareAlike. TRL definitions from the DoD TRA Guidebook (2025)",
+  "(general tracks) and BARDA/HHS (life sciences), both U.S. Government public-domain works.",
   "Multi-dimensional readiness approach inspired in part by the KTH Innovation Readiness",
   "Level™, KTH Innovation.",
 ];

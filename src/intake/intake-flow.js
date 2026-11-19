@@ -5,6 +5,10 @@
 // marked incomplete, and submitting is blocked until every screen is complete.
 // Answers that are wrong rather than missing (a malformed email, too many
 // words, a number out of range) still stop Continue; intake-app.js checks those.
+// gen-3.0: each part is checked on its own. Part 1 can't be saved with a Part 1
+// screen incomplete, and Part 2 can't be submitted with a Part 2 screen
+// incomplete. Follow-up details are required on the evidence screen, not on the
+// checklist that ticked them.
 //
 // missingRequired() lists what a screen still needs, in plain language.
 // planJump() says which finished screens to set aside when the applicant goes
@@ -20,14 +24,16 @@ const blank = v => v == null || String(v).trim() === '';
  *
  * id      screen id
  * v       the screen's values, in the shape intake-app.js keeps while editing:
- *   applicant/project/essays/founder/materials: the answer object
- *   tech:  { stage, ev }
- *   multi: { visible: [item], eff: Set, user: [key], ev: {key: text},
- *            count: '', confirm, src: {key: {from, said}}, roster: [person] }
- * ctx     { A, config }  (A for answers on other screens, config for engagement)
+ *   applicant/project/founder/consent/written/perspective: the answer object
+ *   tech:     { stage }
+ *   multi:    { known } (Customers only; the checklists need nothing else)
+ *   evidence: { items: evidenceItems(A), ev: {key: text}, src: {key: {from, said}},
+ *               count: '', confirm, techEv }
+ *   people:   { roster: [person] }
+ * ctx     { A, config }  (config for engagement)
  */
 export function missingRequired(id, v, ctx = {}) {
-  const out = [], A = ctx.A || {}, config = ctx.config || {};
+  const out = [], config = ctx.config || {};
   const need = (cond, label) => { if (cond) out.push(label); };
   v = v || {};
   switch (id) {
@@ -45,11 +51,7 @@ export function missingRequired(id, v, ctx = {}) {
       need(blank(v.company), 'Whether a company has been formed');
       need(v.company === 'Yes' && blank(v.companyName), 'Company name and state');
       need(blank(v.icorps), 'I-Corps');
-      break;
-    case 'essays':
-      need(blank(v.science), 'The key innovation');
-      need(blank(v.value), 'The problem and target customers');
-      need(blank(v.impact), 'The anticipated impact');
+      need(blank(v.started), 'The year work started');
       need(blank(v.appCount), 'How many applications or markets you are considering');
       break;
     case 'founder': {
@@ -65,31 +67,47 @@ export function missingRequired(id, v, ctx = {}) {
     }
     case 'tech':
       need(v.stage == null, 'How far the technology has gotten');
-      need(v.stage >= 4 && blank(v.ev) && !(v.stage >= 7 && A.E && A.E.c_proto), 'The most advanced test or use');
       break;
-    case 'materials':
-      need(!v.ack, 'Confirm you\'ve read how NobleReach handles your submission');
+    case 'cust':
+      need(blank(v.known), 'Whether you have identified specific customers or users');
       break;
-    default: {
-      // checklist screens
-      const visible = v.visible || [], eff = v.eff || new Set(), user = v.user || [];
-      const ev = v.ev || {}, src = v.src || {};
-      for (const it of visible) {
-        if (!user.includes(it.k)) continue;
-        if (it.ev && !it.evOptional && blank(ev[it.k])) out.push('Detail for: ' + it.label);
-        if (SOURCE_ITEMS[it.k]) {
-          const s = src[it.k] || {};
-          if (!(s.from || []).length) out.push('Where this comes from: ' + SOURCE_ITEMS[it.k]);
-          else if (s.from.includes(CONVERSATIONS) && blank(s.said)) out.push('How many people said this: ' + SOURCE_ITEMS[it.k]);
-        }
-      }
-      if (eff.has('c_talk') && visible.some(it => it.k === 'c_talk')) {
+    case 'evidence': {
+      const items = v.items || { sources: [], details: [] }, ev = v.ev || {}, src = v.src || {};
+      if (items.count) {
         need(blank(v.count), 'How many people you have interviewed');
         need(Number(v.count) > 0 && blank(v.confirm), 'Whether most confirmed the problem');
       }
+      for (const k of items.sources) {
+        const s = src[k] || {};
+        if (!(s.from || []).length) out.push('Where this comes from: ' + SOURCE_ITEMS[k]);
+        else if (s.from.includes(CONVERSATIONS) && blank(s.said)) out.push('How many people said this: ' + SOURCE_ITEMS[k]);
+      }
+      // At TRL 7+ the test description is optional once the prototype user is named.
+      need(items.techEv === 'required' && blank(v.techEv), 'The most advanced test or use');
+      need(items.techEv === 'optional' && blank(v.techEv) && blank(ev.c_proto), 'The most advanced test or use');
+      for (const d of items.details) {
+        if (!d.optional && blank(ev[d.k])) out.push('Detail for: ' + d.label);
+      }
+      break;
+    }
+    case 'consent':
+      need(!v.ack, 'Confirm you\'ve read how NobleReach handles your submission');
+      break;
+    case 'written':
+      need(blank(v.technology), 'What the technology is and how it works');
+      need(blank(v.applications), 'Where it could be used, and for whom');
+      break;
+    case 'perspective':
+      need(blank(v.whyText), 'Why this, and why now');
+      need(!v.nothing && blank(v.changed), 'One thing you changed because of feedback (or "Nothing yet")');
+      break;
+    case 'people':
       need((v.roster || []).some(p => (p.name || p.role || p.time || p.link || p.expertise) && (blank(p.name) || blank(p.role) || blank(p.time))),
         'Name, role, and time for each person listed');
-    }
+      break;
+    default:
+      // the other checklist screens: nothing is required (they say "None of these, continue")
+      break;
   }
   return out;
 }

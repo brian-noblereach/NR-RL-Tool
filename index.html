@@ -31,16 +31,6 @@
     </div>
   </div>
 
-  <!-- Pilot Banner -->
-  <div class="pilot-banner" id="pilot-banner">
-    <div class="pilot-banner-content">
-      <span class="pilot-badge">PILOT</span>
-      <span class="pilot-text">This is an experimental tool. Your feedback helps us improve.</span>
-      <button class="pilot-feedback-btn" id="open-feedback">Share Feedback</button>
-      <button class="pilot-close" id="close-pilot-banner" aria-label="Dismiss banner">×</button>
-    </div>
-  </div>
-
   <div class="container">
 
     <!-- TOPBAR -->
@@ -58,7 +48,6 @@
         <span class="brand-title">
           NobleReach<span class="tm">™</span> Business Readiness Levels
         </span>
-        <span class="version-badge">Pilot</span>
       </div>
 
       <div class="topbar-actions secondary-actions">
@@ -80,132 +69,94 @@
       <div id="step-setup" class="flow-step"></div>
       <div id="step-questions" class="flow-step"></div>
       <div id="step-download" class="flow-step"></div>
-      <div id="step-vdr" class="flow-step"></div>
     </div>
 
-    <!-- ASSESSMENT WORKSPACE HEADER -->
+    <!-- ASSESSMENT WORKSPACE HEADER (internal). Step 1 is the venture picker
+         (src/venture-picker.js); the fields row stays because the external
+         stepper writes into #venture-name, #advisor-name and #portfolio-select. -->
     <section class="assessment-workspace" id="assessment-workspace" aria-label="Current assessment workspace">
+      <ol class="workspace-steps" aria-label="Steps">
+        <li id="step-venture">1 · Venture</li>
+        <li id="step-score">2 · Score</li>
+        <li id="step-save">3 · Review &amp; save</li>
+      </ol>
       <div class="workspace-main-row">
         <div class="workspace-identity">
-          <span class="workspace-eyebrow">Current assessment</span>
-          <h1 id="workspace-venture-title">Untitled venture</h1>
+          <h1 id="workspace-venture-title">Choose a venture</h1>
           <div class="workspace-badges" aria-live="polite">
+            <span class="workspace-badge" id="workspace-venture-id" hidden></span>
             <span class="workspace-badge" id="workspace-assessment-badge">Assessment #1</span>
-            <span class="workspace-badge" id="workspace-source-badge">Blank draft</span>
-            <span class="workspace-badge warning" id="workspace-save-consequence">Will create a saved assessment</span>
+            <span class="workspace-badge life-science" id="workspace-health-badge" title="Life Science venture: Life Science level text and the Regulatory category. Change it under Assessment details." hidden>Life Science</span>
+            <span class="workspace-badge dual-use" id="workspace-dual-use-badge" title="Dual-use venture: Market, Product and Go-to-Market are scored for Commercial and Government. Change it under Assessment details." hidden>Dual-use</span>
+            <span class="workspace-badge warning" id="workspace-save-consequence">Not saved</span>
           </div>
         </div>
 
         <div class="workspace-actions" aria-label="Assessment actions">
-          <button id="btn-load-assessment" class="btn small outline" title="Find a previously saved assessment to edit">
+          <button id="btn-change-venture" class="btn small outline" title="Choose another venture, or another assessment of this one">Change venture</button>
+          <button id="btn-save-db" class="btn primary workspace-save-btn" title="Review this assessment and save it to the NobleReach database">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
+              <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+              <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
             </svg>
-            <span>Find Saved Assessment</span>
+            <span>Review &amp; save</span>
           </button>
-          <button id="btn-new-venture" class="btn small" title="Start Assessment #1 for a different venture or project">New Venture</button>
-          <button id="btn-start-new-assessment" class="btn small outline" disabled title="Save the current assessment to the database before starting a new round for this venture">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 5v14M5 12h14"></path>
-            </svg>
-            <span>New Assessment Round</span>
-          </button>
-          <button id="btn-delete-venture" class="btn small outline danger" title="Delete the current local draft">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-            <span>Delete Draft</span>
-          </button>
-          <div class="workspace-local-drafts hidden">
-            <label for="venture-select">Browser drafts</label>
-            <select id="venture-select">
-              <option value="">Select a local draft...</option>
+        </div>
+      </div>
+
+      <details class="workspace-details" id="workspace-details">
+        <summary>Assessment details <span id="workspace-details-summary" class="workspace-details-summary"></span></summary>
+        <div class="workspace-fields-row">
+          <div class="venture-name">
+            <label for="venture-name">Venture name <span class="required">*</span></label>
+            <input type="text" id="venture-name" placeholder="Venture or project name" autocomplete="off" required />
+            <small class="help-text" id="venture-name-help">Set by the venture you chose. Use Change venture to pick another.</small>
+          </div>
+
+          <div class="advisor-name-field">
+            <label for="advisor-name">Advisor name <span class="required">*</span></label>
+            <input type="text" id="advisor-name" placeholder="Your name" required />
+          </div>
+
+          <div class="portfolio-field">
+            <label for="portfolio-select">Portfolio <span class="required">*</span></label>
+            <select id="portfolio-select" required>
+              <!-- Populated from the proxy's portfolio list -->
             </select>
           </div>
         </div>
-      </div>
-
-      <div class="workspace-fields-row">
-        <div class="venture-name">
-          <label for="venture-name">Venture name <span class="required">*</span></label>
-          <!-- Pick list over #venture-name (internal only; filled from both Smartsheets) -->
-          <select id="venture-pick" class="name-pick" aria-label="Venture name" hidden></select>
-          <input type="text" id="venture-name" placeholder="New venture name" autocomplete="off" required />
-          <small class="help-text">Selecting a name here does not load a saved assessment. Use Find Saved Assessment to edit database scores.</small>
+        <!-- Set when the venture is added in the picker and carried to later
+             assessments; corrected here. The external stepper drives this
+             checkbox from its own Setup step. -->
+        <div class="health-toggle compact">
+          <label class="health-label">
+            <input type="checkbox" id="health-related" />
+            <span>Life Science venture</span>
+          </label>
+          <small id="health-help-text" class="help-text">
+            Uses the Life Science level definitions and enables the Regulatory category.
+          </small>
         </div>
-
-        <div class="advisor-name-field">
-          <label for="advisor-name">Advisor name <span class="required">*</span></label>
-          <!-- Pick list over #advisor-name (internal only; filled from the RL sheet) -->
-          <select id="advisor-pick" class="name-pick" aria-label="Advisor name" hidden></select>
-          <input type="text" id="advisor-name" placeholder="Your name" autocomplete="off" required />
+        <!-- Dual-use (src/applications.js): set and carried like Life Science.
+             Help text is the approved definition, filled in by main.js. -->
+        <div class="health-toggle compact" data-dual-use>
+          <label class="health-label">
+            <input type="checkbox" id="dual-use" />
+            <span>Dual-use venture</span>
+          </label>
+          <small id="dual-use-help-text" class="help-text"></small>
         </div>
-
-        <div class="portfolio-field">
-          <label for="portfolio-select">Portfolio <span class="required">*</span></label>
-          <select id="portfolio-select" required>
-            <!-- Populated dynamically from PORTFOLIOS constant -->
-          </select>
-        </div>
-      </div>
-
-      <div class="workspace-save-row" id="workspace-save-row" role="status" aria-live="polite">
-        <div class="workspace-save-message">
-          <strong id="workspace-save-title">Not saved to the NobleReach database.</strong>
-          <span id="workspace-save-detail">Local changes are saved only in this browser until you complete Review & Save to Database.</span>
-          <div class="workspace-completion-chips" id="workspace-completion-chips"></div>
-          <div class="workspace-subtext">
-            <span>Last edited: <time id="assessed-at">&mdash;</time></span>
-            <span id="workspace-database-timestamp">No confirmed database save yet</span>
-            <span class="submission-status" id="submission-status">
-              <svg class="status-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="7" cy="7" r="6"></circle>
-              </svg>
-              <span class="status-text">Not submitted</span>
-            </span>
-          </div>
-        </div>
-        <button id="btn-save-db" class="btn primary workspace-save-btn" title="Save this assessment to the NobleReach database">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-          </svg>
-          <span>Review & Save to Database</span>
-        </button>
-      </div>
+        <p class="workspace-subtext">Last changed: <time id="assessed-at">&mdash;</time></p>
+      </details>
     </section>
 
     <!-- TOOLBAR -->
     <div class="toolbar">
-      <div class="health-toggle compact">
-        <label class="health-label">
-          <input type="checkbox" id="health-related" />
-          <span>Life Sciences Mode</span>
-        </label>
-        <small id="health-help-text" class="help-text">
-          Uses patient/clinical language and enables Regulatory category.
-        </small>
-        <div id="health-mode-note" class="info-banner hidden" aria-live="polite">
-          Life Sciences Mode ON: using patient-centric definitions.
-        </div>
-      </div>
-
       <div class="view-toggle">
         <button class="view-btn active" data-view="expanded">Expanded</button>
         <button class="view-btn" data-view="compact">Compact</button>
       </div>
-    </div>
-
-    <div id="submission-banner" class="submission-banner hidden">
-      <div class="submission-banner-content" role="status" aria-live="polite">
-        <strong id="submission-banner-title">This assessment has not been submitted to the database.</strong>
-        <span id="submission-banner-message">Click Review & Save to Database to review scores, add required call commentary, and submit.</span>
-      </div>
-      <button id="submission-banner-save" class="btn small accent">Review & Save to Database</button>
     </div>
 
     <!-- MAIN APP VIEW -->
@@ -224,6 +175,7 @@
 
             <!-- TRL subtrack -->
             <div id="industry-selector" class="industry-selector hidden">
+              <div class="industry-selector-row">
               <label for="industry-select">TRL track</label>
               <select id="industry-select">
                 <optgroup label="General & Dual-Use">
@@ -231,34 +183,26 @@
                   <option value="software">Software</option>
                   <option value="hardware">Hardware</option>
                 </optgroup>
-                <optgroup label="Life Sciences (when enabled)" id="health-track-optgroup">
+                <optgroup label="Life Science (when enabled)" id="health-track-optgroup">
                   <option value="health_diagnostics">Diagnostics</option>
                   <option value="health_device">Medical device</option>
                   <option value="health_therapeutics">Therapeutics</option>
                 </optgroup>
               </select>
-              <small class="help-text" id="industry-help">
-                When Life Sciences Mode is ON, choose a track to specialize TRL content.
-              </small>
+              </div>
+              <!-- Text set by updateIndustrySelectorUI() in ui.js -->
+              <small class="help-text industry-help" id="industry-help"></small>
               <small class="help-text track-attribution hidden" id="industry-attribution"></small>
             </div>
+
+            <!-- Dual-use: which application the level cards score
+                 (populated by renderApplicationSelector() in categories.js) -->
+            <div id="application-selector" class="application-selector" hidden></div>
           </div>
 
-          <!-- Advisor Tip (dismissible) -->
-          <div class="advisor-tip" id="advisor-tip">
-            <div class="advisor-tip-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
-            </div>
-            <div class="advisor-tip-content">
-              <strong>Advisor Tip:</strong> Levels are cumulative—selecting a level means all prior levels have been achieved. 
-              Use your judgment when circumstances don't perfectly match a definition.
-            </div>
-            <button class="advisor-tip-dismiss" id="dismiss-advisor-tip" aria-label="Dismiss tip">×</button>
-          </div>
+          <!-- Shown when the venture was scored under an earlier BRL framework
+               (populated by renderFrameworkNotice() in main.js). -->
+          <div id="framework-notice" class="framework-notice" role="status" hidden></div>
 
           <!-- Optional per-category note, both modes (populated by external-flow.js).
                Sits above the level cards so it's visible without scrolling. -->
@@ -269,42 +213,6 @@
         </main>
       </div>
 
-      <!-- Summary Panel -->
-      <div class="summary-panel minimized hidden" id="summary-panel" aria-hidden="true">
-        <div class="summary-header">
-          <h3>Summary 0/9</h3>
-          <div class="panel-controls">
-            <button class="panel-btn" id="minimize-btn" title="Restore" aria-label="Restore">
-              <svg class="icon-minimize hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              <svg class="icon-restore" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-              </svg>
-            </button>
-            <button class="panel-btn" id="maximize-btn" title="Maximize" aria-label="Maximize">
-              <svg class="icon-maximize" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <polyline points="9 21 3 21 3 15"></polyline>
-                <line x1="21" y1="3" x2="14" y2="10"></line>
-                <line x1="3" y1="21" x2="10" y2="14"></line>
-              </svg>
-              <svg class="icon-restore-max hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="4 14 10 14 10 20"></polyline>
-                <polyline points="20 10 14 10 14 4"></polyline>
-                <line x1="14" y1="10" x2="21" y2="3"></line>
-                <line x1="3" y1="21" x2="10" y2="14"></line>
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="summary-content">
-          <div class="summary-scores" id="summary-scores"></div>
-          <div class="venture-description">
-            <p id="venture-desc-text">Begin assessment to generate venture description</p>
-          </div>
-        </div>
-      </div>
     </div>
     <!-- External flow: score-step navigation footer (populated by external-flow.js) -->
     <div id="score-nav" class="flow-nav" hidden></div>
@@ -315,73 +223,41 @@
       <span class="site-footer-notice" id="site-footer-notice"></span>
       <span class="site-footer-sep" aria-hidden="true">·</span>
       <button type="button" class="link-btn" id="open-attributions">Attributions &amp; license</button>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <span>Questions or feedback: <a href="mailto:brian.hayt@noblereach.org">brian.hayt@noblereach.org</a></span>
     </footer>
   </div>
 
-  <!-- Panel Overlay -->
-  <div id="panel-overlay" class="panel-overlay"></div>
-
-  <!-- Welcome Modal -->
+  <!-- Help (opened from the ? button; never shown automatically) -->
   <div id="welcome-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="welcome-modal-title">
     <div class="modal-backdrop"></div>
     <div class="modal-content welcome-modal-content">
       <div class="modal-header">
-        <h3 id="welcome-modal-title">Welcome to the Readiness Level Assessment Tool</h3>
+        <h3 id="welcome-modal-title">How to use this tool</h3>
         <button id="welcome-modal-close" class="icon-btn" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
-        <div class="welcome-intro">
-          <p>
-            This tool helps <strong>research teams, early-stage ventures, and their advisors</strong> assess
-            commercialization readiness across nine key dimensions (plus a Regulatory dimension for life-sciences ventures).
-          </p>
-          <p>
-            Use it to measure progress for <strong>pre-incorporated research projects</strong> or 
-            <strong>very early-stage ventures</strong>—tracking how de-risked an idea becomes as it hits key milestones.
-          </p>
-        </div>
-        
-        <div class="welcome-features if-internal">
-          <h4>How to Use</h4>
-          <ul>
-            <li><strong>Select a category</strong> from the sidebar to begin assessment</li>
-            <li><strong>Choose a readiness level</strong> that best describes the venture's current state</li>
-            <li><strong>Levels are cumulative</strong>—selecting Level 5 means Levels 1-4 have been achieved</li>
-            <li><strong>Use Review & Save to Database</strong> when the assessment is ready for NobleReach</li>
-            <li><strong>Export a PDF</strong> when you need a local snapshot</li>
-          </ul>
-        </div>
+        <p class="welcome-intro">
+          Assess a research project or early-stage venture across eight readiness dimensions, plus Regulatory
+          for Life Science ventures. Each dimension is scored on its own; there is no overall score.
+        </p>
 
-        <div class="welcome-features if-external">
-          <h4>How to Use</h4>
-          <ul>
-            <li><strong>Set up</strong>—enter the venture name, your name, and whether this is the venture's first BRL assessment</li>
-            <li><strong>Score each category</strong>—pick the readiness level that best fits. Levels are cumulative, so Level 5 means Levels 1–4 are also achieved</li>
-            <li><strong>First assessments</strong>—add optional notes on the founder conversation, then download a PDF of the scores and notes</li>
-            <li><strong>Build a roadmap (optional)</strong>—continue into the Venture Development Roadmap to set goals and download a VDR document</li>
-            <li><strong>Follow-up assessments</strong>—skip the questions and download a scores-only PDF</li>
-          </ul>
-        </div>
+        <ul class="welcome-features if-internal">
+          <li><strong>Choose a venture</strong>, then edit one of your saved assessments or start a new one. Not listed? Add it from the same list.</li>
+          <li><strong>Score each category</strong> at the highest level fully reached. Levels are cumulative. Turn on <strong>Life Science venture</strong> for health products, and <strong>Dual-use venture</strong> when the technology is going to both commercial and government buyers.</li>
+          <li><strong>Review &amp; save</strong> writes the assessment to the NobleReach database; <strong>Save PDF</strong> keeps a local copy.</li>
+        </ul>
 
-        <div class="welcome-advisor-note">
-          <h4>For Advisors</h4>
-          <p>
-            Readiness levels provide a structured framework, but every venture is unique. Use your professional 
-            judgment when circumstances don't perfectly match a level definition. The goal is to capture a 
-            meaningful snapshot of where the venture stands today—not to force-fit into rigid criteria.
-          </p>
-          <p>
-            <strong>Deliverables</strong> and <strong>indicators</strong> are suggestions, not requirements. 
-            A venture may demonstrate readiness through equivalent evidence.
-          </p>
-        </div>
+        <ul class="welcome-features if-external">
+          <li><strong>Set up</strong> the venture name, your name, and whether this is its first assessment.</li>
+          <li><strong>Score each category</strong> at the highest level fully reached. Levels are cumulative.<span data-dual-use> A dual-use venture gets separate Commercial and Government scores for Market, Product and Go-to-Market.</span></li>
+          <li><strong>Download a PDF.</strong> First assessments can add notes on the conversation with the team.</li>
+        </ul>
 
-        <div class="welcome-pilot-notice">
-          <p>
-            <strong>This is a pilot release.</strong> We'd love your feedback to improve this tool.
-            Use the "Share Feedback" button in the banner above.
-          </p>
-        </div>
+        <p class="welcome-advisor-note">
+          Use your judgment where a venture doesn't match a definition exactly. Deliverables and indicators are
+          examples of evidence, not requirements.
+        </p>
 
         <!-- Licensing + source credits. Outside the if-internal/if-external
              blocks on purpose: both audiences see this. Populated by main.js
@@ -389,145 +265,50 @@
         <div class="welcome-about" id="welcome-about"></div>
       </div>
       <div class="modal-footer">
-        <label class="dont-show-again">
-          <input type="checkbox" id="dont-show-welcome" />
-          <span>Don't show this again</span>
-        </label>
-        <button id="welcome-get-started" class="btn">Get Started</button>
+        <button id="welcome-get-started" class="btn">Close</button>
       </div>
     </div>
   </div>
 
-  <!-- Feedback Modal -->
-  <div id="feedback-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-modal-title">
+  <!-- Venture picker (internal users; src/venture-picker.js) -->
+  <div id="venture-picker-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="venture-picker-title">
     <div class="modal-backdrop"></div>
-    <div class="modal-content feedback-modal-content">
+    <div class="modal-content venture-picker-content">
       <div class="modal-header">
-        <h3 id="feedback-modal-title">Share Your Feedback</h3>
-        <button id="feedback-modal-close" class="icon-btn" aria-label="Close">×</button>
+        <h3 id="venture-picker-title">Choose a venture</h3>
+        <button id="venture-picker-close" class="icon-btn" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
-        <p>Your feedback helps us improve this tool. Please share your thoughts, questions, or suggestions.</p>
-        
-        <div class="feedback-options">
-          <a href="https://forms.osi.office365.us/Pages/ResponsePage.aspx?id=ueQEkuo97E-cJcfxhyIPVLPQAkGF7ThLlYxYfo3CzFtUNzdTSEVMN1hQTlhESUkxMFo0TUxGQzROQy4u" target="_blank" rel="noopener" class="feedback-link btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-            Open Feedback Form
-          </a>
-          <p class="feedback-note">
-            <small>Opens in a new tab. No login required.</small>
-          </p>
+        <div class="picker-top">
+          <label class="picker-advisor">Your name
+            <input type="text" id="picker-advisor-name" list="picker-advisor-names" autocomplete="off" placeholder="Pick or type your name" />
+            <datalist id="picker-advisor-names"></datalist>
+          </label>
+          <input type="search" id="picker-search" class="picker-search" placeholder="Search by venture, Venture ID, institution, portfolio, or advisor" autocomplete="off" />
         </div>
-
-        <div class="feedback-contact">
-          <p>Or contact us directly:</p>
-          <p><strong>Email:</strong> <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="593b2b303837773138202d1937363b353c2b3c383a3177362b3e">[email&#160;protected]</a></p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- New Venture Modal -->
-  <div id="new-venture-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="new-venture-modal-title">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content small-modal">
-      <div class="modal-header">
-        <h3 id="new-venture-modal-title">New Venture</h3>
-        <button id="new-venture-modal-close" class="icon-btn" aria-label="Close">×</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label for="new-venture-name">Venture / Project Name</label>
-          <input type="text" id="new-venture-name" placeholder="e.g., Quantum Sensing Platform" />
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button id="new-venture-cancel" class="btn outline">Cancel</button>
-        <button id="new-venture-create" class="btn">Create Venture</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Delete Confirmation Modal -->
-  <div id="delete-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content small-modal">
-      <div class="modal-header">
-        <h3 id="delete-modal-title">Delete Assessment</h3>
-        <button id="delete-modal-close" class="icon-btn" aria-label="Close">×</button>
-      </div>
-      <div class="modal-body">
-        <p>Are you sure you want to delete "<strong id="delete-venture-name">—</strong>"?</p>
-        <p class="warning-text">This action cannot be undone.</p>
-      </div>
-      <div class="modal-footer">
-        <button id="delete-cancel" class="btn outline">Cancel</button>
-        <button id="delete-confirm" class="btn danger">Delete</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Start New Assessment Modal -->
-  <div id="start-new-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="start-new-modal-title">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content small-modal">
-      <div class="modal-header">
-        <h3 id="start-new-modal-title">Start New Assessment</h3>
-        <button id="start-new-close" class="icon-btn" aria-label="Close">×</button>
-      </div>
-      <div class="modal-body">
-        <p>This will complete Assessment #<span id="current-num">1</span> and begin Assessment #<span id="next-num">2</span>.</p>
-        <p><strong>Current scores will be cleared</strong> so you can assess the venture's current state after it has progressed.</p>
-        <p class="info-text">Note: You can still view Assessment #<span id="current-num-2">1</span> submission history in the database.</p>
-      </div>
-      <div class="modal-footer">
-        <button id="start-new-cancel" class="btn outline">Cancel</button>
-        <button id="start-new-confirm" class="btn accent">Start Assessment #<span id="next-num-2">2</span></button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Load Assessment Modal -->
-  <div id="load-assessment-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="load-assessment-modal-title">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content load-assessment-modal-content">
-      <div class="modal-header">
-        <h3 id="load-assessment-modal-title">Load Previous Assessment</h3>
-        <button id="load-assessment-modal-close" class="icon-btn" aria-label="Close">×</button>
-      </div>
-      <div class="modal-body">
-        <p class="load-assessment-intro">Select a previously submitted assessment to edit. Changes will update the existing database entry.</p>
-
-        <div class="load-assessment-search">
-          <input type="text" id="load-assessment-search" placeholder="Search venture, advisor, or portfolio..." autocomplete="off" />
-        </div>
-        <div class="load-assessment-list" id="load-assessment-list">
-          <div class="load-assessment-loading">
-            <div class="spinner"></div>
-            <p>Loading your assessments...</p>
+        <div class="picker-filters">
+          <div class="picker-scope" role="group" aria-label="Which ventures">
+            <button type="button" data-scope="mine" class="active">My ventures</button>
+            <button type="button" data-scope="all">All ventures</button>
           </div>
+          <select id="picker-portfolio" aria-label="Portfolio"></select>
+          <select id="picker-not-scored" aria-label="Last scored">
+            <option value="">Any last-scored date</option>
+            <option value="3">Not scored in 3 months</option>
+            <option value="6">Not scored in 6 months</option>
+            <option value="12">Not scored in 12 months</option>
+          </select>
+          <select id="picker-sort" aria-label="Sort">
+            <option value="due">Least recently scored first</option>
+            <option value="name">Name A to Z</option>
+          </select>
+          <label class="picker-check"><input type="checkbox" id="picker-show-graduated" /> Show graduated and inactive</label>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Replace Assessment Warning Modal -->
-  <div id="replace-warning-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="replace-warning-modal-title">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content small-modal">
-      <div class="modal-header">
-        <h3 id="replace-warning-modal-title">Replace Current Assessment?</h3>
-        <button id="replace-warning-modal-close" class="icon-btn" aria-label="Close">×</button>
-      </div>
-      <div class="modal-body">
-        <p>Loading this assessment will replace your current work.</p>
-        <p class="warning-text">Any unsaved changes to "<strong id="replace-current-venture">—</strong>" will be lost.</p>
-      </div>
-      <div class="modal-footer">
-        <button id="replace-warning-cancel" class="btn outline">Cancel</button>
-        <button id="replace-warning-confirm" class="btn accent">Load Assessment</button>
+        <div id="picker-add" class="picker-add"></div>
+        <div id="picker-resume" class="picker-resume" hidden></div>
+        <p id="picker-note" class="picker-note" aria-live="polite"></p>
+        <button type="button" id="picker-retry" class="btn small outline" hidden>Retry</button>
+        <ul id="picker-list" class="picker-list"></ul>
       </div>
     </div>
   </div>
@@ -600,7 +381,6 @@
 
   <!-- Data + scripts -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <!-- docx library loaded dynamically in vdr-export.js via ESM import -->
   <script type="module" src="src/main.js"></script>
 
 </body>

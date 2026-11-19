@@ -1,6 +1,12 @@
 // submission-requirements.js - Shared submission completion rules
 
-import { isValidScore } from "./score-utils.js";
+import { isValidScore, scoreRank, minLevel } from "./score-utils.js";
+import { activeCategoryKeys } from "./category-labels.js";
+import {
+  isDualUseCategory,
+  missingApplicationScores,
+  requiredApplicationScoreCount,
+} from "./applications.js";
 
 export const SUBMISSION_CATEGORY_ORDER = [
   "IP",
@@ -11,7 +17,6 @@ export const SUBMISSION_CATEGORY_ORDER = [
   "Go-to-Market",
   "Business",
   "Funding",
-  "Mission Impact",
   "Regulatory",
 ];
 
@@ -20,16 +25,20 @@ export function isFirstAssessmentRound(state) {
 }
 
 export function getActiveSubmissionCategories(state, readinessData) {
-  return SUBMISSION_CATEGORY_ORDER.filter((category) => {
-    if (!readinessData[category]) return false;
-    return state.isHealthRelated || category !== "Regulatory";
-  });
+  return activeCategoryKeys(SUBMISSION_CATEGORY_ORDER, state.isHealthRelated).filter(
+    (category) => !!readinessData[category]
+  );
 }
 
+// Category keys, plus "Market (Government)"-style labels for a dual-use
+// venture's application scores, each right after its category.
 export function getMissingScoreCategories(state, readinessData) {
-  return getActiveSubmissionCategories(state, readinessData).filter(
-    (category) => !isCompleteScore(state.scores?.[category])
-  );
+  const missing = [];
+  getActiveSubmissionCategories(state, readinessData).forEach((category) => {
+    if (!isCompleteScore(category, state.scores?.[category])) missing.push(category);
+    if (isDualUseCategory(category)) missing.push(...missingApplicationScores(state, [category]));
+  });
+  return missing;
 }
 
 export function normalizeCommentary(commentary = {}) {
@@ -42,11 +51,10 @@ export function normalizeCommentary(commentary = {}) {
   };
 }
 
-// Accepts null/""/garbage as incomplete, integers 0-9 as complete, and TRL
-// sub-level strings like "3B" as complete. Identical to the previous
-// Number.isInteger check for every value that predates sub-levels.
-function isCompleteScore(score) {
-  return isValidScore(score);
+// Accepts null/""/garbage as incomplete, integers 0-9 as complete (1-9 for TRL,
+// whose scale begins at 1), and TRL sub-level strings like "3B" as complete.
+function isCompleteScore(category, score) {
+  return isValidScore(score) && scoreRank(score) >= minLevel(category);
 }
 
 export function getMissingCommentaryFields(state) {
@@ -64,9 +72,13 @@ export function getSubmissionReadiness(state, readinessData) {
   const missingScores = getMissingScoreCategories(state, readinessData);
   const missingCommentary = getMissingCommentaryFields(state);
 
+  const activeCategories = getActiveSubmissionCategories(state, readinessData);
+
   return {
     isFirstAssessment: isFirstAssessmentRound(state),
-    activeCategories: getActiveSubmissionCategories(state, readinessData),
+    activeCategories,
+    // Scores to enter: one per category, plus a dual-use venture's application scores.
+    requiredScoreCount: activeCategories.length + requiredApplicationScoreCount(state, activeCategories),
     missingScores,
     missingCommentary,
     scoresComplete: missingScores.length === 0,

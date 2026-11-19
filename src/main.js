@@ -3,23 +3,32 @@ import {
   AppState,
   loadVenture,
   saveCurrentVenture,
-  createNewVenture,
-  deleteVenture,
-  getAllVentures,
   saveAdvisorPreference,
   loadAdvisorPreference,
-  getCurrentAssessmentNumber,
-  incrementAssessmentNumber,
   getSubmissionStatus,
-  recordSubmission,
   generateStateHash,
   generateVentureId,
   setCommentaryField,
   setReportingMetadata,
   resetActiveVenture,
-  hasCurrentVentureData
+  hasCurrentVentureData,
+  markScoresReviewed,
+  isLegacyFramework,
+  startAssessment,
+  setDualUse,
+  LEGACY_FRAMEWORK_VERSION
 } from "./state.js";
-import { readinessData } from "./data/index.js";
+import {
+  APPLICATIONS,
+  DUAL_USE_DEFINITION,
+  DUAL_USE_ENABLED,
+  PRIMARY_APPLICATION,
+  isDualUseCategory,
+  missingApplicationScores,
+  normalizeApplicationScores,
+} from "./applications.js";
+import { readinessData, BRL_FRAMEWORK_VERSION } from "./data/index.js";
+import { normalizeScores } from "./score-utils.js";
 import {
   getSubmissionReadiness,
   isFirstAssessmentRound,
@@ -30,45 +39,38 @@ import {
   getReviewFlowConfig
 } from "./review-flow.js";
 import { savePdfSnapshot } from "./pdf-export.js";
-import { getCategoryLabel, getCategoryAbbrev } from "./category-labels.js";
+import { getCategoryLabel, activeCategoryKeys } from "./category-labels.js";
 import { startExternalFlow } from "./external-flow.js";
 import { PORTFOLIOS } from "./data/constants.js";
 import { BRL_LICENSE, SOURCE_ATTRIBUTIONS, FOOTER_NOTICE, ABOUT_FRAMEWORK } from "./data/index.js";
-import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchAllAssessments,fetchQualificationRecords, clearUserAssessmentsCache } from "./smartsheet.js";
+import { submitToSmartsheet, isCurrentlySubmitting, fetchQualificationRecords, isSharedVentureId } from "./smartsheet.js";
+import { initVenturePicker, openVenturePicker, invalidateVenturePicker } from "./venture-picker.js";
 import {
   getQualificationMatchResolution,
   normalizeTrackAssignment
 } from "./qualification-matching.js";
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
-import { updateSummary } from "./summary.js";
 import { Auth } from "./auth.js";
 import { PROXY_URL } from "./proxy-client.js";
 import {
   updateIndustrySelectorUI,
-  toggleMinimizeSummaryPanel,
-  toggleMaximizeSummaryPanel,
-  closeMaximizedPanel,
   renderAssessedAt,
   stampAssessedNow,
-  syncSummaryHeaderAndIcons,
-  setupPanelClickToExpand,
-  checkShowWelcomeModal,
-  hideWelcomeModal,
-  showFeedbackModal,
-  hideFeedbackModal,
   showModal,
   hideModal,
-  checkHidePilotBanner,
-  dismissPilotBanner,
-  checkShowAdvisorTip,
-  dismissAdvisorTip,
 } from "./ui.js";
+
+// Staff-only rollout of the November 2026 framework (Brian, Nov 18, 2026): the
+// external password is sent to a frozen copy of v06 in external/, so external
+// users keep the older definitions at the same link until the team agrees to
+// switch them. Set to null to give external users this version (then delete external/).
+const EXTERNAL_LEGACY_PATH = "external/";
 
 /* -------------------------
    Helpers
 --------------------------*/
 const CATEGORY_ORDER = [
-  "IP", "Technology", "Market", "Product", "Team", "Go-to-Market", "Business", "Funding", "Mission Impact", "Regulatory",
+  "IP", "Technology", "Market", "Product", "Team", "Go-to-Market", "Business", "Funding", "Regulatory",
 ];
 
 function pad(n) {
@@ -85,8 +87,7 @@ function formatLocalDateTime(d) {
 }
 
 function categoriesToInclude() {
-  const all = Object.keys(readinessData);
-  return AppState.isHealthRelated ? all : all.filter(c => c !== "Regulatory");
+  return activeCategoryKeys(Object.keys(readinessData), AppState.isHealthRelated);
 }
 
 function nextCategoryName(cur) {
@@ -102,8 +103,6 @@ function navigateToCategory(cat) {
   AppState.currentCategory = cat;
   initializeCategories();
   updateCategoryDisplay();
-  updateSummary();
-  syncSummaryHeaderAndIcons();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -196,7 +195,7 @@ function renderAttributions() {
   const notice = document.getElementById("site-footer-notice");
   if (notice) notice.textContent = FOOTER_NOTICE;
 
-  // Welcome modal summary — the visible surface for the source credits. Shown
+  // Help modal summary — the visible surface for the source credits. Shown
   // to internal and external users alike.
   const about = document.getElementById("welcome-about");
   if (about) {
@@ -205,10 +204,10 @@ function renderAttributions() {
       ${ABOUT_FRAMEWORK.body.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}
       <p><button type="button" class="link-btn" id="welcome-attributions-link">${escapeHtml(ABOUT_FRAMEWORK.linkLabel)}</button></p>`;
 
-    // Hand off from the welcome modal to the attributions modal rather than
+    // Hand off from the help modal to the attributions modal rather than
     // stacking them.
     document.getElementById("welcome-attributions-link")?.addEventListener("click", () => {
-      hideWelcomeModal();
+      hideModal("welcome-modal");
       showModal("attributions-modal");
     });
   }
@@ -237,12 +236,14 @@ function renderAttributions() {
   body.innerHTML = licenseHtml + sourcesHtml;
 }
 
-function showNextToast(nextCat) {
+// With an application, the toast stays on this category and switches the
+// level cards to that application (dual-use: Commercial, then Government).
+function showNextToast(nextCat, application = null) {
   ensureNextToastDom();
   const toast = document.getElementById("next-cat-toast");
   const btn = document.getElementById("next-cat-btn");
   const name = document.getElementById("next-cat-name");
-  name.textContent = getCategoryLabel(nextCat);
+  name.textContent = application ? `${getCategoryLabel(nextCat)} (${application})` : getCategoryLabel(nextCat);
 
   if (!toast.classList.contains("show")) {
     toast.classList.remove("hidden");
@@ -252,58 +253,30 @@ function showNextToast(nextCat) {
   btn.replaceWith(btn.cloneNode(true));
   document.getElementById("next-cat-btn").addEventListener("click", () => {
     hideNextToast();
-    navigateToCategory(nextCat);
+    if (application) {
+      AppState.currentApplication = application;
+      updateCategoryDisplay();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      navigateToCategory(nextCat);
+    }
   }, { once: true });
 }
 
-/* -------------------------
-   Venture Selector UI
---------------------------*/
-function refreshVentureSelector() {
-  const select = document.getElementById("venture-select");
-  if (!select) return;
-
-  const ventures = getAllVentures();
-  select.innerHTML = `<option value="">Select a local draft...</option>`;
-  
-  ventures.forEach(v => {
-    const name = v.ventureName || "Unnamed Assessment";
-    const date = v.updatedAt ? new Date(v.updatedAt).toLocaleDateString() : "";
-    const opt = document.createElement("option");
-    opt.value = v.id;
-    opt.textContent = `${name}${date ? ` (${date})` : ""}`;
-    if (v.id === AppState.activeVentureId) {
-      opt.selected = true;
-    }
-    select.appendChild(opt);
-  });
-}
-
-function loadVentureFromSelector(id) {
-  if (!id) return;
-  
-  if (loadVenture(id)) {
-    syncUIFromState();
-    initializeCategories();
-    updateSummary();
-    syncSummaryHeaderAndIcons();
-  }
-}
-
 function syncUIFromState() {
-  // Sync venture name input
+  // Sync venture name input. For internal users the name comes from the
+  // venture picker, so it can't drift from the other tools.
   const nameInput = document.getElementById("venture-name");
   if (nameInput) {
     nameInput.value = AppState.ventureName || "";
+    nameInput.readOnly = !Auth.isExternal();
   }
 
   // Sync health toggle
   const healthCheckbox = document.getElementById("health-related");
-  if (healthCheckbox) {
-    healthCheckbox.checked = AppState.isHealthRelated;
-    const note = document.getElementById("health-mode-note");
-    if (note) note.classList.toggle("hidden", !AppState.isHealthRelated);
-  }
+  if (healthCheckbox) healthCheckbox.checked = AppState.isHealthRelated;
+  const dualUseCheckbox = document.getElementById("dual-use");
+  if (dualUseCheckbox) dualUseCheckbox.checked = !!AppState.isDualUse;
 
   // Sync advisor name from localStorage preference
   const advisorInput = document.getElementById("advisor-name");
@@ -312,20 +285,38 @@ function syncUIFromState() {
     advisorInput.value = AppState.advisorName || savedAdvisor;
     AppState.advisorName = advisorInput.value;
   }
-  syncPickList("venture-pick", "venture-name");
-  syncPickList("advisor-pick", "advisor-name");
 
   // Sync portfolio dropdown
-  const portfolioSelect = document.getElementById("portfolio-select");
-  if (portfolioSelect) {
-    portfolioSelect.value = AppState.portfolio || "";
-  }
+  renderPortfolioOptions();
 
   renderAssessedAt();
-  refreshVentureSelector();
   updateSubmissionStatusUI();
-  updateStartNewAssessmentButton();
   renderWorkspaceHeader();
+  renderFrameworkNotice();
+}
+
+// Scores given under an earlier BRL framework stay as recorded (they are never
+// remapped). The notice asks the advisor to review them against the current
+// definitions; "Mark reviewed" stamps the venture as current.
+function renderFrameworkNotice() {
+  const el = document.getElementById("framework-notice");
+  if (!el) return;
+  if (!isLegacyFramework()) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = `
+    <p><strong>Scored under the ${escapeHtml(AppState.frameworkVersion || LEGACY_FRAMEWORK_VERSION)} framework.</strong>
+      The ${escapeHtml(BRL_FRAMEWORK_VERSION)} definitions changed IP, Team, Business, Funding, and TRL.
+      Review these scores before saving; saved scores are kept as they are until you change them.</p>
+    <button type="button" class="btn" id="framework-reviewed">Mark reviewed</button>`;
+  document.getElementById("framework-reviewed").addEventListener("click", () => {
+    markScoresReviewed();
+    renderFrameworkNotice();
+    updateSubmissionStatusUI();
+  });
 }
 
 /* -------------------------
@@ -337,55 +328,14 @@ function syncUIFromState() {
 /* -------------------------
    Submission Status UI
 --------------------------*/
-function formatTime(isoString) {
-  if (!isoString) return "";
-  const date = new Date(isoString);
-  const now = new Date();
-  const diffMs = now - date;
-  const diffMins = Math.floor(diffMs / 60000);
-
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
-}
-
-function formatDatabaseTimestamp(isoString) {
-  if (!isoString) return "No confirmed database save yet";
-  const d = new Date(isoString);
-  if (Number.isNaN(d.getTime())) return "Database save time unavailable";
-  return `Saved to NobleReach database ${d.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  })}`;
-}
-
-function getWorkspaceSourceLabel() {
-  if (AppState.isEditingExisting && AppState.smartsheetRowId) {
-    return "Loaded from database";
-  }
-  if (AppState.currentAssessmentNumber > 1) {
-    return "New assessment round";
-  }
-  if (AppState.activeVentureId && hasCurrentVentureData()) {
-    return "Local draft";
-  }
-  return "Blank draft";
-}
-
 function getSaveConsequenceLabel(status) {
   if (status.submitted && !status.hasChanges) {
-    return "Saved to database";
+    return AppState.isEditingExisting ? "Saved to database" : "Saved";
   }
   if (AppState.isEditingExisting && AppState.smartsheetRowId) {
-    return "This save will update the existing saved assessment";
+    return status.hasChanges ? "Editing a saved assessment: changes not saved" : "Editing a saved assessment";
   }
-  return "This save will create a new saved assessment";
+  return "New assessment: not saved";
 }
 
 function getMetadataMissingLabels() {
@@ -396,138 +346,70 @@ function getMetadataMissingLabels() {
   return missing;
 }
 
-function buildWorkspaceChips(readiness, metadataMissing) {
-  const chips = [];
-  const completedScores = readiness.activeCategories.length - readiness.missingScores.length;
-
-  chips.push({
-    label: `${completedScores}/${readiness.activeCategories.length} scores complete`,
-    complete: readiness.missingScores.length === 0
-  });
-
-  chips.push({
-    label: metadataMissing.length === 0
-      ? "Required fields complete"
-      : `${metadataMissing.length} required ${metadataMissing.length === 1 ? "field" : "fields"} missing`,
-    complete: metadataMissing.length === 0
-  });
-
-  if (readiness.isFirstAssessment) {
-    chips.push({
-      label: readiness.missingCommentary.length === 0
-        ? "Founder-call commentary complete"
-        : "First-assessment notes needed",
-      complete: readiness.missingCommentary.length === 0
-    });
-  }
-
-  return chips;
+function setStep(id, state) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle("done", state === "done");
+  el.classList.toggle("current", state === "current");
 }
 
+// Compact internal header: venture, ID, assessment number, save state, and the
+// three steps (venture, score, review & save). Details sit in a collapsed row.
 function renderWorkspaceHeader() {
   const title = document.getElementById("workspace-venture-title");
+  const idBadge = document.getElementById("workspace-venture-id");
   const assessmentBadge = document.getElementById("workspace-assessment-badge");
-  const sourceBadge = document.getElementById("workspace-source-badge");
   const consequenceBadge = document.getElementById("workspace-save-consequence");
-  const saveRow = document.getElementById("workspace-save-row");
-  const saveTitle = document.getElementById("workspace-save-title");
-  const saveDetail = document.getElementById("workspace-save-detail");
-  const chipsEl = document.getElementById("workspace-completion-chips");
-  const dbTimestamp = document.getElementById("workspace-database-timestamp");
-
-  if (!title || !assessmentBadge || !sourceBadge || !consequenceBadge || !saveRow || !saveTitle || !saveDetail || !chipsEl || !dbTimestamp) {
-    return;
-  }
+  if (!title || !assessmentBadge || !consequenceBadge) return;
 
   const status = getSubmissionStatus();
   const readiness = getSubmissionReadiness(AppState, readinessData);
   const metadataMissing = getMetadataMissingLabels();
-  const sourceLabel = getWorkspaceSourceLabel();
-  const saveConsequence = getSaveConsequenceLabel(status);
-  const hasRelevantData = hasCurrentVentureData();
-  const needsDatabaseSave = !Auth.isExternal() && hasRelevantData && (!status.submitted || status.hasChanges);
+  const chosen = !!String(AppState.ventureName || "").trim();
+  const saved = status.submitted && !status.hasChanges;
 
-  title.textContent = AppState.ventureName?.trim() || "Untitled venture";
-  assessmentBadge.textContent = Auth.isExternal()
-    ? "PDF draft"
-    : `Assessment #${AppState.currentAssessmentNumber || 1}`;
-  sourceBadge.textContent = sourceLabel;
-  consequenceBadge.textContent = Auth.isExternal() ? "Local PDF export" : saveConsequence;
-  consequenceBadge.classList.toggle("success", status.submitted && !status.hasChanges);
-  consequenceBadge.classList.toggle("warning", !status.submitted || status.hasChanges);
-
-  saveRow.classList.toggle("hidden", Auth.isExternal());
-  saveRow.classList.toggle("is-saved", hasRelevantData && status.submitted && !status.hasChanges);
-  saveRow.classList.toggle("is-unconfirmed", false);
-
-  if (!hasRelevantData) {
-    saveTitle.textContent = "Start by entering a venture name or choosing scores.";
-    saveDetail.textContent = "Local changes will save in this browser. Review & Save to Database is required when the assessment is ready for NobleReach.";
-  } else if (status.submitted && !status.hasChanges) {
-    saveTitle.textContent = "Saved to the NobleReach database.";
-    saveDetail.textContent = isFirstAssessmentRound(AppState)
-      ? "This browser copy matches the last confirmed database save. Use Review & Save to Database to view or edit first-call details."
-      : "This browser copy matches the last confirmed database save.";
-  } else {
-    saveTitle.textContent = "Not saved to the NobleReach database.";
-    saveDetail.textContent = status.submitted
-      ? "Local changes are saved only in this browser until you complete Review & Save to Database again."
-      : "Local changes are saved only in this browser until you complete Review & Save to Database.";
+  title.textContent = chosen ? AppState.ventureName.trim() : "Choose a venture";
+  if (idBadge) {
+    idBadge.hidden = !isSharedVentureId(AppState.ventureId);
+    idBadge.textContent = AppState.ventureId || "";
+    idBadge.title = "Venture ID, shared with the intake and other tools";
   }
+  assessmentBadge.textContent = Auth.isExternal() ? "PDF draft" : `Assessment #${AppState.currentAssessmentNumber || 1}`;
+  const healthBadge = document.getElementById("workspace-health-badge");
+  if (healthBadge) healthBadge.hidden = !(chosen && AppState.isHealthRelated);
+  const dualUseBadge = document.getElementById("workspace-dual-use-badge");
+  if (dualUseBadge) dualUseBadge.hidden = !(chosen && AppState.isDualUse);
+  consequenceBadge.textContent = Auth.isExternal() ? "Local PDF export" : getSaveConsequenceLabel(status);
+  consequenceBadge.classList.toggle("success", saved);
+  consequenceBadge.classList.toggle("warning", !saved);
 
-  chipsEl.innerHTML = buildWorkspaceChips(readiness, metadataMissing)
-    .map(chip => `<span class="workspace-chip ${chip.complete ? "complete" : "missing"}">${escapeHtml(chip.label)}</span>`)
-    .join("");
+  setStep("step-venture", chosen ? "done" : "current");
+  setStep("step-score", !chosen ? "" : readiness.missingScores.length ? "current" : "done");
+  setStep("step-save", !chosen || readiness.missingScores.length ? "" : saved ? "done" : "current");
 
-  dbTimestamp.textContent = formatDatabaseTimestamp(AppState.lastSubmissionTimestamp);
+  const summary = document.getElementById("workspace-details-summary");
+  if (summary) {
+    const parts = [AppState.advisorName, AppState.portfolio].map(s => String(s || "").trim()).filter(Boolean);
+    const missing = metadataMissing.filter(m => m !== "Venture name");
+    summary.textContent = missing.length ? `(${missing.join(", ")} needed)` : parts.length ? `· ${parts.join(" · ")}` : "";
+    summary.classList.toggle("missing", missing.length > 0);
+  }
+  const details = document.getElementById("workspace-details");
+  if (details && chosen && metadataMissing.some(m => m !== "Venture name")) details.open = true;
 
   const saveBtn = document.getElementById("btn-save-db");
   if (saveBtn) {
-    saveBtn.classList.toggle("primary", needsDatabaseSave);
-    const saveBtnText = saveBtn.querySelector("span");
-    if (saveBtnText) {
-      saveBtnText.textContent = isFirstAssessmentRound(AppState)
-        ? "Review & Save to Database"
-        : "Save to Database";
-    }
-    saveBtn.title = status.submitted && status.hasChanges
-      ? "Save changes to the NobleReach database"
-      : "Save this assessment to the NobleReach database";
+    saveBtn.classList.toggle("primary", !Auth.isExternal() && hasDatabaseRelevantChanges());
+    saveBtn.title = !chosen
+      ? "Choose a venture first"
+      : AppState.isEditingExisting && AppState.smartsheetRowId
+        ? "Review and save changes to this saved assessment"
+        : "Review this assessment and save it to the NobleReach database";
   }
 }
 
 export function updateSubmissionStatusUI() {
-  const statusEl = document.getElementById("submission-status");
-  if (!statusEl) return;
-
-  if (Auth.isExternal()) {
-    statusEl.style.display = 'none';
-    return;
-  }
-
-  const status = getSubmissionStatus();
-  const iconEl = statusEl.querySelector(".status-icon");
-  const textEl = statusEl.querySelector(".status-text");
-
-  statusEl.className = "submission-status";
-
-  if (!status.submitted) {
-    statusEl.classList.add("not-submitted");
-    textEl.textContent = "Not submitted";
-    iconEl.innerHTML = '<circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/>';
-  } else if (status.hasChanges) {
-    statusEl.classList.add("modified");
-    textEl.textContent = `Unsaved changes since ${formatTime(status.lastSubmitted)}`;
-    iconEl.innerHTML = '<path d="M12 2v20M2 12h20" stroke="currentColor" stroke-width="2"/>';
-  } else {
-    statusEl.classList.add("submitted");
-    textEl.textContent = `Submitted ${formatTime(status.lastSubmitted)}`;
-    iconEl.innerHTML = '<path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" fill="none"/>';
-  }
-
-  updateStartNewAssessmentButton();
-  updateSaveButtonHint();
-  updateSubmissionBanner();
+  if (Auth.isExternal()) return;
   updateBeforeUnloadGuard();
   renderWorkspaceHeader();
 }
@@ -536,33 +418,9 @@ function hasDatabaseRelevantChanges() {
   if (Auth.isExternal()) return false;
   // Don't nag about a blank fresh assessment — only flag "needs submit" once
   // the advisor has actually entered something worth submitting.
-  if (!hasCurrentVentureData()) return false;
+  if (!Object.values(AppState.scores || {}).some(s => s != null)) return false;
   const status = getSubmissionStatus();
   return !status.submitted || status.hasChanges;
-}
-
-function updateSaveButtonHint() {
-  const btn = document.getElementById("btn-save-db");
-  if (!btn || Auth.isExternal()) return;
-
-  const status = getSubmissionStatus();
-  if (AppState.isEditingExisting && AppState.smartsheetRowId) {
-    btn.title = status.hasChanges
-      ? "Review details and save changes to the existing database assessment"
-      : isFirstAssessmentRound(AppState)
-        ? "Open the review step to view or edit first-call details"
-        : "This assessment is already saved to the database";
-  } else if (isFirstAssessmentRound(AppState)) {
-    btn.title = "Open the review step, add required founder-call commentary, and submit to the database";
-  } else {
-    btn.title = "Submit this assessment round to the database";
-  }
-}
-
-function updateSubmissionBanner() {
-  const banner = document.getElementById("submission-banner");
-  if (banner) banner.classList.add("hidden");
-  renderWorkspaceHeader();
 }
 
 let beforeUnloadAttached = false;
@@ -584,226 +442,74 @@ function updateBeforeUnloadGuard() {
   }
 }
 
-function updateStartNewAssessmentButton() {
-  const btn = document.getElementById("btn-start-new-assessment");
-  if (!btn) return;
-
-  const status = getSubmissionStatus();
-
-  if (status.submitted && !status.hasChanges) {
-    btn.disabled = false;
-    btn.title = "Start the next assessment round for this same venture after it has progressed";
-  } else {
-    btn.disabled = true;
-    btn.title = "Save the current assessment to the database before starting a new round";
+/* -------------------------
+   Venture picker actions (step 1)
+   Switching never discards work: the current draft stays in this browser and
+   the picker offers it under "Unsaved work".
+--------------------------*/
+function noteKeptDraft() {
+  if (hasDatabaseRelevantChanges()) {
+    showToast(`Unsaved changes to "${AppState.ventureName || "this assessment"}" are kept in this browser. Resume them from Change venture.`, "info");
   }
 }
 
-/* -------------------------
-   Start New Assessment
---------------------------*/
-// Rounds belong to a venture + advisor pair (how the sheet links them).
-// Works on assessment rows and on AppState, which share the field names.
-const roundKey = a => [a.ventureName, a.advisorName]
-  .map(s => (s || "").trim().replace(/\s+/g, " ").toLowerCase()).join("|");
-
-// Next round = highest round saved for this venture + advisor, plus one, so
-// starting a round from an older one can't create a duplicate number.
-async function nextRoundNumber() {
-  const key = roundKey(AppState);
-  const saved = (await fetchAllAssessments()).filter(a => roundKey(a) === key).map(a => a.assessmentNumber);
-  return Math.max(AppState.currentAssessmentNumber || 1, ...saved) + 1;
-}
-
-async function showStartNewAssessmentModal() {
-  const currentNum = AppState.currentAssessmentNumber;
-  const nextNum = await nextRoundNumber();
-
-  document.getElementById("current-num").textContent = currentNum;
-  document.getElementById("current-num-2").textContent = currentNum;
-  document.getElementById("next-num").textContent = nextNum;
-  document.getElementById("next-num-2").textContent = nextNum;
-
-  showModal("start-new-modal");
-}
-
-async function handleStartNewAssessment() {
-  incrementAssessmentNumber(await nextRoundNumber());
-
-  // Clear scores for fresh assessment
-  AppState.scores = {};
-  AppState.goalLevels = {};
-  // Commentary is intake-only and tied to Assessment #1, so reset it on the
-  // new round. incrementAssessmentNumber() already clears it in state.js, but
-  // we set it again here to keep the local handler self-evident.
-  AppState.commentary = { coachability: "", startupInterest: "", callNotes: "" };
-  AppState.assessedAt = null;
-  AppState.currentCategory = Object.keys(readinessData)[0];
-
-  saveCurrentVenture();
+function afterVentureSwitch(message) {
   syncUIFromState();
   initializeCategories();
-  updateSummary();
   updateSubmissionStatusUI();
-
-  hideModal("start-new-modal");
-  showToast(`Started Assessment #${AppState.currentAssessmentNumber}`, "success");
+  if (message) showToast(message, "success");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-/* -------------------------
-   Load Assessment from Database
---------------------------*/
-let pendingLoad = null;  // Load to run after the replace-warning confirmation
-
-async function showLoadAssessmentModal() {
-  if (Auth.isExternal()) return;
-  showModal("load-assessment-modal");
-  renderLoadAssessmentLoading();
-
-  const assessments = await fetchAllAssessments();
-  setupLoadAssessmentSearch(assessments);
+// Start a new assessment of a listed venture.
+function startNewAssessmentFor(venture, assessmentNumber) {
+  noteKeptDraft();
+  const latest = venture.assessments[0] || {};
+  startAssessment({
+    ventureKey: venture.key,
+    ventureId: venture.ventureId || latest.ventureId || "",
+    ventureName: venture.ventureName,
+    portfolio: venture.portfolio || latest.portfolio,
+    institution: venture.institution || latest.institution,
+    trackAssignment: latest.trackAssignment,
+    isHealthRelated: latest.isHealthRelated,
+    isDualUse: latest.isDualUse,
+    assessmentNumber,
+    locked: true,
+  });
+  AppState.currentCategory = "IP";
+  afterVentureSwitch(`Started Assessment #${assessmentNumber} for ${venture.ventureName}`);
 }
 
-function renderLoadAssessmentLoading() {
-  const listEl = document.getElementById("load-assessment-list");
-  if (!listEl) return;
-
-  listEl.innerHTML = `
-    <div class="load-assessment-loading">
-      <div class="spinner"></div>
-      <p>Loading your assessments...</p>
-    </div>
-  `;
+// A venture that isn't listed. The proxy gives it a shared Venture ID on the
+// first save (reusing one if the name is already known).
+function addVenture({ ventureName, institution, portfolio, isHealthRelated, isDualUse }) {
+  noteKeptDraft();
+  startAssessment({ ventureName, institution, portfolio, isHealthRelated, isDualUse, assessmentNumber: 1, locked: true });
+  AppState.currentCategory = "IP";
+  afterVentureSwitch(`Started Assessment #1 for ${ventureName}`);
 }
 
-function renderLoadAssessmentList(assessments) {
-  const listEl = document.getElementById("load-assessment-list");
-  if (!listEl) return;
-
-  if (!assessments || assessments.length === 0) {
-    listEl.innerHTML = `
-      <div class="load-assessment-empty">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-        <h4>No Assessments Match</h4>
-        <p>Try a different search.</p>
-      </div>
-    `;
-    return;
-  }
-
-  // One card per venture + advisor. Input is newest first, so cards are too.
-  const groups = new Map();
-  for (const a of assessments) {
-    const k = roundKey(a);
-    groups.has(k) ? groups.get(k).push(a) : groups.set(k, [a]);
-  }
-  const cards = [...groups.values()].map(rounds => rounds.sort((x, y) =>
-    x.assessmentNumber - y.assessmentNumber ||
-    String(x.submissionTimestamp || x.assessmentDate).localeCompare(String(y.submissionTimestamp || y.assessmentDate))
-  ));
-
-  listEl.innerHTML = cards.map((rounds, i) => {
-    const latest = rounds.at(-1);
-    return `
-    <div class="load-assessment-card" data-i="${i}">
-      <div class="load-assessment-card-header">
-        <h4>${escapeHtml(latest.ventureName)}</h4>
-        ${latest.portfolio ? `<span class="load-assessment-badge portfolio">${escapeHtml(latest.portfolio)}</span>` : ""}
-        ${latest.isHealthRelated ? `<span class="load-assessment-badge health">Health</span>` : ""}
-      </div>
-      <div class="load-assessment-card-meta">
-        ${latest.advisorName ? `<span>${escapeHtml(latest.advisorName)}</span>` : ""}
-        <span>${rounds.length} round${rounds.length === 1 ? "" : "s"}</span>
-      </div>
-      <div class="load-assessment-rounds">
-        ${rounds.map(r => `
-        <button type="button" class="round-chip" data-row-id="${r.rowId}" title="Open round #${r.assessmentNumber}">
-          <span class="round-chip-label">#${r.assessmentNumber} · ${formatRoundTime(r)}</span>
-          <span class="load-assessment-card-scores">${formatScoresCompact(r.scores, r.isHealthRelated)}</span>
-        </button>`).join("")}
-      </div>
-      <button type="button" class="btn small outline start-round-btn">Start round #${latest.assessmentNumber + 1}</button>
-    </div>`;
-  }).join("");
-
-  // Card opens the latest round, a chip opens that round, the button starts the next.
-  listEl.onclick = (e) => {
-    const card = e.target.closest(".load-assessment-card");
-    if (!card) return;
-    const rounds = cards[card.dataset.i];
-    const chip = e.target.closest(".round-chip");
-    if (e.target.closest(".start-round-btn")) handleLoadAssessmentClick(rounds.at(-1), true);
-    else handleLoadAssessmentClick(chip ? rounds.find(r => String(r.rowId) === chip.dataset.rowId) : rounds.at(-1));
-  };
+function resumeDraft(id) {
+  if (loadVenture(id)) afterVentureSwitch(`Resumed ${AppState.ventureName || "your draft"}`);
 }
 
-// Date + time the round was last saved; date only for rows without a timestamp.
-function formatRoundTime(r) {
-  const t = new Date(r.submissionTimestamp);
-  return r.submissionTimestamp && !isNaN(t)
-    ? t.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
-    : formatAssessmentDate(r.assessmentDate);
+function editAssessment(assessment, venture) {
+  noteKeptDraft();
+  loadAssessmentIntoState(assessment, venture);
 }
 
-// Search matches venture, advisor, or portfolio (partial, case-insensitive),
-// so "brian" finds "Brian Hayt".
-function setupLoadAssessmentSearch(allAssessments) {
-  const searchInput = document.getElementById("load-assessment-search");
-  if (!searchInput) return;
-
-  searchInput.value = "";
-
-  const apply = () => {
-    const term = searchInput.value.toLowerCase().trim();
-    renderLoadAssessmentList(allAssessments.filter(a =>
-      !term || [a.ventureName, a.advisorName, a.portfolio].some(f => (f || "").toLowerCase().includes(term))
-    ));
-  };
-
-  // Assign (not addEventListener) so reopening the modal doesn't stack listeners.
-  let debounceTimer;
-  searchInput.oninput = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(apply, 200); };
-  apply();
-}
-
-// startRound: load the venture's latest round, then open the next round blank.
-function handleLoadAssessmentClick(assessment, startRound = false) {
-  const load = () => {
-    loadAssessmentIntoState(assessment);
-    if (startRound) handleStartNewAssessment();
-  };
-  // Check if there's current work that would be lost
-  const hasCurrentWork = Object.values(AppState.scores || {}).some(s => s != null);
-
-  if (hasCurrentWork) {
-    // Show warning modal
-    pendingLoad = load;
-    document.getElementById("replace-current-venture").textContent =
-      AppState.ventureName || "Unnamed Assessment";
-    hideModal("load-assessment-modal");
-    showModal("replace-warning-modal");
-  } else {
-    load();
-    hideModal("load-assessment-modal");
-  }
-}
-
-function confirmLoadAssessment() {
-  pendingLoad?.();
-  pendingLoad = null;
-  hideModal("replace-warning-modal");
-}
-
-function loadAssessmentIntoState(assessment) {
-  // Create a new local venture entry for this loaded assessment
+function loadAssessmentIntoState(assessment, venture = null) {
+  // A new local draft for this saved assessment; everything not set below
+  // (TRL track, notes of the previous venture, ...) starts clean.
+  resetActiveVenture();
   AppState.activeVentureId = generateId();
   AppState.ventureName = assessment.ventureName;
-  AppState.scores = { ...assessment.scores };
-  AppState.goalLevels = {};
+  AppState.scores = normalizeScores(assessment.scores);
+  AppState.frameworkVersion = assessment.frameworkVersion || LEGACY_FRAMEWORK_VERSION;
   AppState.isHealthRelated = assessment.isHealthRelated;
+  AppState.isDualUse = DUAL_USE_ENABLED && assessment.isDualUse === true;
+  AppState.applicationScores = normalizeApplicationScores(assessment.applicationScores);
   AppState.assessedAt = assessment.assessmentDate ? new Date(assessment.assessmentDate) : new Date();
   AppState.createdAt = new Date();
   AppState.currentCategory = "IP";
@@ -817,7 +523,9 @@ function loadAssessmentIntoState(assessment) {
   AppState.categoryNotes = { ...(assessment.categoryNotes || {}) };
 
   // Smartsheet integration fields
-  AppState.ventureId = assessment.ventureId || generateVentureId();
+  AppState.ventureKey = venture ? venture.key : (assessment.ventureKey || null);
+  AppState.ventureLocked = true;
+  AppState.ventureId = (venture && venture.ventureId) || assessment.ventureId || generateVentureId();
   AppState.portfolio = assessment.portfolio || "";
   AppState.institution = assessment.institution || "";
   AppState.trackAssignment = normalizeTrackAssignment(assessment.trackAssignment);
@@ -827,37 +535,16 @@ function loadAssessmentIntoState(assessment) {
   AppState.isEditingExisting = true;
   AppState.originalAssessment = { ...assessment };
 
-  // Assessment tracking
+  // Assessment tracking. The last save time is when the row was last written,
+  // not the assessment date.
   AppState.currentAssessmentNumber = assessment.assessmentNumber || 1;
-  AppState.lastSubmissionTimestamp = assessment.assessmentDate;
+  AppState.lastSubmissionTimestamp = assessment.lastEdited || assessment.submissionTimestamp || assessment.assessmentDate;
   // Snapshot the just-loaded state so a freshly loaded row shows as clean
   // until the advisor changes a score or commentary field.
   AppState.lastSubmittedStateHash = generateStateHash();
 
   saveCurrentVenture();
-  syncUIFromState();
-  initializeCategories();
-  updateSummary();
-  syncSummaryHeaderAndIcons();
-  updateSubmissionStatusUI();
-  updateEditModeIndicator();
-
-  showToast(`Loaded "${assessment.ventureName}" for editing`, "success");
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-
-function updateEditModeIndicator() {
-  // Update UI to show we're in edit mode
-  const saveBtn = document.getElementById("btn-save-db");
-  if (saveBtn && AppState.isEditingExisting) {
-    saveBtn.title = isFirstAssessmentRound(AppState)
-      ? "Open the review step to view or edit first-call details before updating this database assessment"
-      : "Update existing assessment in database";
-  } else if (saveBtn) {
-    saveBtn.title = isFirstAssessmentRound(AppState)
-      ? "Open the review step, add required founder-call commentary, and submit to the database"
-      : "Save to Database";
-  }
+  afterVentureSwitch(`Opened Assessment #${AppState.currentAssessmentNumber} of "${assessment.ventureName}" for editing`);
 }
 
 // Helper functions for load assessment modal
@@ -873,15 +560,6 @@ function formatAssessmentDate(dateStr) {
   } catch {
     return dateStr.split("T")[0];
   }
-}
-
-function formatScoresCompact(scores, isHealthRelated) {
-  const cats = ["IP", "Technology", "Market", "Product", "Team", "Go-to-Market", "Business", "Funding", "Mission Impact"];
-  if (isHealthRelated) cats.push("Regulatory");
-
-  return cats.map(c => {
-    return `${getCategoryAbbrev(c)}:${scores[c] != null ? scores[c] : "-"}`;
-  }).join(" ");
 }
 
 function escapeHtml(str) {
@@ -903,24 +581,15 @@ function generateId() {
    App Initialization
 --------------------------*/
 function initializeApp() {
-  // Always open in a fresh, blank assessment state. The advisor explicitly
-  // picks a saved venture via the venture-select dropdown or the Load
-  // Assessment modal when they want to continue prior work — refresh should
-  // not silently resurrect the last venture they happened to be looking at.
-  // resetActiveVenture clears AppState in-memory only; saved ventures remain
-  // in _savedVentures and no empty entry is written to localStorage.
+  // Always open in a fresh, blank state. Internal users then choose a venture
+  // in the picker (which also offers unsaved drafts); refresh never silently
+  // resurrects the last venture. resetActiveVenture clears AppState in memory
+  // only; saved drafts remain in _savedVentures.
   resetActiveVenture();
 
   syncUIFromState();
   initializeCategories();
-  updateSummary();
-  syncSummaryHeaderAndIcons();
-  setupPanelClickToExpand();
   
-  // Check for welcome modal, pilot banner, and advisor tip state
-  checkShowWelcomeModal();
-  checkHidePilotBanner();
-  checkShowAdvisorTip();
 }
 
 /* -------------------------
@@ -953,7 +622,17 @@ function setupEventDelegation() {
                            selectBtn.closest(".level-card");
       centerCardSmart(selectedCard, 3);
 
-      const nxt = AppState.currentCategory && nextCategoryName(AppState.currentCategory);
+      // A dual-use category scored for Commercial asks for Government next.
+      const cat = AppState.currentCategory;
+      if (cat && AppState.isDualUse && isDualUseCategory(cat) &&
+          (AppState.currentApplication || PRIMARY_APPLICATION) === PRIMARY_APPLICATION) {
+        const unscored = APPLICATIONS.find((app) => missingApplicationScores(AppState, [cat], [app]).length);
+        if (unscored) {
+          showNextToast(cat, unscored);
+          return;
+        }
+      }
+      const nxt = cat && nextCategoryName(cat);
       if (nxt) showNextToast(nxt);
     }, 0);
   }, { capture: true });
@@ -966,18 +645,31 @@ function setupEventListeners() {
     healthCheckbox.addEventListener("change", (e) => {
       AppState.isHealthRelated = e.target.checked;
       saveCurrentVenture();
-      
-      const note = document.getElementById("health-mode-note");
-      if (note) note.classList.toggle("hidden", !AppState.isHealthRelated);
-      
+
       // Deliberately does NOT auto-select a life-sciences track. The three
       // life-sciences tracks now render materially different level definitions,
       // so silently picking one would have a therapeutics venture reading
       // device content.
       updateIndustrySelectorUI();
       initializeCategories();
-      updateSummary();
-      syncSummaryHeaderAndIcons();
+      updateSubmissionStatusUI();
+    });
+  }
+
+  // Dual-use toggle. Off hides the Government scores without deleting them.
+  // While the feature is switched off (DUAL_USE_ENABLED), its controls and Help line are hidden.
+  if (!DUAL_USE_ENABLED) {
+    document.querySelectorAll("[data-dual-use]").forEach((el) => { el.style.display = "none"; });
+  }
+  const dualUseHelp = document.getElementById("dual-use-help-text");
+  if (dualUseHelp) {
+    dualUseHelp.textContent = `${DUAL_USE_DEFINITION} Market, Product and Go-to-Market are then scored for each.`;
+  }
+  const dualUseCheckbox = document.getElementById("dual-use");
+  if (dualUseCheckbox) {
+    dualUseCheckbox.addEventListener("change", (e) => {
+      setDualUse(e.target.checked);
+      initializeCategories();
       updateSubmissionStatusUI();
     });
   }
@@ -1005,99 +697,35 @@ function setupEventListeners() {
     });
   }
 
-  // Summary panel controls
-  document.getElementById("minimize-btn")?.addEventListener("click", toggleMinimizeSummaryPanel);
-  document.getElementById("maximize-btn")?.addEventListener("click", toggleMaximizeSummaryPanel);
-  document.getElementById("panel-overlay")?.addEventListener("click", closeMaximizedPanel);
-  
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      closeMaximizedPanel();
       hideModal("welcome-modal");
-      hideModal("feedback-modal");
-      hideModal("new-venture-modal");
-      hideModal("delete-modal");
-      hideModal("start-new-modal");
-      hideModal("load-assessment-modal");
-      hideModal("replace-warning-modal");
+      hideModal("venture-picker-modal");
       hideModal("submit-review-modal");
     }
   });
 
-  wirePickList("venture-pick", "venture-name");
-  wirePickList("advisor-pick", "advisor-name");
-
   // Venture name binding with auto-save and portfolio auto-fill
   const nameInput = document.getElementById("venture-name");
   if (nameInput) {
-    let previousValue = nameInput.value;
 
+    // The external stepper types into this field; internal users set the name
+    // through the venture picker (the field is read-only for them).
     nameInput.addEventListener("input", (e) => {
       AppState.ventureName = e.target.value;
       saveCurrentVenture();
-      refreshVentureSelector();
       updateSubmissionStatusUI();
-      renderWorkspaceHeader();
-    });
-
-    // Check for portfolio auto-fill when user selects from datalist or finishes typing
-    nameInput.addEventListener("change", (e) => {
-      const newValue = e.target.value;
-      if (newValue && newValue !== previousValue) {
-        handleVentureNameChange(newValue);
-        previousValue = newValue;
-      }
     });
   }
 
-  // Venture selector
-  const ventureSelect = document.getElementById("venture-select");
-  if (ventureSelect) {
-    ventureSelect.addEventListener("change", (e) => {
-      loadVentureFromSelector(e.target.value);
-    });
-  }
-
-  // New venture button
-  document.getElementById("btn-new-venture")?.addEventListener("click", () => {
-    showModal("new-venture-modal");
-    document.getElementById("new-venture-name")?.focus();
-  });
-
-  // Delete venture button
-  document.getElementById("btn-delete-venture")?.addEventListener("click", () => {
-    if (!AppState.activeVentureId) return;
-    document.getElementById("delete-venture-name").textContent = 
-      AppState.ventureName || "Unnamed Assessment";
-    showModal("delete-modal");
-  });
+  // Step 1: the venture picker
+  document.getElementById("btn-change-venture")?.addEventListener("click", openVenturePicker);
 
   // PDF export
   document.getElementById("btn-export-pdf")?.addEventListener("click", handlePdfExportRequest);
 
-  // Start New Assessment
-  document.getElementById("btn-start-new-assessment")?.addEventListener("click", showStartNewAssessmentModal);
-  document.getElementById("start-new-confirm")?.addEventListener("click", handleStartNewAssessment);
-  document.getElementById("start-new-cancel")?.addEventListener("click", () => hideModal("start-new-modal"));
-  document.getElementById("start-new-close")?.addEventListener("click", () => hideModal("start-new-modal"));
-  document.querySelector("#start-new-modal .modal-backdrop")?.addEventListener("click", () => hideModal("start-new-modal"));
-
-  // Load Assessment Modal
-  document.getElementById("btn-load-assessment")?.addEventListener("click", showLoadAssessmentModal);
-  document.getElementById("load-assessment-modal-close")?.addEventListener("click", () => hideModal("load-assessment-modal"));
-  document.querySelector("#load-assessment-modal .modal-backdrop")?.addEventListener("click", () => hideModal("load-assessment-modal"));
-
-  // Replace Warning Modal
-  document.getElementById("replace-warning-modal-close")?.addEventListener("click", () => hideModal("replace-warning-modal"));
-  document.getElementById("replace-warning-cancel")?.addEventListener("click", () => hideModal("replace-warning-modal"));
-  document.querySelector("#replace-warning-modal .modal-backdrop")?.addEventListener("click", () => hideModal("replace-warning-modal"));
-  document.getElementById("replace-warning-confirm")?.addEventListener("click", confirmLoadAssessment);
-
   // Save to Database button
   document.getElementById("btn-save-db")?.addEventListener("click", handleSaveToDatabase);
-
-  // Sticky submission banner — same action as the topbar Save button
-  document.getElementById("submission-banner-save")?.addEventListener("click", handleSaveToDatabase);
 
   // Submit-review modal (Assessment #1 commentary capture)
   document.getElementById("submit-review-close")?.addEventListener("click", () => hideModal("submit-review-modal"));
@@ -1138,21 +766,16 @@ function setupEventListeners() {
   });
 
   // Advisor name binding with localStorage persistence (debounced)
-  // Also refreshes venture autocomplete since it filters by advisor
   const advisorInput = document.getElementById("advisor-name");
   if (advisorInput) {
     let advisorDebounceTimer;
     advisorInput.addEventListener("input", (e) => {
       AppState.advisorName = e.target.value;
       renderWorkspaceHeader();
-      // Debounce localStorage write and autocomplete refresh
       clearTimeout(advisorDebounceTimer);
       advisorDebounceTimer = setTimeout(() => {
         saveAdvisorPreference(e.target.value);
         renderWorkspaceHeader();
-        if (!Auth.isExternal()) {
-          populateVentureNameAutocomplete();
-        }
       }, 300);
     });
   }
@@ -1167,22 +790,12 @@ function setupEventListeners() {
     });
   }
 
-  // Help button
-  document.getElementById("btn-help")?.addEventListener("click", () => {
-    showModal("welcome-modal");
-  });
-
-  // Pilot banner
-  document.getElementById("close-pilot-banner")?.addEventListener("click", dismissPilotBanner);
-  document.getElementById("open-feedback")?.addEventListener("click", showFeedbackModal);
-
-  // Advisor tip dismiss
-  document.getElementById("dismiss-advisor-tip")?.addEventListener("click", dismissAdvisorTip);
-
-  // Welcome modal
-  document.getElementById("welcome-modal-close")?.addEventListener("click", hideWelcomeModal);
-  document.getElementById("welcome-get-started")?.addEventListener("click", hideWelcomeModal);
-  document.querySelector("#welcome-modal .modal-backdrop")?.addEventListener("click", hideWelcomeModal);
+  // Help modal (the ? button; it never opens on its own)
+  const hideHelp = () => hideModal("welcome-modal");
+  document.getElementById("btn-help")?.addEventListener("click", () => showModal("welcome-modal"));
+  document.getElementById("welcome-modal-close")?.addEventListener("click", hideHelp);
+  document.getElementById("welcome-get-started")?.addEventListener("click", hideHelp);
+  document.querySelector("#welcome-modal .modal-backdrop")?.addEventListener("click", hideHelp);
 
   // Attributions & license modal
   renderAttributions();
@@ -1191,51 +804,6 @@ function setupEventListeners() {
   document.getElementById("attributions-done")?.addEventListener("click", () => hideModal("attributions-modal"));
   document.querySelector("#attributions-modal .modal-backdrop")?.addEventListener("click", () => hideModal("attributions-modal"));
 
-  // Feedback modal
-  document.getElementById("feedback-modal-close")?.addEventListener("click", hideFeedbackModal);
-  document.querySelector("#feedback-modal .modal-backdrop")?.addEventListener("click", hideFeedbackModal);
-
-  // New venture modal
-  document.getElementById("new-venture-modal-close")?.addEventListener("click", () => hideModal("new-venture-modal"));
-  document.getElementById("new-venture-cancel")?.addEventListener("click", () => hideModal("new-venture-modal"));
-  document.querySelector("#new-venture-modal .modal-backdrop")?.addEventListener("click", () => hideModal("new-venture-modal"));
-  document.getElementById("new-venture-create")?.addEventListener("click", () => {
-    const name = document.getElementById("new-venture-name")?.value?.trim() || "";
-    createNewVenture(name);
-    // Reset to IP category for fresh start
-    AppState.currentCategory = "IP";
-    syncUIFromState();
-    initializeCategories();
-    updateSummary();
-    syncSummaryHeaderAndIcons();
-    hideModal("new-venture-modal");
-    document.getElementById("new-venture-name").value = "";
-    // Scroll to top for fresh assessment experience
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  });
-
-  // Delete modal
-  document.getElementById("delete-modal-close")?.addEventListener("click", () => hideModal("delete-modal"));
-  document.getElementById("delete-cancel")?.addEventListener("click", () => hideModal("delete-modal"));
-  document.querySelector("#delete-modal .modal-backdrop")?.addEventListener("click", () => hideModal("delete-modal"));
-  document.getElementById("delete-confirm")?.addEventListener("click", () => {
-    const idToDelete = AppState.activeVentureId;
-    deleteVenture(idToDelete);
-    
-    // Load another venture or create new
-    const ventures = getAllVentures();
-    if (ventures.length > 0) {
-      loadVenture(ventures[0].id);
-    } else {
-      createNewVenture("");
-    }
-    
-    syncUIFromState();
-    initializeCategories();
-    updateSummary();
-    syncSummaryHeaderAndIcons();
-    hideModal("delete-modal");
-  });
 }
 
 /* -------------------------
@@ -1290,15 +858,23 @@ async function handleSaveToDatabase() {
   if (Auth.isExternal()) return;
   if (isCurrentlySubmitting()) return;
 
-  // Assessment #1 routes through the review modal so the advisor must add
-  // founder-call commentary before the database write. Assessment #2+ submits
-  // directly (subject to score-completeness validation in smartsheet.js).
-  if (isFirstAssessmentRound(AppState)) {
-    openSubmitReviewModal({ isExternalPdf: false });
+  // Step 1 comes first.
+  if (!String(AppState.ventureName || "").trim()) {
+    openVenturePicker();
     return;
   }
 
-  await submitAssessmentDirect();
+  // Every save goes through the review step. Assessment #1 also collects the
+  // founder-call commentary there.
+  openSubmitReviewModal({ isExternalPdf: false });
+}
+
+function currentReviewConfig() {
+  return getReviewFlowConfig({
+    isExternal: reviewFlowIsExternalPdf,
+    ventureName: AppState.ventureName,
+    isFirstAssessment: reviewFlowIsExternalPdf || isFirstAssessmentRound(AppState),
+  });
 }
 
 function openSubmitReviewModal({ isExternalPdf = false } = {}) {
@@ -1488,11 +1064,10 @@ function renderSubmitReviewModal() {
   const footerNote = document.querySelector("#submit-review-modal .submit-review-note");
   const readiness = getSubmissionReadiness(AppState, readinessData);
   const metadataMissing = getMetadataMissingLabels();
-  const config = getReviewFlowConfig({
-    isExternal: reviewFlowIsExternalPdf,
-    ventureName: AppState.ventureName,
-  });
+  const config = currentReviewConfig();
   const canConfirm = config.canConfirm(readiness, metadataMissing) && qualificationMatchCanProceed();
+  const commentaryFields = document.querySelector("#submit-review-modal .submit-commentary-fields");
+  if (commentaryFields) commentaryFields.hidden = !config.showsCommentary;
 
   if (title) {
     title.textContent = config.title;
@@ -1558,10 +1133,7 @@ function applyQualificationMatchSelection() {
 async function submitAssessmentFromModal() {
   const readiness = getSubmissionReadiness(AppState, readinessData);
   const metadataMissing = getMetadataMissingLabels();
-  const config = getReviewFlowConfig({
-    isExternal: reviewFlowIsExternalPdf,
-    ventureName: AppState.ventureName,
-  });
+  const config = currentReviewConfig();
   if (!config.canConfirm(readiness, metadataMissing)) {
     renderSubmitReviewModal();
     return;
@@ -1630,6 +1202,7 @@ async function submitAssessmentDirect() {
 
     if (result.success) {
       showToast("Saved to NobleReach database", "success");
+      invalidateVenturePicker();
       updateSubmissionStatusUI();
       btn.innerHTML = `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1688,6 +1261,22 @@ function showToast(message, type = "info") {
  * Populate portfolio dropdown from GAS proxy (single source of truth).
  * Falls back to local PORTFOLIOS constant if proxy is unavailable.
  */
+// Served by the proxy ({ value, label, archived }); PORTFOLIOS is the fallback.
+let portfolioList = PORTFOLIOS;
+
+// Archived portfolios (programs that have ended) are not offered for new work,
+// but an assessment that already carries one keeps it.
+function renderPortfolioOptions() {
+  const select = document.getElementById("portfolio-select");
+  if (!select) return;
+  const current = AppState.portfolio || "";
+  const options = portfolioList.filter(p => !p.archived || p.value === current);
+  if (current && !options.some(p => p.value === current)) options.push({ value: current, label: current });
+  select.innerHTML = '<option value="">Select portfolio...</option>' + options
+    .map(p => `<option value="${escapeHtml(p.value)}">${escapeHtml(p.label)}</option>`).join("");
+  select.value = current;
+}
+
 async function populatePortfolioDropdown() {
   const select = document.getElementById("portfolio-select");
   if (!select) return;
@@ -1707,139 +1296,8 @@ async function populatePortfolioDropdown() {
     console.warn("[RL] Could not fetch portfolios from proxy, using local fallback:", e.message);
   }
 
-  select.innerHTML = '<option value="">Select portfolio...</option>';
-  portfolios.forEach(p => {
-    const opt = document.createElement("option");
-    opt.value = p.value;
-    opt.textContent = p.label;
-    select.appendChild(opt);
-  });
-
-  // Re-sync current portfolio value after options are loaded
-  if (AppState.portfolio) {
-    select.value = AppState.portfolio;
-  }
-}
-
-/* ---------- Name pick lists (venture + advisor) ----------
- * A <select> of known names plus "Add new…", sitting over the real text input.
- * The input stays the source of truth: state handlers, the external stepper and
- * the loaders all read and write it. The input is shown only for "Add new…", or
- * when there is no list (external mode, fetch failed, nothing saved yet).
- */
-const PICK_NEW = "__new__";
-
-function setPickList(selectId, inputId, options, newLabel) {
-  const select = document.getElementById(selectId);
-  const input = document.getElementById(inputId);
-  if (!select || !input) return;
-  if (!options.length) {
-    select.hidden = true;
-    input.hidden = false;
-    return;
-  }
-  const placeholder = new Option("Select...", "");
-  placeholder.disabled = true;
-  select.replaceChildren(placeholder, ...options.map(([value, label]) => new Option(label, value)), new Option(newLabel, PICK_NEW));
-  select.hidden = false;
-  syncPickList(selectId, inputId);
-}
-
-// Point the select at the input's current value. A name that isn't in the list
-// (a loaded assessment, a just-added name) is added so it still shows.
-function syncPickList(selectId, inputId) {
-  const select = document.getElementById(selectId);
-  const input = document.getElementById(inputId);
-  if (!select || !input || select.hidden) return;
-  const v = input.value.trim();
-  if (!v) {
-    select.value = "";
-  } else {
-    const match = [...select.options].find(o => o.value !== PICK_NEW && o.value.toLowerCase() === v.toLowerCase());
-    if (match) select.value = match.value;
-    else select.insertBefore(new Option(v, v, true, true), select.lastElementChild);
-  }
-  input.hidden = true;
-}
-
-function wirePickList(selectId, inputId) {
-  const select = document.getElementById(selectId);
-  const input = document.getElementById(inputId);
-  if (!select || !input) return;
-  select.addEventListener("change", () => {
-    if (select.value === PICK_NEW) {
-      // Keep the current value until they type, so the venture isn't blanked.
-      input.hidden = false;
-      input.focus();
-      input.select();
-      return;
-    }
-    input.hidden = true;
-    input.value = select.value;
-    // Same events a typed name fires: autosave, header, portfolio auto-fill.
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-}
-
-/**
- * Fill the advisor pick list with names already in the RL sheet.
- * Spelling comes from each advisor's most recent save (list is newest first);
- * names differing only in case are merged.
- */
-async function populateAdvisorNames() {
-  const names = new Map();
-  for (const a of await fetchAllAssessments()) {
-    const n = (a.advisorName || "").trim();
-    if (n && !names.has(n.toLowerCase())) names.set(n.toLowerCase(), n);
-  }
-  const sorted = [...names.values()].sort((a, b) => a.localeCompare(b));
-  setPickList("advisor-pick", "advisor-name", sorted.map(n => [n, n]), "Add new advisor...");
-}
-
-/**
- * Fill the venture pick list from both Smartsheets, limited to ventures the
- * current advisor has assessed (partial name match). No advisor → no list.
- */
-async function populateVentureNameAutocomplete() {
-  const advisor = (AppState.advisorName || "").trim().toLowerCase();
-
-  try {
-    const ventures = advisor ? await fetchVentureData() : [];
-    const myVentures = ventures.filter(v =>
-      (v.advisorNames || []).some(n => n.includes(advisor))
-    );
-    setPickList("venture-pick", "venture-name",
-      myVentures.map(v => [v.name, v.portfolio ? `${v.name} (${v.portfolio})` : v.name]),
-      "Add new venture...");
-    console.log(`[Autocomplete] ${myVentures.length} ventures for advisor "${advisor}" (${ventures.length} total)`);
-  } catch (error) {
-    console.warn("[Autocomplete] Failed to load venture names:", error);
-  }
-}
-
-/**
- * Handle venture name selection - auto-fill portfolio if available
- */
-function handleVentureNameChange(ventureName) {
-  if (!ventureName || !ventureName.trim()) return;
-
-  // Look up portfolio from cached data
-  const portfolio = getPortfolioForVenture(ventureName);
-
-  if (portfolio) {
-    // Only auto-fill if portfolio is currently empty
-    const portfolioSelect = document.getElementById("portfolio-select");
-    if (portfolioSelect && !AppState.portfolio) {
-      AppState.portfolio = portfolio;
-      portfolioSelect.value = portfolio;
-      saveCurrentVenture();
-      console.log(`[Autocomplete] Auto-filled portfolio: ${portfolio}`);
-
-      // Show a brief hint that portfolio was auto-filled
-      showToast(`Portfolio set to "${portfolio}"`, "info");
-    }
-  }
+  portfolioList = portfolios;
+  renderPortfolioOptions();
 }
 
 /* -------------------------
@@ -1878,8 +1336,6 @@ function normalBoot() {
 
   if (isExternal) {
     applyExternalMode();
-  } else {
-    populatePortfolioDropdown();
   }
 
   initializeApp();
@@ -1888,44 +1344,45 @@ function normalBoot() {
   ensureNextToastDom();
 
   if (!isExternal) {
-    // Load venture name and advisor name suggestions in background (non-blocking)
-    populateVentureNameAutocomplete();
-    populateAdvisorNames();
+    // Internal advisors start at step 1, the venture picker.
+    initVenturePicker({
+      onEdit: editAssessment,
+      onNew: startNewAssessmentFor,
+      onAdd: addVenture,
+      onResume: resumeDraft,
+      getPortfolios: () => portfolioList,
+      toast: showToast,
+    });
+    populatePortfolioDropdown().finally(() => openVenturePicker());
   } else {
-    // External advisors get the guided stepper (Setup → Score → … → VDR).
+    // External advisors get the guided stepper (Setup → Score → … → Download).
     startExternalFlow();
   }
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  const params = new URLSearchParams(window.location.search);
-
   // Boot function — mode determined after auth (Auth.role is set).
   // Runs once per page load. A later login (after the proxy reports an
   // expired session) only closes the overlay; if the role changed, reload so
   // the internal/external UI is rebuilt from scratch.
   let bootedRole = null;
   function boot() {
+    // Staff-only rollout: the external password still gets the older framework.
+    if (Auth.isExternal() && EXTERNAL_LEGACY_PATH) {
+      const target = new URL(EXTERNAL_LEGACY_PATH, window.location.href);
+      window.location.replace(target.origin + target.pathname + window.location.search + window.location.hash);
+      return;
+    }
     if (bootedRole) {
       if (Auth.role !== bootedRole) window.location.reload();
       return;
     }
     bootedRole = Auth.role;
 
-    const isVDR = params.get('vdr') === 'true';
-    if (isVDR) {
-      import('./vdr/vdr-main.js').then(({ initializeVDR }) => {
-        initializeVDR();
-      }).catch(err => {
-        console.error('[VDR] Failed to load VDR module:', err);
-        normalBoot();
-      });
-    } else {
-      normalBoot();
-    }
+    normalBoot();
   }
 
-  // Auth gate — both normal and VDR modes require authentication
+  // Auth gate
   Auth.initLoginForm(boot);
 
   const hasAccess = await Auth.checkAccess();

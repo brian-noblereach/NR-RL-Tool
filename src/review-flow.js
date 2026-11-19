@@ -1,6 +1,6 @@
 import { getCategoryLabel } from "./category-labels.js";
 
-export function getReviewFlowConfig({ isExternal, ventureName } = {}) {
+export function getReviewFlowConfig({ isExternal, ventureName, isFirstAssessment = true } = {}) {
   const safeVentureName = String(ventureName || "").trim() || "this assessment";
 
   if (isExternal) {
@@ -16,8 +16,31 @@ export function getReviewFlowConfig({ isExternal, ventureName } = {}) {
       requiresMetadata: true,
       requiresCompleteScores: false,
       requiresCommentary: false,
+      showsCommentary: true,
       canConfirm(readiness, metadataMissing = []) {
         return metadataMissing.length === 0;
+      },
+    };
+  }
+
+  // Every internal save goes through this review step (v07). Founder-call
+  // commentary is collected on Assessment #1 only.
+  if (!isFirstAssessment) {
+    return {
+      mode: "internal-database",
+      title: `Review & save ${safeVentureName} to the NobleReach database?`,
+      intro: "Check that every category is scored before writing this assessment to the database.",
+      checklistTitle: "Submission Checklist",
+      footerNote: "Nothing is saved to the database until you click Submit to Database.",
+      confirmLabel: "Submit to Database",
+      confirmTitleReady: "Submit to database",
+      confirmTitleBlocked: "Complete all checklist items before submitting",
+      requiresMetadata: true,
+      requiresCompleteScores: true,
+      requiresCommentary: false,
+      showsCommentary: false,
+      canConfirm(readiness, metadataMissing = []) {
+        return Boolean(readiness?.canSubmit) && metadataMissing.length === 0;
       },
     };
   }
@@ -34,6 +57,7 @@ export function getReviewFlowConfig({ isExternal, ventureName } = {}) {
     requiresMetadata: true,
     requiresCompleteScores: true,
     requiresCommentary: true,
+    showsCommentary: true,
     canConfirm(readiness, metadataMissing = []) {
       return Boolean(readiness?.canSubmit) && metadataMissing.length === 0;
     },
@@ -55,7 +79,7 @@ export function buildReviewChecklist({ config, readiness, metadataMissing = [] }
       ? `Partial PDF warning: ${missingScores.length} active ${missingScores.length === 1 ? "category is" : "categories are"} unscored (${missingScores.map(getCategoryLabel).join(", ")})`
       : `Score every active category (${missingScores.length} remaining: ${missingScores.map(getCategoryLabel).join(", ")})`;
 
-  return [
+  const items = [
     {
       label: metadataMissing.length === 0
         ? metadataLabel
@@ -66,6 +90,11 @@ export function buildReviewChecklist({ config, readiness, metadataMissing = [] }
       label: scoreLabel,
       complete: missingScores.length === 0,
     },
+  ];
+  if (config?.showsCommentary === false) return items;
+
+  return [
+    ...items,
     {
       label: isExternal ? "Founder coachability (optional)" : "Founder coachability",
       complete: isExternal || !missingCommentary.includes("Founder coachability"),

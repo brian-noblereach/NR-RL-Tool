@@ -1,11 +1,11 @@
 // external-flow.js — guided stepper for external advisors.
 //
 // Sequences existing screens into one clean, Smartsheet-free workflow:
-//   Setup → Score → (first only) Questions → Download → (first only) VDR Goals → VDR Generate
-// Follow-up assessments run Setup → Score → Download (scores-only PDF, no VDR).
+//   Setup → Score → (first only) Questions → Download
+// Follow-up assessments run Setup → Score → Download (scores-only PDF).
 //
-// It reuses, unchanged: the scoring view (#app-view), the shared PDF export,
-// and the VDR renderers. Step/stage visibility is driven by a single
+// It reuses, unchanged: the scoring view (#app-view) and the shared PDF
+// export. Step/stage visibility is driven by a single
 // `body[data-flow-step]` attribute that the CSS keys off of.
 
 import { AppState, saveCurrentVenture, setCommentaryField, setCategoryNote, resetActiveVenture, CATEGORY_NOTE_MAX } from "./state.js";
@@ -19,37 +19,14 @@ import {
 import { savePdfSnapshot } from "./pdf-export.js";
 import { getCategoryLabel } from "./category-labels.js";
 import { initializeCategories, updateCategoryDisplay } from "./categories.js";
-import { updateSummary } from "./summary.js";
 import { updateIndustrySelectorUI } from "./ui.js";
-import { VDRState } from "./vdr/vdr-state.js";
-import { renderGoalSetting } from "./vdr/goal-setting.js";
-import { renderVDROutput } from "./vdr/vdr-generator.js";
-
-// All score keys we hand to the VDR baseline. The VDR itself ignores
-// Technology and Mission Impact by design (see vdr-state.js); extra keys are
-// harmless.
-const VDR_SCORE_KEYS = [
-  "IP", "Technology", "Market", "Product", "Team",
-  "Go-to-Market", "Business", "Funding", "Mission Impact", "Regulatory",
-];
+import { DUAL_USE_DEFINITION, DUAL_USE_ENABLED, scoreRowsFor } from "./applications.js";
 
 const STEP_LABELS = {
   setup: "Setup",
   score: "Score",
   questions: "Questions",
   download: "Download",
-  "vdr-goals": "VDR · Goals",
-  "vdr-generate": "VDR · Generate",
-};
-
-// Granular step → the DOM stage shown (the two VDR steps share one container).
-const DOM_STEP = {
-  setup: "setup",
-  score: "score",
-  questions: "questions",
-  download: "download",
-  "vdr-goals": "vdr",
-  "vdr-generate": "vdr",
 };
 
 let isExternalFlowActive = false;
@@ -70,7 +47,7 @@ function isFirst() {
 
 function stepsForBranch() {
   return isFirst()
-    ? ["setup", "score", "questions", "download", "vdr-goals", "vdr-generate"]
+    ? ["setup", "score", "questions", "download"]
     : ["setup", "score", "download"];
 }
 
@@ -90,35 +67,15 @@ function proxyCheckbox(realId, checked) {
   real.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-function buildVdrBaselineFromState() {
-  const scores = {};
-  VDR_SCORE_KEYS.forEach((key) => {
-    scores[key] = AppState.scores?.[key] ?? 0;
-  });
-  return {
-    ventureId: AppState.ventureId || AppState.activeVentureId || "",
-    ventureName: AppState.ventureName || "",
-    advisorName: AppState.advisorName || "",
-    portfolio: AppState.portfolio || "",
-    assessmentNumber: AppState.currentAssessmentNumber || 1,
-    assessmentDate: AppState.assessedAt
-      ? new Date(AppState.assessedAt).toISOString()
-      : new Date().toISOString(),
-    isHealthRelated: !!AppState.isHealthRelated,
-    scores,
-  };
-}
-
 /* ---------- navigation + rail ---------- */
 
-// Back always lives at the top of the step (the VDR screens already put their
-// own Back at the top, so we hide ours there to avoid a duplicate).
+// Back always lives at the top of the step.
 function backTargetFor(step) {
   switch (step) {
     case "score": return "setup";
     case "questions": return "score";
     case "download": return isFirst() ? "questions" : "score";
-    default: return null; // setup + both VDR steps
+    default: return null; // setup
   }
 }
 
@@ -137,7 +94,7 @@ function renderTopbar(backTarget) {
 
 function goToStep(step) {
   currentStep = step;
-  document.body.dataset.flowStep = DOM_STEP[step] || step;
+  document.body.dataset.flowStep = step;
   renderRail();
   renderTopbar(backTargetFor(step));
 
@@ -146,13 +103,6 @@ function goToStep(step) {
     case "score": enterScore(); break;
     case "questions": renderQuestions(); break;
     case "download": renderDownload(); break;
-    case "vdr-goals": renderGoalSetting(document.getElementById("step-vdr")); break;
-    case "vdr-generate": {
-      const vdrEl = document.getElementById("step-vdr");
-      renderVDROutput(vdrEl);
-      appendVdrEndActions(vdrEl);
-      break;
-    }
   }
 
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -199,14 +149,14 @@ function renderSetup() {
             <input type="radio" name="flow-round" value="first" ${first ? "checked" : ""}>
             <span class="flow-choice-text">
               <span class="flow-choice-title">First assessment</span>
-              <span class="flow-choice-desc">Baseline scoring. Adds founder questions and the option to build a Venture Development Roadmap.</span>
+              <span class="flow-choice-desc">Baseline scoring. Adds founder questions.</span>
             </span>
           </label>
           <label class="flow-choice-card">
             <input type="radio" name="flow-round" value="followup" ${first ? "" : "checked"}>
             <span class="flow-choice-text">
               <span class="flow-choice-title">Follow-up assessment</span>
-              <span class="flow-choice-desc">A later check-in. Skips the founder questions and the roadmap — just scores and a PDF.</span>
+              <span class="flow-choice-desc">A later check-in. Skips the founder questions — just scores and a PDF.</span>
             </span>
           </label>
         </div>
@@ -222,11 +172,21 @@ function renderSetup() {
         <label class="flow-toggle">
           <input type="checkbox" id="flow-health" ${AppState.isHealthRelated ? "checked" : ""}>
           <span class="flow-choice-text">
-            <span class="flow-choice-title">Life Sciences mode</span>
-            <span class="flow-choice-desc">Uses patient/clinical language and adds the Regulatory category.</span>
+            <span class="flow-choice-title">Life Science venture</span>
+            <span class="flow-choice-desc">Uses the Life Science level definitions and adds the Regulatory category.</span>
           </span>
         </label>
       </div>
+
+      ${DUAL_USE_ENABLED ? `<div class="flow-field">
+        <label class="flow-toggle">
+          <input type="checkbox" id="flow-dual-use" ${AppState.isDualUse ? "checked" : ""}>
+          <span class="flow-choice-text">
+            <span class="flow-choice-title">Dual-use venture</span>
+            <span class="flow-choice-desc">${escapeHtml(DUAL_USE_DEFINITION.replace(/^Dual-use: /, ""))} Market, Product and Go-to-Market are scored for each.</span>
+          </span>
+        </label>
+      </div>` : ""}
 
       <div class="flow-nav">
         <span class="flow-note warn" id="flow-setup-error"></span>
@@ -268,6 +228,9 @@ function renderSetup() {
   document.getElementById("flow-health").addEventListener("change", (e) => {
     proxyCheckbox("health-related", e.target.checked);
   });
+  document.getElementById("flow-dual-use")?.addEventListener("change", (e) => {
+    proxyCheckbox("dual-use", e.target.checked);
+  });
 
   document.getElementById("flow-setup-continue").addEventListener("click", () => {
     const errEl = document.getElementById("flow-setup-error");
@@ -293,7 +256,6 @@ function enterScore() {
     updateIndustrySelectorUI();
     initializeCategories();
     updateCategoryDisplay();
-    updateSummary();
   }
   renderScoreNav();
   // Build/refresh the per-category notes box on entering Score.
@@ -304,12 +266,14 @@ function renderScoreNav() {
   const nav = document.getElementById("score-nav");
   if (!nav) return;
   const readiness = getSubmissionReadiness(AppState, readinessData);
-  const total = readiness.activeCategories.length;
+  // A dual-use venture also counts its Government scores.
+  const total = readiness.requiredScoreCount;
   const remaining = readiness.missingScores.length;
   const done = remaining === 0;
+  const noun = AppState.isDualUse ? "scores" : "categories";
   const hint = done
-    ? `✓ All ${total} categories scored — ready to continue.`
-    : `${total - remaining} of ${total} categories scored — you can continue any time.`;
+    ? `✓ All ${total} ${noun} ${AppState.isDualUse ? "entered" : "scored"} — ready to continue.`
+    : `${total - remaining} of ${total} ${noun} ${AppState.isDualUse ? "entered" : "scored"} — you can continue any time.`;
   const nextLabel = isFirst() ? "Continue to questions →" : "Continue to download →";
   nav.innerHTML = `
     <span class="flow-note ${done ? "done" : ""}" id="flow-score-hint">${hint}</span>
@@ -424,10 +388,11 @@ function renderDownload() {
   const active = getActiveSubmissionCategories(AppState, readinessData);
   const c = normalizeCommentary(AppState.commentary);
 
-  const rows = active.map((cat) => {
-    const s = AppState.scores?.[cat];
-    return `<tr><td>${escapeHtml(getCategoryLabel(cat))}</td><td>${s != null ? s : "—"}</td></tr>`;
-  }).join("");
+  // A dual-use category gets one row per application, labelled.
+  const rows = active.flatMap((cat) => scoreRowsFor(AppState, cat).map(({ application, score }) => {
+    const label = application ? `${getCategoryLabel(cat)} (${application})` : getCategoryLabel(cat);
+    return `<tr><td>${escapeHtml(label)}</td><td>${score != null ? score : "—"}</td></tr>`;
+  })).join("");
 
   const missing = readiness.missingScores.length;
   const partial = missing
@@ -460,7 +425,6 @@ function renderDownload() {
       </table>
       ${answersHtml}
       <div class="flow-nav">
-        ${first ? `<button class="btn" id="flow-go-vdr">Continue to develop a VDR →</button>` : ""}
         <button class="btn accent" id="flow-dl-download">Download PDF</button>
       </div>
       <div id="flow-after-download"></div>
@@ -471,7 +435,6 @@ function renderDownload() {
     downloadPdf();
     renderAfterDownload();
   });
-  document.getElementById("flow-go-vdr")?.addEventListener("click", continueToVdr);
 
   if (pdfDownloaded) renderAfterDownload();
 }
@@ -482,7 +445,7 @@ function renderAfterDownload() {
   host.innerHTML = `
     <div class="flow-success">
       <h3>PDF downloaded ✓</h3>
-      <p>Save it somewhere safe — it isn't stored by NobleReach.${isFirst() ? " You can also continue to build a VDR with the button above." : ""}</p>
+      <p>Save it somewhere safe — it isn't stored by NobleReach.</p>
       <div class="flow-success-actions">
         <button class="btn flow-btn-back" id="flow-dl-again">Download again</button>
         <button class="btn flow-btn-back" id="flow-new-venture">Start a new venture assessment</button>
@@ -493,42 +456,21 @@ function renderAfterDownload() {
   document.getElementById("flow-new-venture")?.addEventListener("click", startNewVentureAssessment);
 }
 
-/* ---------- VDR hand-off (first only) ---------- */
-
-function continueToVdr() {
-  // Seed the VDR with the just-scored assessment, then land on goal-setting.
-  // setBaseline initializes goals = baseline and is called only here, so
-  // navigating Generate → Goals (via the VDR's own Back button) preserves the
-  // advisor's chosen goals.
-  VDRState.setBaseline(buildVdrBaselineFromState());
-  goToStep("vdr-goals");
-}
-
 /* ---------- Start over (run another venture in the same session) ---------- */
 
 function startNewVentureAssessment() {
-  if (!window.confirm("Start a new venture assessment? This clears the current scores and notes from the tool. Your downloaded PDF and VDR are not affected.")) {
+  if (!window.confirm("Start a new venture assessment? This clears the current scores and notes from the tool. Your downloaded PDF is not affected.")) {
     return;
   }
-  // Turn off Life Sciences via its handler so categories re-render cleanly,
+  // Turn off Life Science via its handler so categories re-render cleanly,
   // then clear the in-memory venture (the advisor's name persists).
   proxyCheckbox("health-related", false);
+  proxyCheckbox("dual-use", false);
   resetActiveVenture();
   const realName = document.getElementById("venture-name");
   if (realName) realName.value = "";
-  VDRState.reset();
   pdfDownloaded = false;
   goToStep("setup");
-}
-
-// The VDR output screen is rendered by vdr-generator.js (shared with ?vdr=true),
-// so we append our "start over" action to it rather than editing that file.
-function appendVdrEndActions(container) {
-  const bar = document.createElement("div");
-  bar.className = "flow-nav";
-  bar.innerHTML = `<button class="btn flow-btn-back" id="flow-new-venture-vdr">Start a new venture assessment</button>`;
-  container.appendChild(bar);
-  document.getElementById("flow-new-venture-vdr").addEventListener("click", startNewVentureAssessment);
 }
 
 /* ---------- entry ---------- */
@@ -550,17 +492,6 @@ export function startExternalFlow() {
       setTimeout(renderScoreNav, 0);
     }
   }, true);
-
-  // Our flow owns VDR navigation (vdr-main.js only registers under ?vdr=true).
-  // The VDR's own screens dispatch these events; we reinterpret them against
-  // our steps — 'baseline' has no picker here, so it steps back to Download.
-  window.addEventListener("vdr-navigate", (e) => {
-    if (!isExternalFlowActive) return;
-    const target = e.detail;
-    if (target === "output") goToStep("vdr-generate");
-    else if (target === "goals") goToStep("vdr-goals");
-    else if (target === "baseline") goToStep("download");
-  });
 
   goToStep("setup");
 }

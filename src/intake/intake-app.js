@@ -5,38 +5,56 @@
 // gate signals, review flags, or next-level text; those go only to the
 // Venture Intake Submissions sheet (and to staff, on the thank-you screen).
 //
-// Flow: login -> start (new / pick up from this browser / email + return code)
-//   -> screens -> submit row (idempotent, retry) -> thank-you; files upload
-//   one per request after the row exists, with per-file retry.
+// Flow (gen-3.0): login -> start (new / pick up from this browser / email +
+//   return code) -> Part 1 screens -> save Part 1 (creates the row; idempotent,
+//   retry) -> "Part 1 is saved" -> Part 2 screens -> submit Part 2 (same row)
+//   -> thank-you; files upload one per request after Part 2, with per-file
+//   retry. Part 2 can be finished later, on this browser from the draft or
+//   anywhere with the email and return code.
 
 import {
   SCREENS, CATS, NAMES, VERSION, SHOW_LEVELS_TO_FOUNDER, FORMS, ICORPS, HOURS, OUTCOMES,
   PRIOR_EXPERIENCE, NS_RELEVANCE, RETAKE_SECTIONS, FULL_TIME, APP_COUNTS, ROSTER_ROLES, ROSTER_TIME,
   ROLE_OPTIONS, NOT_SURE_YET, SOURCES, SOURCE_ITEMS, CONVERSATIONS, SOURCE_NOT_SURE,
+  HELP, COMPLETED_WITH, CUSTOMERS_KNOWN, CUSTOMERS_KNOWN_Q, ICORPS_HELP, GLP_GMP_HELP, yearOptions,
   freshAnswers, closeSet, createModel, track, isHealth, hasFacilities, trlOptions, displayText,
-  buildRow, founderRecap, diffFacts, canCarry, carryForward, sectionSummary, hasNewQuestions
+  buildRow, founderRecap, diffFacts, canCarry, carryForward, sectionSummary, hasNewQuestions,
+  evidenceItems, hasEvidenceQuestions, partOf, itemLabel, trackAllows
 } from './intake-model.js';
 import { missingRequired, planJump } from './intake-flow.js';
 import { buildBrief } from './intake-brief.js';
 import { buildQmInput } from './intake-qm.js';
 import { INTAKE_CONFIG as CFG } from './intake-config.js';
 import { IntakeAuth } from './intake-auth.js';
-import { submitIntake, uploadIntakeFile, checkFile, lookupIntake, resendCode, newSubmissionId } from './intake-api.js';
+import { submitIntake, completeIntake, uploadIntakeFile, checkFile, lookupIntake, resendCode, newSubmissionId } from './intake-api.js';
 import { TRL_TRACK_CONTENT } from '../data/trl-tracks.js';
 import { FOOTER_NOTICE, BRL_LICENSE, SOURCE_ATTRIBUTIONS, EXPORT_ATTRIBUTION_LINES } from '../data/attributions.js';
 
-const DRAFT_KEY = 'nr-intake-draft-v2';   // in-progress answers (autosave)
+// v3 with gen-3.0: a gen-2.0 draft's screens no longer exist, so it isn't resumed.
+const DRAFT_KEY = 'nr-intake-draft-v3';   // in-progress answers (autosave), through Part 2
 const LAST_KEY = 'nr-intake-last-v2';     // last submitted answers on this browser
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const URL_RE = /^https?:\/\/\S+$/i;
 const PARAMS = new URLSearchParams(location.search);
 const TRACK_KEY = { General: 'general', Software: 'software', Hardware: 'hardware', Therapeutics: 'therapeutics', Diagnostics: 'diagnostics', Device: 'device' };
+// Application Status on a row whose Part 2 hasn't arrived (proxy INTAKE_STATUS.part1).
+const PART1_STATUS = 'Part 1 submitted';
+
+/* "Part 1 takes about X; Part 2 about Y. " once the timing pilot sets them; else "". */
+function timeEstimate() {
+  const t = CFG.estimatedTime || {};
+  if (t.part1 && t.part2) return `Part 1 takes ${t.part1}; Part 2, ${t.part2}. `;
+  if (t.part1) return `Part 1 takes ${t.part1}. `;
+  return '';
+}
 
 /* ---------- state ---------- */
 let A;                 // answers (see intake-model.js)
 let H = [];            // finished screen ids, in order
 let P = null;          // previous submission's answers, used to prefill a re-take
-let meta = {};         // { submissionId, previous: { submissionId, submittedAt } | null }
+// { submissionId, previous: { submissionId, submittedAt } | null,
+//   once Part 1 is saved: rowToken, part1: { returnCode, intakeNumber, emailSent, submittedAt } }
+let meta = {};
 let phase = 'start';   // 'start' | 'intake' | 'done'
 let submitState = { status: 'idle' }; // 'idle' | 'sending' | 'error'
 let done = null;       // thank-you screen data
@@ -49,6 +67,40 @@ const FILES = { deck: [null], plan: [null], supporting: [null, null, null] };
 
 const M = () => model || (model = createModel(A));
 const invalidate = () => { model = null; };
+// Part 2 opens once Part 1 is saved; screens and the rail are per part.
+const currentPart = () => (A && A.part1 ? 2 : 1);
+
+/* ---------- timing: active seconds per screen (spec section 13), into record.json ---------- */
+let clock = null;      // { id, since } for the screen on view
+let pausedId = null;   // screen whose clock stopped when the tab was hidden
+function stopClock() {
+  if (!clock || !A) { clock = null; return; }
+  A.timing = A.timing || {};
+  A.timing[clock.id] = Math.round(((A.timing[clock.id] || 0) + (Date.now() - clock.since) / 1000) * 10) / 10;
+  clock = null;
+}
+function startClock(id) {
+  if (clock && clock.id === id) return;
+  stopClock();
+  if (id && document.visibilityState !== 'hidden') clock = { id, since: Date.now() };
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    pausedId = clock && clock.id;
+    stopClock();
+    if (A && phase === 'intake') saveDraft();
+  } else if (pausedId) {
+    startClock(pausedId);
+    pausedId = null;
+  }
+});
+/* seconds per part, for record.json */
+function timingTotals() {
+  const t = (A && A.timing) || {}, out = { part1: 0, part2: 0 };
+  Object.entries(t).forEach(([id, s]) => { out['part' + partOf(id)] += s; });
+  out.part1 = Math.round(out.part1); out.part2 = Math.round(out.part2);
+  return out;
+}
 
 /* ---------- storage ---------- */
 function store(key, value) {
@@ -91,19 +143,70 @@ function setLayout(withRail) {
   $('main').classList.toggle('single', !withRail);
 }
 
+/* The rail lists the current part's steps (decision D-2), and the other part as
+   one line, so Part 1 always shows that Part 2 follows. The evidence screen is
+   always listed, so the rail never shows that ticking adds work. */
 function rail(cur) {
-  const screens = M().activeScreens(), list = screens.map(s => s.sect);
+  const part = currentPart();
+  const screens = M().activeScreens().filter(s => s.part === part), list = screens.map(s => s.sect);
   const i = cur ? list.indexOf(cur.sect) : list.length;
-  $('rail').innerHTML = screens.map((s, j) => {
+  const steps = `<li class="part-label">Part ${part} of 2</li>` + screens.map((s, j) => {
     const cls = [j < i ? 'done' : j === i ? 'now' : '', A.done[s.id] && isMissing(s.id) ? 'missing' : ''].filter(Boolean).join(' ');
     return `<li class="${cls}">${esc(s.sect)}${cls.includes('missing') ? '<span class="sr-only"> (answers still needed)</span>' : ''}</li>`;
   }).join('');
+  $('rail').innerHTML = part === 1
+    ? steps + '<li class="part-label">Part 2 of 2</li><li class="next-part">In your own words</li>'
+    : '<li class="part-label">Part 1 of 2</li><li class="done">Saved</li>' + steps;
   const left = incompleteScreens().length, toFinish = `${left} section${left === 1 ? '' : 's'} to finish`;
-  $('railmini').textContent = cur ? `Step ${i + 1} of ${list.length}: ${cur.sect}` + (left ? ` · ${toFinish}` : '') : (left ? toFinish : 'Finished');
+  $('railmini').textContent = `Part ${part} of 2 · ` + (cur ? `Step ${i + 1} of ${list.length}: ${cur.sect}` + (left ? ` · ${toFinish}` : '') : (left ? toFinish : 'Finished'));
 }
 
-function backLink() { return H.length ? '<button class="linkish" id="back">Back</button>' : ''; }
-function wireBack() { const b = $('back'); if (b) b.onclick = back; }
+/* Back never leaves the current part: Part 1 is saved before Part 2 opens. */
+const canGoBack = () => H.length > 0 && partOf(H[H.length - 1]) === currentPart();
+function backLink() { return canGoBack() ? '<button class="linkish" id="back">Back</button>' : ''; }
+function wireBack() {
+  const b = $('back'); if (b) b.onclick = back;
+  const l = $('finish-later'); if (l) l.onclick = showFinishLater;
+}
+
+/* ----- Part 2 is the default next step; stopping is a choice, not the end ----- */
+
+/* A short "Part 1 saved" banner on the first Part 2 screen, instead of a stop page. */
+function part2Intro() {
+  if (!meta.part2Intro || !meta.part1) return '';
+  return `<div class="note ok part2-intro" role="status"><strong>Part 1 is saved.</strong> Now Part 2: describe the technology and where it could be used, in your own words. It's the last part of the application.</div>`;
+}
+/* Every Part 2 screen offers to stop, next to Continue. */
+function laterLink() {
+  return currentPart() === 2 ? '<button type="button" class="linkish" id="finish-later">Finish later</button>' : '';
+}
+function showFinishLater() {
+  const p1 = meta.part1 || {};
+  const panel = view().querySelector('.panel');
+  if (!panel || panel.querySelector('.later-note')) return;
+  saveDraft();   // in-progress answers are already autosaved; this covers the last keystroke's screen state
+  panel.querySelector('.q').insertAdjacentHTML('afterend', `<div class="note later-note" role="status">
+    <p><strong>Your answers are saved, but your application isn't finished until you submit Part 2.</strong></p>
+    <p>To come back, open this page on this device, or on any device choose "Continue from a previous submission" and enter ${esc(A.applicant.email)} and your return code <span class="mono">${esc(p1.returnCode)}</span>${p1.emailSent ? ' (we emailed it to you)' : ''}.</p>
+    <p><button type="button" class="linkish" id="keep-going">Keep going now</button></p></div>`);
+  $('keep-going').onclick = () => { panel.querySelector('.later-note').remove(); };
+  panel.querySelector('.later-note').scrollIntoView({ block: 'nearest' });
+}
+
+/* "What's this?" (gen-3.0): one line, expanded in place so it works on touch screens. */
+function helpHtml(id, text) {
+  if (!text) return '';
+  return `<button type="button" class="linkish whats" aria-expanded="false" aria-controls="help_${id}">What's this?</button><p class="hint help-line" id="help_${id}" hidden>${esc(text)}</p>`;
+}
+function wireHelp() {
+  view().querySelectorAll('.whats').forEach(b => {
+    b.onclick = () => {
+      const el = $(b.getAttribute('aria-controls'));
+      el.hidden = !el.hidden;
+      b.setAttribute('aria-expanded', String(!el.hidden));
+    };
+  });
+}
 
 function selectHtml(cls, opts, value, label) {
   return `<select class="${cls}" aria-label="${esc(label)}"><option value="">${esc(label)}</option>${opts.map(o => `<option ${value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
@@ -244,6 +347,7 @@ function beginIntake(prev) {
  * and submitting waits until it is complete.
  */
 function finish(id, missing = []) {
+  stopClock();
   A.done[id] = true;
   H.push(id);
   A.missing = A.missing || {};
@@ -259,8 +363,8 @@ function finish(id, missing = []) {
 
 const sectOf = id => SCREENS.find(s => s.id === id).sect;
 const isMissing = id => !!(A.missing && A.missing[id] && A.missing[id].length);
-/* finished screens that still need answers, in order */
-const incompleteScreens = () => H.filter(isMissing);
+/* finished screens in the current part that still need answers, in order */
+const incompleteScreens = () => H.filter(id => isMissing(id) && partOf(id) === currentPart());
 
 /**
  * Put one screen's committed answers (from `src`: A itself, or a snapshot)
@@ -273,19 +377,22 @@ function toProgress(id, src) {
   if (id === 'changes') A._changes = copy(src.changeChoices);
   else if (id === 'applicant') A._applicant = copy(src.applicant);
   else if (id === 'project') A._project = copy(src.project);
-  else if (id === 'essays') A._essays = copy(src.essays);
   else if (id === 'founder') A._founder = copy(src.founder);
-  else if (id === 'tech') A._tech = { stage: src.stage == null ? null : src.stage, ev: src.techEv || '', facilities: src.facilities || '', unsure };
+  else if (id === 'tech') A._tech = { stage: src.stage == null ? null : src.stage, unsure };
+  else if (id === 'evidence') {
+    A._evidence = { ev: copy(src.E) || {}, src: copy(src.src) || {}, count: src.count != null ? String(src.count) : '', confirm: src.confirm || null, techEv: src.techEv || '' };
+  }
+  else if (id === 'consent') A._consent = copy(src.consent);
+  else if (id === 'written') A._written = copy(src.written);
+  else if (id === 'perspective') A._perspective = copy(src.perspective);
+  else if (id === 'people') A._people = { roster: copy(src.team) || [], facilities: src.facilities || '' };
   else if (id === 'materials') A._materials = copy(src.materials);
   else {
-    const L = { id, user: [], ev: {}, count: '', confirm: null, src: {}, unsure };
+    const L = { id, user: [], unsure };
     (sc.items || []).forEach(it => {
       if (src.F && src.F[it.k] === true && !(src.I && it.k in src.I)) L.user.push(it.k);
-      if (src.E && src.E[it.k]) L.ev[it.k] = src.E[it.k];
-      if (src.src && src.src[it.k]) L.src[it.k] = copy(src.src[it.k]);
     });
-    if (id === 'cust' && src.count != null) { L.count = String(src.count); L.confirm = src.confirm || null; }
-    if (id === 'team') L.roster = copy(src.team) || [];
+    if (id === 'cust' && src.problem && typeof src.problem.known === 'boolean') L.known = src.problem.known ? 'Yes' : 'Not yet';
     A._locals = A._locals || {};
     A._locals[id] = L;
   }
@@ -299,24 +406,26 @@ function clearCommitted(id) {
   if (id === 'changes') { delete A.changeChoices; A.carry = {}; }
   else if (id === 'applicant') delete A.applicant;
   else if (id === 'project') delete A.project;
-  else if (id === 'essays') { delete A.essays; delete A.problem; }
   else if (id === 'founder') delete A.founder;
-  else if (id === 'tech') { delete A.stage; delete A.techEv; delete A.facilities; }
+  else if (id === 'tech') delete A.stage;
+  else if (id === 'evidence') { A.E = {}; A.src = {}; delete A.count; delete A.confirm; delete A.techEv; delete A.evidenceSkipped; }
+  else if (id === 'consent') delete A.consent;
+  else if (id === 'written') delete A.written;
+  else if (id === 'perspective') delete A.perspective;
+  else if (id === 'people') { delete A.team; delete A.facilities; }
   else if (id === 'materials') delete A.materials;
   else {
     (sc.items || []).forEach(it => {
-      delete A.F[it.k]; delete A.E[it.k];
+      delete A.F[it.k];
       if (A.I) delete A.I[it.k];
-      if (A.src) delete A.src[it.k];
     });
-    if (id === 'cust') { delete A.count; delete A.confirm; }
-    if (id === 'team') delete A.team;
+    if (id === 'cust') delete A.problem;
   }
 }
 
-/* A changed answer is a new submission. */
+/* A changed Part 1 answer is a new submission. Part 2 belongs to the saved row. */
 function afterRewind() {
-  meta.submissionId = newSubmissionId();
+  if (!A.part1) meta.submissionId = newSubmissionId();
   submitState = { status: 'idle' };
   invalidate();
   saveDraft();
@@ -328,11 +437,17 @@ function afterRewind() {
  * Go back one screen. The screen's answers move back into its in-progress
  * state so the applicant sees them again rather than a blank form. Each
  * checklist screen keeps its own in-progress state (A._locals), so stepping
- * back over several screens loses nothing.
+ * back over several screens loses nothing. An evidence screen that was
+ * skipped because it had nothing to ask is stepped over.
  */
 function back() {
-  const id = H.pop();
-  if (!id) return;
+  if (!canGoBack()) return;
+  let id = H.pop();
+  if (id === 'evidence' && A.evidenceSkipped && canGoBack()) {
+    clearCommitted('evidence');
+    id = H.pop();
+  }
+  stopClock();
   toProgress(id, A);
   clearCommitted(id);
   afterRewind();
@@ -364,6 +479,7 @@ function jumpTo(id) {
 
 function startOver() {
   if (!confirm('Start over? The answers you have entered so far will be cleared.')) return;
+  clock = null;
   clearDraft();
   A = freshAnswers(); H = []; P = null; meta = {};
   FILES.deck = [null]; FILES.plan = [null]; FILES.supporting = [null, null, null];
@@ -374,22 +490,37 @@ function startOver() {
 
 /* ---------- render ---------- */
 function render() {
-  $('start-over').hidden = phase !== 'intake';
+  $('start-over').hidden = phase !== 'intake' || !!(A && A.part1);
+  if (phase !== 'intake') startClock(null);
   if (phase === 'start') return renderStart();
   if (phase === 'done') return renderDone();
 
   let sc = M().nextScreen();
   // Carry forward without showing, in screen order (so Back still walks
   // through them): sections marked "No change" on a re-take (from P), or the
-  // screens set aside by jumpTo() (from its snapshot).
+  // screens set aside by jumpTo() (from its snapshot). An evidence screen with
+  // nothing to ask is passed over the same way.
   let carried = false;
-  while (sc && A.carry && A.carry[sc.id]) {
+  for (;;) {
+    if (sc && sc.id === 'evidence' && !hasEvidenceQuestions(A)) {
+      if (A.carry) delete A.carry.evidence;
+      if (A.missing) delete A.missing.evidence;
+      A.E = {}; A.src = {}; delete A.count; delete A.confirm; delete A.techEv;
+      A.done.evidence = true;
+      A.evidenceSkipped = true;
+      H.push('evidence');
+      invalidate();
+      carried = true;
+      sc = M().nextScreen();
+      continue;
+    }
+    if (!(sc && A.carry && A.carry[sc.id])) break;
     delete A.carry[sc.id];
     const src = A.carryFrom || P;
     if (A.carryFrom && isMissing(sc.id)) { toProgress(sc.id, src); break; }   // still incomplete: show it
     if (!canCarry(A, src, sc.id)) {
       if (A.carryFrom) toProgress(sc.id, src);
-      A.review = Object.assign(A.review || {}, { [sc.id]: !A.carryFrom && hasNewQuestions(P, sc.id) ? 'new' : 'changed' });
+      A.review = Object.assign(A.review || {}, { [sc.id]: !A.carryFrom && P && hasNewQuestions(P, sc.id) ? 'new' : 'changed' });
       break;
     }
     carryForward(A, src, sc.id);
@@ -399,13 +530,22 @@ function render() {
     carried = true;
     sc = M().nextScreen();
   }
-  if (!sc) { delete A.carry; delete A.carryFrom; }   // anything left was for screens no longer asked
+  if (!sc) {
+    // Anything left was for screens no longer asked. At the end of Part 1,
+    // keep the re-take's Part 2 choices for when Part 2 opens.
+    delete A.carryFrom;
+    if (A.part1 || !A.carry) delete A.carry;
+    else Object.keys(A.carry).forEach(id => { if (partOf(id) === 1) delete A.carry[id]; });
+  }
   if (carried) saveDraft();
   setLayout(true);
   rail(sc);
+  startClock(sc ? sc.id : null);
   if (!sc) return incompleteScreens().length ? renderReview() : renderSubmit();
-  ({ changes: renderChanges, applicant: renderApplicant, project: renderProject, essays: renderEssays, founder: renderFounder,
-     tech: renderTech, multi: renderMulti, materials: renderMaterials })[sc.type](sc);
+  ({ changes: renderChanges, applicant: renderApplicant, project: renderProject, founder: renderFounder,
+     tech: renderTech, multi: renderMulti, evidence: renderEvidence, consent: renderConsent,
+     written: renderWritten, perspective: renderPerspective, people: renderPeople, materials: renderMaterials })[sc.type](sc);
+  wireHelp();
   const panel = view().querySelector('.panel');
   // Just skipped required answers on the previous screen
   if (A._skipped && panel) {
@@ -439,7 +579,7 @@ function renderChanges() {
       <div class="change-text"><strong>${esc(s.label)}</strong><span>${esc(sectionSummary(P, s.id))}</span></div>
       <div class="seg" data-name="${s.id}">${['No change', 'Update'].map(o => `<button type="button" aria-pressed="${choices[s.id] === o}">${o}</button>`).join('')}</div>
     </div>`).join('')}</div>
-    <p class="hint">Asked again every time: your time and hours, and materials. Sections you didn't answer last time are new this time.</p>
+    <p class="hint">Asked again every time: your time and hours, why this and why now, and materials. Sections you didn't answer last time are new this time.</p>
     <div class="actions"><button class="btn" id="go">Continue</button><button class="btn ghost" id="pivot">We've changed direction: review everything</button><span class="status err" id="err"></span></div></div>`;
   view().querySelectorAll('.seg').forEach(seg => seg.querySelectorAll('button').forEach(b => {
     b.onclick = () => { choices[seg.dataset.name] = b.textContent; saveDraft(); renderChanges(); };
@@ -448,6 +588,9 @@ function renderChanges() {
     A.changeChoices = choices;
     A.carry = {};
     rows.forEach(s => { if (choices[s.id] === 'No change') A.carry[s.id] = true; });
+    // The evidence screen follows the checklists: carried only when none of them changed.
+    const facts = SCREENS.filter(s => s.type === 'multi' || s.id === 'tech').map(s => s.id);
+    if (rows.some(s => facts.includes(s.id)) && rows.every(s => !facts.includes(s.id) || choices[s.id] === 'No change')) A.carry.evidence = true;
     delete A._changes;
     finish('changes');
   };
@@ -464,7 +607,7 @@ function renderStart() {
     <p class="sect">Welcome</p>
     <h2 class="q">${esc(CFG.landing.heading)}</h2>
     ${CFG.landing.paragraphs.map(p => `<p>${esc(p)}</p>`).join('')}
-    <p class="hint">Takes ${esc(CFG.estimatedTime)}. Your answers are saved on this device as you go, so you can stop and come back.</p>
+    <p class="hint">${timeEstimate()}Your answers are saved on this device as you go, so you can stop and come back.</p>
     <div class="choices">
       <div class="choice">
         <h3>Start a new submission</h3>
@@ -488,7 +631,7 @@ function renderStart() {
           <button class="linkish" id="resend" ${s.busy ? 'disabled' : ''}>Forgot your code? Email it to me</button>
         </div>
         <p class="status${s.err ? ' err' : ''}" id="lk-msg" role="status">${esc(s.msg)}</p>
-        ${s.submissions ? `<div class="picklist">${s.submissions.map((x, i) => `<button class="opt" data-i="${i}"><span class="k">${esc(x.intakeNumber || '')}</span>${esc(x.project)} · ${esc(fmtDate(x.submittedAt))}</button>`).join('')}</div>` : ''}
+        ${s.submissions ? `<div class="picklist">${s.submissions.map((x, i) => `<button class="opt" data-i="${i}"><span class="k">${esc(x.intakeNumber || '')}</span>${esc(x.project)} · ${esc(fmtDate(x.submittedAt))}${x.status === PART1_STATUS ? ' · <strong>Part 2 not finished</strong>' : ''}</button>`).join('')}</div>` : ''}
       </div>
     </div></div>`;
 
@@ -510,7 +653,7 @@ function renderStart() {
       if (!res.submissions.length) { setMsg('No submissions found for that email.', true); return; }
       if (res.submissions.length === 1) { await loadPrevious(res.submissions[0]); return; }
       s.submissions = res.submissions;
-      setMsg('Choose the submission to start from:');
+      setMsg('Choose the submission to continue or start from:');
     } catch (e) {
       if (e.unauthorized) return showLogin(e.message);
       setMsg('We could not reach the server. Check your connection and try again.', true);
@@ -559,8 +702,34 @@ async function loadPrevious(sub) {
     s.err = true;
     return;
   }
+  const code = s.code;
   startState = { email: '', code: '', msg: '', err: false, busy: false, submissions: null };
+  // Part 1 saved, Part 2 not yet: carry on with Part 2 on the same row.
+  if (res.status === PART1_STATUS && res.rowToken) return resumePart2(res, sub, code);
   beginIntake({ answers: res.answers.A, submissionId: sub.submissionId, submittedAt: res.submittedAt || sub.submittedAt });
+}
+
+/* Open Part 2 of a saved Part 1 (from another browser, or after the draft was cleared). */
+function resumePart2(res, sub, code) {
+  A = res.answers.A;
+  A.E = A.E || {}; A.F = A.F || {}; A.unsure = A.unsure || {};
+  A.part1 = { submittedAt: res.submittedAt || sub.submittedAt };
+  delete A.carry; delete A.carryFrom;
+  H = (res.answers.H || []).slice();
+  P = null;
+  meta = {
+    submissionId: sub.submissionId,
+    previous: null,
+    rowToken: res.rowToken,
+    part1: { returnCode: String(code || '').toUpperCase(), intakeNumber: sub.intakeNumber || 1, emailSent: true, submittedAt: A.part1.submittedAt }
+  };
+  FILES.deck = [null]; FILES.plan = [null]; FILES.supporting = [null, null, null];
+  phase = 'intake';
+  submitState = { status: 'idle' };
+  invalidate();
+  saveDraft();
+  render();
+  window.scrollTo(0, 0);
 }
 
 /* ----- 1. Applicant ----- */
@@ -578,17 +747,14 @@ function renderApplicant() {
     ${A.lockedEmail
       ? `<div class="field"><label class="f" for="email">Email</label><input id="email" type="email" value="${esc(A.lockedEmail)}" readonly aria-readonly="true"><p class="hint">This is the email on file for your earlier submissions, so it stays the same. To use a different email, start a new submission instead.</p></div>`
       : `<div class="field"><label class="f" for="email">Email</label><input id="email" type="email" value="${esc(a.email)}" autocomplete="email"><p class="hint">We send your return code here, so you can pick up from these answers next time.</p></div>`}
-    <div class="row2">
-      <div class="field"><label class="f" for="phone">Phone <span class="opt-tag">optional</span></label><input id="phone" type="tel" value="${esc(a.phone)}" autocomplete="tel"></div>
-      <div class="field narrow"><label class="f" for="ext">Ext. <span class="opt-tag">optional</span></label><input id="ext" type="text" value="${esc(a.ext)}"></div>
-    </div>
     <div class="field"><label class="f" for="org">University or organization</label>${orgField}</div>
     <div class="field"><label class="f">Your role on the project</label>${seg(a, 'role', ['Faculty or PI', 'Co-investigator', 'Postdoc', 'Grad student', 'Founder from outside the university', 'Other'])}</div>
-    <div class="field"><label class="f" for="linkedin">Your LinkedIn or professional profile <span class="opt-tag">optional</span></label><input id="linkedin" type="url" value="${esc(a.linkedin)}" placeholder="https://"><p class="hint">You can list the rest of the team later, under Team.</p></div>
+    <div class="field"><label class="f" for="linkedin">Your LinkedIn or professional profile <span class="opt-tag">optional</span></label><input id="linkedin" type="url" value="${esc(a.linkedin)}" placeholder="https://"><p class="hint">You can list the rest of the team in Part 2.</p></div>
     <div class="actions"><button class="btn" id="go">Continue</button><span class="status err" id="err"></span></div></div>`;
   const read = () => {
     const o = Object.assign({}, a);
-    ['first', 'last', 'email', 'phone', 'ext', 'linkedin'].forEach(f => { o[f] = $(f).value.trim(); });
+    delete o.phone; delete o.ext;   // no longer asked (gen-3.0)
+    ['first', 'last', 'email', 'linkedin'].forEach(f => { o[f] = $(f).value.trim(); });
     if (A.lockedEmail) o.email = A.lockedEmail;
     o.org = $('org').value.trim();
     return o;
@@ -615,21 +781,26 @@ function renderProject() {
       ${wordHint('oneLiner', p.oneLiner)}</div>
     <div class="field"><label class="f">What form does the technology take?</label>${seg(p, 'form', FORMS)}</div>
     <div class="field"><label class="f">Has a company been legally formed (incorporated or registered as an LLC)?</label>${seg(p, 'company', ['Yes', 'No', 'Not sure'])}</div>
-    ${p.company === 'Yes' ? `<div class="field"><label class="f" for="companyName">Company name and state where it was formed</label><input id="companyName" type="text" value="${esc(p.companyName)}"></div>
-      <div class="field"><label class="f">Company type <span class="opt-tag">optional</span></label>${seg(p, 'companyType', ['LLC', 'C corp', 'S corp', 'Other'])}</div>` : ''}
-    <div class="field"><label class="f">I-Corps</label>${seg(p, 'icorps', ICORPS)}</div>
+    ${p.company === 'Yes' ? `<div class="field"><label class="f" for="companyName">Company name and state where it was formed</label><input id="companyName" type="text" value="${esc(p.companyName)}"></div>` : ''}
+    <div class="field"><label class="f" for="started">What year did work on this start?</label>${selectHtml('started-pick', yearOptions(), p.started, 'Choose a year').replace('<select ', '<select id="started" ')}</div>
+    <div class="field"><label class="f">How many different applications or markets are you considering for the technology?</label>${seg(p, 'appCount', APP_COUNTS)}</div>
+    <div class="field"><label class="f">I-Corps</label>${helpHtml('icorps', ICORPS_HELP)}${seg(p, 'icorps', ICORPS)}</div>
     <div class="field"><label class="f" for="website">Website <span class="opt-tag">optional</span></label><input id="website" type="url" value="${esc(p.website)}" placeholder="https://"></div>
     <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
   const read = () => {
     const o = Object.assign({}, p);
+    delete o.companyType;   // no longer asked (gen-3.0)
     o.title = $('ptitle').value.trim();
     o.oneLiner = $('oneLiner').value;
     o.website = $('website').value.trim();
+    o.started = $('started').value;
     if ($('companyName')) o.companyName = $('companyName').value.trim();
     return o;
   };
-  wireSegs(read, o => { if (o.company !== 'Yes') { delete o.companyName; delete o.companyType; } A._project = o; }, renderProject);
+  wireSegs(read, o => { if (o.company !== 'Yes') delete o.companyName; A._project = o; }, renderProject);
   wireWordCount('oneLiner', () => { A._project = read(); saveDraft(); });
+  $('started').onchange = () => { A._project = read(); saveDraft(); };
+  wireHelp();
   $('go').onclick = () => {
     const o = read();
     A._project = o;
@@ -643,12 +814,7 @@ function renderProject() {
   wireBack();
 }
 
-/* ----- 3. The technology and the problem ----- */
-const ESSAYS = [
-  { k: 'science', q: 'Describe the key innovation, the underlying science or technology, and what makes it distinctive.' },
-  { k: 'value', q: 'Describe the problem being solved, who the target customers are, and why existing or competing solutions are insufficient.' },
-  { k: 'impact', q: 'Explain the anticipated societal and/or economic impact and any national security relevance.' }
-];
+/* ----- word limits (the one-liner here; the Part 2 written answers below) ----- */
 function wordNote(k, text) {
   const limit = CFG.wordLimits[k], n = words(text);
   const blockAt = (CFG.wordLimitBlockAt || {})[k] || Math.floor(limit * CFG.wordLimitBlockFactor);
@@ -669,41 +835,6 @@ function wireWordCount(k, onChange, inputId = k) {
     onChange();
   };
 }
-function renderEssays() {
-  const e = A._essays || (P && P.essays ? { ...P.essays } : { nsRelevance: [] });
-  view().innerHTML = `<div class="panel"><p class="sect">The technology and the problem</p><h2 class="q">Tell us about the work</h2>
-    ${ESSAYS.map(x => `<div class="field"><label class="f" for="es_${x.k}">${esc(x.q)}</label>
-        <textarea id="es_${x.k}" class="essay" data-k="${x.k}" rows="7">${esc(e[x.k])}</textarea>
-        ${wordHint(x.k, e[x.k])}
-        ${x.k === 'value' ? `<label class="chk"><input type="checkbox" id="noCustomers" ${e.noCustomers ? 'checked' : ''}><span>We haven't identified specific customers yet.</span></label>` : ''}</div>`).join('')}
-    <div class="field"><label class="f">How many different applications or markets are you considering for the technology?</label>${seg(e, 'appCount', APP_COUNTS)}</div>
-    <div class="field"><label class="f">Where could the technology be used? <span class="opt-tag">check all that apply</span></label>${checks('ns', NS_RELEVANCE, e.nsRelevance)}</div>
-    <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
-  const read = () => {
-    const o = Object.assign({}, e);
-    ESSAYS.forEach(x => { o[x.k] = $('es_' + x.k).value; });
-    o.noCustomers = $('noCustomers').checked;
-    o.nsRelevance = readChecks('ns');
-    return o;
-  };
-  ESSAYS.forEach(x => wireWordCount(x.k, () => { A._essays = read(); saveDraft(); }, 'es_' + x.k));
-  wireSegs(read, o => { A._essays = o; }, renderEssays);
-  $('noCustomers').onchange = () => { A._essays = read(); saveDraft(); };
-  wireExclusive('ns', NOT_SURE_YET, () => { A._essays = read(); saveDraft(); });
-  $('go').onclick = () => {
-    const o = read();
-    A._essays = o;
-    const tooLong = ESSAYS.find(x => wordNote(x.k, o[x.k]).block);
-    if (tooLong) return err('Please shorten the answers marked in red.');
-    ESSAYS.forEach(x => { o[x.k] = o[x.k].trim(); });
-    delete A._essays;
-    A.essays = o;
-    A.problem = { known: !o.noCustomers };
-    finish('essays', missingRequired('essays', o));
-  };
-  wireBack();
-}
-
 /* ----- 4. You and the project ----- */
 function renderFounder() {
   // On a re-take the time questions are asked fresh: last time's answers go stale.
@@ -713,7 +844,6 @@ function renderFounder() {
   view().innerHTML = `<div class="panel"><p class="sect">You and the project</p><h2 class="q">About you and why you're doing this</h2>
     <p class="hint lead">Filling this out for someone else? Answer for the person who leads the project.</p>
     <div class="field"><label class="f">What's the main reason you want to take this beyond the lab?</label>${seg(o, 'why', ['I want to see it used', 'I want to build a company', 'My funding or department expects it', 'A company or customer asked for it', 'Not sure yet'])}</div>
-    <div class="field"><label class="f" for="whyText">In a sentence: why this, and why now? <span class="opt-tag">optional</span></label><input type="text" id="whyText" value="${esc(o.whyText)}"></div>
     <div class="field"><label class="f">What outcome do you want for this technology?</label>${seg(o, 'outcome', OUTCOMES)}</div>
     ${roles ? `<div class="field"><label class="f">If a company forms, what role do you want?</label>${seg(o, 'role', roles)}</div>` : ''}
     <div class="field"><label class="f">In the last three months, have you spent time on this outside your research duties?</label>${seg(o, 'spent', ['Yes', 'No'])}</div>
@@ -724,13 +854,11 @@ function renderFounder() {
     <div class="field"><label class="f">Prior experience <span class="opt-tag">optional, check all that apply</span></label>${checks('prior', PRIOR_EXPERIENCE, o.prior)}
       <input id="priorDetail" type="text" placeholder="Details, including anything under Other (optional)" value="${esc(o.priorDetail)}">
       <p class="hint">Leave these blank if none apply.</p></div>
-    <div class="field"><label class="f" for="changed">Describe one thing you changed in the technology or plan because of what a customer, mentor, or reviewer told you. <span class="opt-tag">optional</span></label>
-      <textarea id="changed" ${o.nothing ? 'disabled' : ''}>${esc(o.changed)}</textarea>
-      <label class="chk"><input type="checkbox" id="nothing" ${o.nothing ? 'checked' : ''}><span>Nothing yet</span></label></div>
     <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
   const read = () => {
     const x = Object.assign({}, o);
-    x.whyText = $('whyText').value; x.changed = $('changed').value; x.nothing = $('nothing').checked;
+    // asked in Part 2 since gen-3.0 ("Your perspective")
+    delete x.whyText; delete x.changed; delete x.nothing;
     x.priorDetail = $('priorDetail').value;
     x.prior = readChecks('prior');
     if ($('conflicts')) x.conflicts = $('conflicts').value;
@@ -742,7 +870,6 @@ function renderFounder() {
     if (!['No', 'Not sure'].includes(x.engagement)) delete x.conflicts;
     A._founder = x;
   }, renderFounder);
-  $('nothing').onchange = () => { A._founder = read(); renderFounder(); };
   view().querySelectorAll('.checks[data-name="prior"] input').forEach(c => {
     c.onchange = () => { A._founder = read(); saveDraft(); };
   });
@@ -750,8 +877,6 @@ function renderFounder() {
     const x = read();
     A._founder = x;
     if (!(ROLE_OPTIONS[x.outcome] || []).includes(x.role)) delete x.role;
-    x.whyText = (x.whyText || '').trim();
-    x.changed = x.nothing ? '' : (x.changed || '').trim();
     x.priorDetail = (x.priorDetail || '').trim();
     if (x.conflicts) x.conflicts = x.conflicts.trim();
     delete A._founder;
@@ -764,35 +889,31 @@ function renderFounder() {
 /* ----- Technology stage ----- */
 function renderTech() {
   const opts = trlOptions(A);
+  // The test description is asked on the evidence screen, and facilities in
+  // Part 2, so picking a higher stage never adds a question here (gen-3.0).
   const t = A._tech || (P && P.stage != null
-    ? { stage: P.stage, ev: P.techEv || '', facilities: P.facilities || '', unsure: !!(P.unsure && P.unsure.tech) }
-    : { stage: null, ev: '', facilities: '', unsure: false });
+    ? { stage: P.stage, unsure: !!(P.unsure && P.unsure.tech) }
+    : { stage: null, unsure: false });
   const note = (TRL_TRACK_CONTENT[TRACK_KEY[track(A)]] || {}).sourceNote || '';
   view().innerHTML = `<div class="panel"><p class="sect">Technology</p>
     <h2 class="q">What is the furthest your technology has gotten?</h2><p class="hint lead">Pick the furthest point reached. Each step includes the ones above it.</p>
+    ${track(A) === 'Therapeutics' ? `<p class="hint">${helpHtml('glp', GLP_GMP_HELP)}</p>` : ''}
     <div class="opts">${opts.map((o, i) => `<button class="opt" data-i="${i}" aria-pressed="${t.stage === i}"><span class="k">${i}</span><span class="opt-text"><strong>${esc(o.title)}</strong>${o.desc ? `<span class="opt-desc">${esc(o.desc)}</span>` : ''}</span></button>`).join('')}</div>
     ${note ? `<p class="hint source-note">${esc(note)}</p>` : ''}
-    ${t.stage >= 4 ? `<div class="field"><label class="f" for="tev">${t.stage >= 7 && A.E.c_proto ? 'Anything to add about where it was tested? (optional; you already named who used the prototype)' : 'Describe the most advanced test or use so far: what was tested, where, and with whom.'}</label><textarea id="tev">${esc(t.ev)}</textarea></div>` : ''}
-    ${hasFacilities(A) ? `<div class="field"><label class="f" for="fac">Facilities and equipment for prototype development or validation, and how you'll access any you don't have. <span class="opt-tag">optional</span></label><textarea id="fac">${esc(t.facilities)}</textarea></div>` : ''}
     <label class="chk"><input type="checkbox" id="tu" ${t.unsure ? 'checked' : ''}><span>I'm not sure about this one</span></label>
     <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
-  const keep = () => { if ($('tev')) t.ev = $('tev').value; if ($('fac')) t.facilities = $('fac').value; A._tech = t; };
   view().querySelectorAll('.opt').forEach(b => {
-    b.onclick = () => { keep(); t.stage = +b.dataset.i; A._tech = t; saveDraft(); renderTech(); if ($('tev')) $('tev').focus(); };
+    b.onclick = () => { t.stage = +b.dataset.i; A._tech = t; saveDraft(); renderTech(); };
   });
-  ['tev', 'fac'].forEach(id => { if ($(id)) $(id).oninput = () => { keep(); saveDraft(); }; });
   $('tu').onchange = () => { t.unsure = $('tu').checked; A._tech = t; };
   $('go').onclick = () => {
-    keep();
-    const ev = (t.ev || '').trim();
-    const missing = missingRequired('tech', { stage: t.stage, ev }, { A });
+    const missing = missingRequired('tech', { stage: t.stage });
     delete A._tech;
     A.stage = t.stage;
-    A.techEv = t.stage >= 4 ? ev : '';
-    A.facilities = hasFacilities(A) ? (t.facilities || '').trim() : '';
     if (t.unsure) A.unsure.tech = true;
     finish('tech', missing);
   };
+  wireHelp();
   wireBack();
 }
 
@@ -816,176 +937,335 @@ function renderMulti(sc) {
   A._locals = A._locals || {};
   let L = A._locals[sc.id];
   if (!L) {
-    L = A._locals[sc.id] = { id: sc.id, user: [], ev: {}, count: '', confirm: null, src: {}, unsure: false };
+    L = A._locals[sc.id] = { id: sc.id, user: [], unsure: false };
     if (P && P.F) {
       // Re-take: start from last time's checks (only the ones the applicant
       // ticked, not ones that were counted from other answers).
       L.user = sc.items.filter(it => P.F[it.k] === true && !(P.I && it.k in P.I) && !pre.has(it.k)).map(it => it.k);
-      sc.items.forEach(it => {
-        if (P.E && P.E[it.k]) L.ev[it.k] = P.E[it.k];
-        if (P.src && P.src[it.k]) L.src[it.k] = JSON.parse(JSON.stringify(P.src[it.k]));
-      });
-      if (sc.id === 'cust' && P.count != null) { L.count = String(P.count); L.confirm = P.confirm || null; }
-      if (sc.id === 'team' && P.team) L.roster = JSON.parse(JSON.stringify(P.team));
-      // a plan or canvas link from last time (files were attached to the earlier row)
-      if (sc.id === 'docs' && P.uploads && P.uploads.plan && P.uploads.plan.link && !slotValue('plan', 0)) setSlot('plan', 0, { link: P.uploads.plan.link });
+      if (sc.id === 'cust' && P.problem && typeof P.problem.known === 'boolean') L.known = P.problem.known ? 'Yes' : 'Not yet';
       L.unsure = !!(P.unsure && P.unsure[sc.id]);
       prune(L);
     }
   }
-  if (sc.id === 'team') L.roster = L.roster || [];
-  L.src = L.src || {};
-
-  // Interviews behind a conclusion: the live count on the Customers screen, the saved one elsewhere.
-  const interviews = () => {
-    const raw = sc.id === 'cust' ? L.count : A.count;
-    const n = Number(raw);
-    return raw === '' || raw == null || !(n > 0) ? 0 : Math.floor(n);
-  };
-  // Under a conclusion item the applicant checked: where it came from, and how many said it.
-  const sourceHtml = it => {
-    const s = L.src[it.k] || {}, from = s.from || [], n = interviews();
-    const said = from.includes(CONVERSATIONS)
-      ? `<label class="f" for="said_${it.k}" style="margin-top:10px">${n ? `How many of the ${n} people you interviewed said this?` : 'How many people said this?'}</label>
-         <input type="number" id="said_${it.k}" class="said" min="0" ${n ? `max="${n}"` : ''} step="1" inputmode="numeric" value="${esc(s.said == null ? '' : s.said)}" style="max-width:140px">`
-      : '';
-    return `<div class="sub src-pick"><label class="f">Where does this come from? <span class="opt-tag">pick all that apply</span></label>
-      ${checks('src_' + it.k, SOURCES, from)}${said}</div>`;
-  };
 
   const eff = closeSet([...pre, ...L.user]);
   const vis = sc.items.filter(it => pre.has(it.k) || m.itemVisible(it, eff));
-  // the plan or canvas upload sits under the last of those items that is checked
-  const planHost = vis.filter(it => it.special === 'plan' && eff.has(it.k)).map(it => it.k).pop();
+  // Ticking a box never adds a question to this page (gen-3.0): details,
+  // sources, and the interview count are asked on the evidence screen.
   const row = it => {
     const on = eff.has(it.k), userOn = L.user.includes(it.k), locked = on && !userOn;
     const note = pre.has(it.k) ? 'Covered by an earlier answer' : locked ? 'Included by another item you checked' : '';
-    let extra = '';
-    if (userOn && it.ev) extra = `<div class="sub"><label class="f" for="ev_${it.k}">${esc(it.ev)}</label><input type="text" id="ev_${it.k}" value="${esc(L.ev[it.k] || '')}"></div>`;
-    if (userOn && SOURCE_ITEMS[it.k]) extra += sourceHtml(it);
-    if (it.k === planHost) extra += `<div class="sub"><label class="f">Upload the plan or canvas <span class="opt-tag">optional</span></label>${slotHtml('plan', 0)}</div>`;
-    if (on && it.special === 'count') {
-      const n = L.count === '' ? null : Number(L.count);
-      extra += `<div class="sub"><label class="f" for="cnt">How many potential customers or users outside your university have you interviewed?</label><input type="number" id="cnt" min="0" step="1" inputmode="numeric" value="${esc(L.count)}" style="max-width:140px">
-      ${n != null && n > 0 ? `<p class="f" style="margin:12px 0 6px;font-weight:500">Did most of them confirm the problem is real and happens often?</p>${seg(L, 'confirm', ['Yes', 'No', 'Not sure'])}` : ''}</div>`;
-    }
-    if (on && it.special === 'deck') extra += `<div class="sub"><label class="f">Upload the deck <span class="opt-tag">optional</span></label>${slotHtml('deck', 0)}</div>`;
-    return `<div class="item${on ? ' on' : ''}"><label class="chk"><input type="checkbox" data-k="${it.k}" ${on ? 'checked' : ''} ${locked ? 'disabled' : ''}><span>${esc(displayText(it.label, sc.id, A))}${note ? `<span class="lock">${note}</span>` : ''}</span></label>${extra}</div>`;
+    return `<div class="item${on ? ' on' : ''}"><label class="chk"><input type="checkbox" data-k="${it.k}" ${on ? 'checked' : ''} ${locked ? 'disabled' : ''}><span>${esc(displayText(itemLabel(it.k, A), sc.id, A))}${note ? `<span class="lock">${note}</span>` : ''}</span></label>${helpHtml(it.k, it.help)}</div>`;
   };
-  view().innerHTML = `<div class="panel"><p class="sect">${esc(sc.sect)}</p><h2 class="q">${esc(displayText(sc.q, sc.id, A))}</h2><p class="hint lead">Check all that apply. Leave the rest blank.</p>
+  // Customers first asks outright whether specific customers are identified
+  // (Market 1 and Product 1): never inferred from an unticked box.
+  const known = sc.id === 'cust'
+    ? `<div class="field known"><p class="f">${esc(displayText(CUSTOMERS_KNOWN_Q, sc.id, A))}</p>${seg(L, 'known', CUSTOMERS_KNOWN)}</div>`
+    : '';
+  view().innerHTML = `<div class="panel"><p class="sect">${esc(sc.sect)}</p>${known}<h2 class="q">${esc(displayText(sc.q, sc.id, A))}</h2><p class="hint lead">Check all that apply. Leave the rest blank.</p>
     <div class="items">${vis.map(row).join('')}</div>
     <label class="chk unsure"><input type="checkbox" id="un" ${L.unsure ? 'checked' : ''}><span>I'm not sure about some of these</span></label>
-    ${sc.id === 'team' ? rosterHtml(L.roster) : ''}
     <div class="actions"><button class="btn" id="go">${vis.some(it => eff.has(it.k)) ? 'Continue' : 'None of these, continue'}</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
 
-  const keep = () => {
-    sc.items.forEach(it => {
-      const e = $('ev_' + it.k); if (e) L.ev[it.k] = e.value;
-      if (view().querySelector(`.checks[data-name="src_${it.k}"]`)) {
-        const s = L.src[it.k] = L.src[it.k] || {};
-        s.from = readChecks('src_' + it.k);
-        const said = $('said_' + it.k);
-        if (said) s.said = said.value === '' ? null : Number(said.value); else delete s.said;
-      }
-    });
-    if ($('cnt')) L.count = $('cnt').value;
-    if (sc.id === 'team') L.roster = readRoster();
-  };
-  if (sc.id === 'team') wireRoster(L, keep, () => renderMulti(sc));
-  // source picks: "Not sure" is exclusive; picking conversations shows the count
-  Object.keys(SOURCE_ITEMS).forEach(k => wireExclusive('src_' + k, SOURCE_NOT_SURE, () => { keep(); saveDraft(); renderMulti(sc); }));
-  view().querySelectorAll('.said').forEach(x => { x.oninput = () => { keep(); saveDraft(); }; });
+  view().querySelectorAll('.seg[data-name="known"] button').forEach(b => {
+    b.onclick = () => { L.known = b.textContent; saveDraft(); renderMulti(sc); };
+  });
   view().querySelectorAll('.items input[data-k]').forEach(x => {
     x.onchange = () => {
-      keep();
       const k = x.dataset.k;
       L.user = x.checked ? L.user.concat(k) : L.user.filter(u => u !== k);
       prune(L);
       saveDraft();
       renderMulti(sc);
-      const e = $('ev_' + k) || ($('cnt') && k === 'c_talk' ? $('cnt') : null);
-      if (x.checked && e) e.focus();
     };
   });
-  if ($('cnt')) {
-    $('cnt').oninput = () => {
-      const before = Number(L.count) > 0;
-      L.count = $('cnt').value;
-      if ((Number(L.count) > 0) !== before) { keep(); renderMulti(sc); $('cnt').focus(); return; }
-      // the "of N" wording under the price item follows the count, in place
-      const said = $('said_c_price'), n = interviews();
-      if (said) {
-        view().querySelector('label[for="said_c_price"]').textContent = n ? `How many of the ${n} people you interviewed said this?` : 'How many people said this?';
-        if (n) said.max = n; else said.removeAttribute('max');
-      }
-    };
-  }
-  view().querySelectorAll('.seg[data-name="confirm"] button').forEach(b => { b.onclick = () => { keep(); L.confirm = b.textContent; renderMulti(sc); }; });
-  wireSlots(() => { keep(); renderMulti(sc); });
   $('un').onchange = () => { L.unsure = $('un').checked; };
   $('go').onclick = () => {
-    keep();
     const eff2 = closeSet([...pre, ...L.user]);
     const vis2 = sc.items.filter(it => pre.has(it.k) || m.itemVisible(it, eff2));
-    // Wrong answers stop here; missing ones are allowed and marked (see finish()).
-    if (vis2.some(it => it.special === 'plan')) {
-      if (!vis2.some(it => it.special === 'plan' && eff2.has(it.k))) setSlot('plan', 0, null);
-      else if (fileMissing('plan', 0)) return err('Choose the plan or canvas file again, or remove it.');
-    }
-    let roster = null;
-    if (sc.id === 'team') {
-      roster = L.roster.map(p => ({ name: (p.name || '').trim(), role: p.role || '', time: p.time || '', link: (p.link || '').trim(), expertise: (p.expertise || '').trim() }))
-        .filter(p => p.name || p.role || p.time || p.link || p.expertise);
-      if (roster.some(p => p.link && !URL_RE.test(p.link))) return err('Profile links start with http:// or https://.');
-    }
-    const talking = eff2.has('c_talk') && vis2.some(it => it.k === 'c_talk');
-    if (talking && L.count !== '' && !(Number(L.count) >= 0)) return err('Enter how many people you have interviewed, as a number.');
-    const n = interviews();
-    for (const k of Object.keys(SOURCE_ITEMS)) {
-      const s = L.src[k];
-      if (!L.user.includes(k) || !s || s.said == null) continue;
-      if (!(s.said >= 0)) return err('Enter how many people said it, as a number.');
-      if (n && s.said > n) return err('The number who said it can\'t be more than the ' + n + ' people you interviewed.');
-    }
-    const missing = missingRequired(sc.id, { visible: vis2, eff: eff2, user: L.user, ev: L.ev, count: L.count, confirm: L.confirm, src: L.src, roster: L.roster }, { A, config: CFG });
-    if (talking) {
-      if (L.count !== '') A.count = Math.floor(Number(L.count)); else delete A.count;
-      if (n > 0 && L.confirm) A.confirm = L.confirm; else delete A.confirm;
-    }
-    A.src = A.src || {};
-    for (const k of Object.keys(SOURCE_ITEMS)) {
-      if (!vis2.some(it => it.k === k)) continue;
-      const s = L.src[k];
-      if (L.user.includes(k) && s && (s.from || []).length) {
-        A.src[k] = { from: s.from.slice() };
-        if (s.from.includes(CONVERSATIONS) && s.said != null) A.src[k].said = Math.floor(s.said);
-      } else delete A.src[k];
-    }
-    if (vis2.some(it => it.special === 'deck')) {
-      if (!eff2.has('f_deck')) setSlot('deck', 0, null);
-      else if (fileMissing('deck', 0)) return err('Choose the deck file again, or remove it.');
-    }
+    const missing = missingRequired(sc.id, { known: L.known });
     const by0 = m.by;
     A.I = A.I || {};
+    // gen-3.2: drop an answer to an item the current technology form doesn't ask
+    // (Product 5 differs on the health tracks), so a changed form can't leave it counting.
+    sc.items.forEach(it => { if (!trackAllows(it, A)) { delete A.F[it.k]; delete A.I[it.k]; } });
     vis2.forEach(it => {
       A.F[it.k] = eff2.has(it.k);
-      if (L.user.includes(it.k) && it.ev) {
-        const text = (L.ev[it.k] || '').trim();
-        if (text) A.E[it.k] = text; else delete A.E[it.k];
-      }
       if (eff2.has(it.k) && !L.user.includes(it.k)) {
         const src = pre.has(it.k) ? by0[it.k] : L.user.find(u => closeSet([u]).has(it.k));
         A.I[it.k] = src || '';
       }
     });
+    if (sc.id === 'cust') {
+      if (L.known) A.problem = { known: L.known === 'Yes' }; else delete A.problem;
+    }
     if (L.unsure) A.unsure[sc.id] = true;
-    if (roster) A.team = roster;
     finish(sc.id, missing);
+  };
+  wireHelp();
+  wireBack();
+}
+
+/* ----- About your evidence: every follow-up to a ticked box (gen-3.0) ----- */
+// Each question repeats the claim it backs up. Required: a short phrase for a
+// claim that unlocks a level. Optional: numbers that need looking up.
+function renderEvidence() {
+  const items = evidenceItems(A);
+  if (!A._evidence) {
+    const from = P || {};
+    A._evidence = {
+      ev: Object.assign({}, from.E || {}, A.E || {}),
+      src: JSON.parse(JSON.stringify(Object.assign({}, from.src || {}, A.src || {}))),
+      count: A.count != null ? String(A.count) : (from.count != null ? String(from.count) : ''),
+      confirm: A.confirm || from.confirm || null,
+      techEv: A.techEv || from.techEv || ''
+    };
+  }
+  const L = A._evidence;
+  L.ev = L.ev || {}; L.src = L.src || {};
+  const interviews = () => {
+    const n = Number(L.count);
+    return L.count === '' || L.count == null || !(n > 0) ? 0 : Math.floor(n);
+  };
+  const saidLabel = n => n ? `How many of the ${n} people you interviewed said this?` : 'How many people said this?';
+  const youSaid = (text, screenId) => `<p class="you-said">You said: "${esc(displayText(text, screenId, A))}"</p>`;
+  const optTag = '<span class="opt-tag">optional: add it now if you have it handy, or send it later</span>';
+
+  const sourceBlock = k => {
+    const s = L.src[k] || {}, from = s.from || [], n = interviews();
+    const said = from.includes(CONVERSATIONS)
+      ? `<label class="f" for="said_${k}" style="margin-top:10px">${saidLabel(n)}</label>
+         <input type="number" id="said_${k}" class="said" min="0" ${n ? `max="${n}"` : ''} step="1" inputmode="numeric" value="${esc(s.said == null ? '' : s.said)}" style="max-width:140px">`
+      : '';
+    return `<div class="ev-item">${youSaid(LABEL_OF(k), screenOf(k))}
+      <label class="f">Where does this come from? <span class="opt-tag">pick all that apply</span></label>
+      ${checks('src_' + k, SOURCES, from)}${said}</div>`;
+  };
+  const detailBlock = d => `<div class="ev-item">${youSaid(d.label, d.screen)}
+    <label class="f" for="ev_${d.k}">${esc(d.ev)} ${d.optional ? optTag : ''}</label>
+    <input type="text" id="ev_${d.k}" value="${esc(L.ev[d.k] || '')}"></div>`;
+
+  const custDetails = items.details.filter(d => d.screen === 'cust');
+  const otherDetails = items.details.filter(d => d.screen !== 'cust');
+  const n = interviews();
+  const discovery = items.count || items.sources.length || custDetails.length
+    ? `<h3 class="ev-head">Customers</h3>
+      ${items.count ? `<div class="ev-item">${youSaid(LABEL_OF('c_talk'), 'cust')}
+        <label class="f" for="cnt">How many potential customers or users outside your university have you interviewed?</label>
+        <input type="number" id="cnt" min="0" step="1" inputmode="numeric" value="${esc(L.count)}" style="max-width:140px">
+        ${n > 0 ? `<p class="f" style="margin:12px 0 6px;font-weight:500">Did most of them confirm the problem is real and happens often?</p>${seg(L, 'confirm', ['Yes', 'No', 'Not sure'])}` : ''}</div>` : ''}
+      ${items.sources.map(sourceBlock).join('')}
+      ${custDetails.map(detailBlock).join('')}`
+    : '';
+  const tech = items.techEv
+    ? `<h3 class="ev-head">Technology</h3><div class="ev-item">${youSaid(trlOptions(A)[A.stage].title, 'tech')}
+      <label class="f" for="tev">Describe the most advanced test or use so far: what was tested, where, and with whom.${items.techEv === 'optional' ? ' <span class="opt-tag">optional once you name who used the prototype</span>' : ''}</label>
+      <textarea id="tev">${esc(L.techEv)}</textarea></div>`
+    : '';
+  const others = otherDetails.length ? `<h3 class="ev-head">Other details</h3>${otherDetails.map(detailBlock).join('')}` : '';
+
+  view().innerHTML = `<div class="panel"><p class="sect">About your evidence</p><h2 class="q">A few details about what you told us</h2>
+    <p class="hint lead">These back up what you checked. The optional ones you can add now if you have them handy, or send later.</p>
+    ${discovery}${tech}${others}
+    <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
+
+  const keep = () => {
+    items.details.forEach(d => { const e = $('ev_' + d.k); if (e) L.ev[d.k] = e.value; });
+    items.sources.forEach(k => {
+      const s = L.src[k] = L.src[k] || {};
+      s.from = readChecks('src_' + k);
+      const said = $('said_' + k);
+      if (said) s.said = said.value === '' ? null : Number(said.value); else delete s.said;
+    });
+    if ($('cnt')) L.count = $('cnt').value;
+    if ($('tev')) L.techEv = $('tev').value;
+  };
+  // source picks: "Not sure" is exclusive; picking conversations shows the count
+  items.sources.forEach(k => wireExclusive('src_' + k, SOURCE_NOT_SURE, () => { keep(); saveDraft(); renderEvidence(); }));
+  view().querySelectorAll('.ev-item input[type=text], .said, #tev').forEach(x => { x.oninput = () => { keep(); saveDraft(); }; });
+  if ($('cnt')) {
+    $('cnt').oninput = () => {
+      const before = interviews() > 0;
+      keep();
+      saveDraft();
+      if ((interviews() > 0) !== before) { renderEvidence(); $('cnt').focus(); return; }
+      // the "of N" wording under each conclusion follows the count, in place
+      const now = interviews();
+      items.sources.forEach(k => {
+        const said = $('said_' + k);
+        if (!said) return;
+        view().querySelector(`label[for="said_${k}"]`).textContent = saidLabel(now);
+        if (now) said.max = now; else said.removeAttribute('max');
+      });
+    };
+  }
+  view().querySelectorAll('.seg[data-name="confirm"] button').forEach(b => { b.onclick = () => { keep(); L.confirm = b.textContent; saveDraft(); renderEvidence(); }; });
+  $('go').onclick = () => {
+    keep();
+    // Wrong answers stop here; missing ones are allowed and marked (see finish()).
+    if (items.count && L.count !== '' && !(Number(L.count) >= 0)) return err('Enter how many people you have interviewed, as a number.');
+    const count = interviews();
+    for (const k of items.sources) {
+      const s = L.src[k];
+      if (!s || s.said == null) continue;
+      if (!(s.said >= 0)) return err('Enter how many people said it, as a number.');
+      if (count && s.said > count) return err('The number who said it can\'t be more than the ' + count + ' people you interviewed.');
+    }
+    const missing = missingRequired('evidence', { items, ev: L.ev, src: L.src, count: L.count, confirm: L.confirm, techEv: L.techEv });
+    // Keep only what is asked now: an unticked claim takes its detail with it.
+    A.E = {};
+    items.details.forEach(d => { const t = (L.ev[d.k] || '').trim(); if (t) A.E[d.k] = t; });
+    A.src = {};
+    items.sources.forEach(k => {
+      const s = L.src[k];
+      if (!s || !(s.from || []).length) return;
+      A.src[k] = { from: s.from.slice() };
+      if (s.from.includes(CONVERSATIONS) && s.said != null) A.src[k].said = Math.floor(s.said);
+    });
+    delete A.count; delete A.confirm; delete A.techEv;
+    if (items.count) {
+      if (L.count !== '') A.count = Math.floor(Number(L.count));
+      if (count > 0 && L.confirm) A.confirm = L.confirm;
+    }
+    if (items.techEv && (L.techEv || '').trim()) A.techEv = L.techEv.trim();
+    delete A.evidenceSkipped;
+    delete A._evidence;
+    finish('evidence', missing);
+  };
+  wireBack();
+}
+const LABEL_OF = k => itemLabel(k, A) || k;
+const screenOf = k => (SCREENS.find(s => (s.items || []).some(it => it.k === k)) || {}).id;
+
+/* ----- Save Part 1: two quick picks, the handling text, then straight on to Part 2 ----- */
+function renderConsent() {
+  const c = A._consent || {
+    help: P && P.consent && P.consent.help ? [...P.consent.help] : [],
+    completedWith: P && P.consent ? P.consent.completedWith : undefined,
+    ack: false,
+    aiOptOut: !!(P && P.consent && P.consent.aiOptOut)
+  };
+  const h = CFG.submissionHandling;
+  const t2 = (CFG.estimatedTime || {}).part2;
+  view().innerHTML = `<div class="panel"><p class="sect">Save Part 1</p><h2 class="q">Two quick questions, then on to Part 2</h2>
+    <div class="field"><label class="f">What would help most right now? <span class="opt-tag">check all that apply</span></label>${checks('help', HELP, c.help)}</div>
+    <div class="field"><label class="f">Did anyone help you fill this in? <span class="opt-tag">optional</span></label>${seg(c, 'completedWith', COMPLETED_WITH)}</div>
+    <div class="handling"><h3>${esc(h.heading)}</h3>${h.paragraphs.map(x => `<p>${esc(x)}</p>`).join('')}
+      <label class="chk"><input type="checkbox" id="ack" ${c.ack ? 'checked' : ''}><span>${esc(h.ackLabel)} <span class="opt-tag">required</span></span></label>
+      <label class="chk"><input type="checkbox" id="optout" ${c.aiOptOut ? 'checked' : ''}><span>${esc(h.optOutLabel)} <span class="opt-tag">optional</span></span></label></div>
+    <div class="hp" aria-hidden="true"><label for="company_fax">Leave this field empty</label><input type="text" id="company_fax" name="company_fax" tabindex="-1" autocomplete="off" value="${esc(HP)}"></div>
+    <p class="hint">Next is Part 2, the last part: the technology and where it could be used, in your own words${t2 ? ` (${esc(t2)})` : ''}. We'll save Part 1 first, so nothing is lost if you need to stop.</p>
+    <div class="actions"><button class="btn" id="go">${incompleteScreens().length ? 'Continue' : 'Save and continue to Part 2'}</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
+  const read = () => ({ help: readChecks('help'), completedWith: c.completedWith, ack: $('ack').checked, aiOptOut: $('optout').checked });
+  view().querySelectorAll('input[type=checkbox]').forEach(x => { x.onchange = () => { A._consent = read(); saveDraft(); }; });
+  wireSegs(read, o => { A._consent = o; }, renderConsent);
+  $('company_fax').oninput = () => { HP = $('company_fax').value; };
+  $('go').onclick = () => {
+    const x = read();
+    A._consent = x;
+    // The acknowledgment blocks even under skip-ahead: nothing is stored without it.
+    if (!x.ack) return err('Please confirm you\'ve read how NobleReach handles your submission.');
+    HP = $('company_fax').value;
+    delete A._consent;
+    A.consent = x;
+    finish('consent', missingRequired('consent', x));
   };
   wireBack();
 }
 
-/* ----- team roster (Team screen; optional) ----- */
+/* ----- Part 2: the technology and its applications ----- */
+function renderWritten() {
+  const w = A._written || (P && P.written ? JSON.parse(JSON.stringify(P.written)) : { nsRelevance: [] });
+  w.nsRelevance = w.nsRelevance || [];
+  const W = CFG.written;
+  const box = (k, rows) => `<div class="field"><label class="f" for="wr_${k}">${esc(W[k].q)}</label>
+      <p class="hint cover-intro">Cover:</p><ul class="cover">${W[k].cover.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+      <textarea id="wr_${k}" class="essay" rows="${rows}">${esc(w[k])}</textarea>
+      ${wordHint(k, w[k])}</div>`;
+  view().innerHTML = `<div class="panel"><p class="sect">The technology and its applications</p>${part2Intro()}<h2 class="q">In your own words</h2>
+    ${prefillNote()}
+    ${box('technology', 9)}
+    ${box('applications', 7)}
+    <div class="field"><label class="f">Where could the technology be used? <span class="opt-tag">optional, check all that apply</span></label>${checks('ns', NS_RELEVANCE, w.nsRelevance)}</div>
+    <div class="field"><label class="f" for="wr_impact">${esc(W.impact)} <span class="opt-tag">optional</span></label>
+      <textarea id="wr_impact" class="short" rows="2">${esc(w.impact)}</textarea>${wordHint('impact', w.impact)}</div>
+    <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}${laterLink()}<span class="status err" id="err"></span></div></div>`;
+  const read = () => ({
+    technology: $('wr_technology').value, applications: $('wr_applications').value,
+    impact: $('wr_impact').value, nsRelevance: readChecks('ns')
+  });
+  ['technology', 'applications', 'impact'].forEach(k => wireWordCount(k, () => { A._written = read(); saveDraft(); }, 'wr_' + k));
+  wireExclusive('ns', NOT_SURE_YET, () => { A._written = read(); saveDraft(); });
+  $('go').onclick = () => {
+    const o = read();
+    A._written = o;
+    if (['technology', 'applications', 'impact'].some(k => wordNote(k, o[k]).block)) return err('Please shorten the answers marked in red.');
+    ['technology', 'applications', 'impact'].forEach(k => { o[k] = o[k].trim(); });
+    delete A._written;
+    A.written = o;
+    delete meta.part2Intro;
+    finish('written', missingRequired('written', o));
+  };
+  wireBack();
+}
+
+/* ----- Part 2: your perspective (why now, what changed, collaborators) ----- */
+function renderPerspective() {
+  const o = A._perspective || (P && P.perspective ? { ...P.perspective } : {});
+  view().innerHTML = `<div class="panel"><p class="sect">Your perspective</p><h2 class="q">A little about how you see it</h2>
+    <div class="field"><label class="f" for="whyText">In a sentence: why this, and why now?</label>
+      <textarea id="whyText" class="short" rows="2">${esc(o.whyText)}</textarea>${wordHint('whyText', o.whyText)}</div>
+    <div class="field"><label class="f" for="changed">Describe one thing you changed in the technology or plan because of what a customer, mentor, or reviewer told you.</label>
+      <textarea id="changed" class="short" rows="3" ${o.nothing ? 'disabled' : ''}>${esc(o.changed)}</textarea>${wordHint('changed', o.changed)}
+      <label class="chk"><input type="checkbox" id="nothing" ${o.nothing ? 'checked' : ''}><span>Nothing yet</span></label></div>
+    <div class="field"><label class="f" for="collaborators">Key collaborators or industry partners, if any. <span class="opt-tag">optional</span></label>
+      <textarea id="collaborators" class="short" rows="2">${esc(o.collaborators)}</textarea>${wordHint('collaborators', o.collaborators)}</div>
+    <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}${laterLink()}<span class="status err" id="err"></span></div></div>`;
+  const read = () => ({ whyText: $('whyText').value, changed: $('changed').value, nothing: $('nothing').checked, collaborators: $('collaborators').value });
+  ['whyText', 'changed', 'collaborators'].forEach(k => wireWordCount(k, () => { A._perspective = read(); saveDraft(); }));
+  $('nothing').onchange = () => { A._perspective = read(); renderPerspective(); };
+  $('go').onclick = () => {
+    const x = read();
+    A._perspective = x;
+    if (['whyText', 'changed', 'collaborators'].some(k => wordNote(k, x[k]).block)) return err('Please shorten the answers marked in red.');
+    x.whyText = x.whyText.trim();
+    x.changed = x.nothing ? '' : x.changed.trim();
+    x.collaborators = x.collaborators.trim();
+    delete A._perspective;
+    A.perspective = x;
+    finish('perspective', missingRequired('perspective', x));
+  };
+  wireBack();
+}
+
+/* ----- Part 2: who's involved (the roster, and facilities for physical work) ----- */
+function renderPeople() {
+  const L = A._people = A._people || {
+    roster: P && P.team ? JSON.parse(JSON.stringify(P.team)) : [],
+    facilities: (P && P.facilities) || ''
+  };
+  view().innerHTML = `<div class="panel"><p class="sect">Who's involved</p><h2 class="q">The people and resources behind it</h2>
+    ${rosterHtml(L.roster)}
+    ${hasFacilities(A) ? `<div class="field"><label class="f" for="fac">Facilities and equipment for prototype development or validation, and how you'll access any you don't have. <span class="opt-tag">optional</span></label><textarea id="fac">${esc(L.facilities)}</textarea></div>` : ''}
+    <div class="actions"><button class="btn" id="go">Continue</button>${backLink()}${laterLink()}<span class="status err" id="err"></span></div></div>`;
+  const keep = () => { L.roster = readRoster(); if ($('fac')) L.facilities = $('fac').value; };
+  wireRoster(L, keep, renderPeople);
+  if ($('fac')) $('fac').oninput = () => { keep(); saveDraft(); };
+  $('go').onclick = () => {
+    keep();
+    const roster = L.roster.map(p => ({ name: (p.name || '').trim(), role: p.role || '', time: p.time || '', link: (p.link || '').trim(), expertise: (p.expertise || '').trim() }))
+      .filter(p => p.name || p.role || p.time || p.link || p.expertise);
+    if (roster.some(p => p.link && !URL_RE.test(p.link))) return err('Profile links start with http:// or https://.');
+    const missing = missingRequired('people', { roster });
+    A.team = roster;
+    A.facilities = hasFacilities(A) ? (L.facilities || '').trim() : '';
+    delete A._people;
+    finish('people', missing);
+  };
+  wireBack();
+}
+
+/* ----- team roster (Who's involved; optional) ----- */
 function rosterHtml(roster) {
   // An earlier submission's free-text team list, so it can be re-entered here.
   const legacy = P && !P.team && P.applicant && P.applicant.team;
@@ -1020,52 +1300,42 @@ function wireRoster(L, keep, rerender) {
   };
 }
 
-/* ----- 12. Materials and submit ----- */
-const HELP = ['Introductions to potential customers', 'A business co-founder or CEO', 'IP or licensing guidance', 'Help applying for SBIR/STTR or grants', 'Investor introductions', 'Product or engineering help', 'Regulatory or certification guidance', 'A mentor in my industry'];
-
+/* ----- Part 2: materials and submit ----- */
 function renderMaterials() {
-  const mt = A._materials || { help: P && P.materials && P.materials.help ? [...P.materials.help] : [], ack: false, aiOptOut: !!(P && P.materials && P.materials.aiOptOut), anythingElse: '' };
+  const mt = A._materials || { anythingElse: '' };
   // Re-take: links from last time carry over (files were attached to the earlier row).
   if (!A._materials && P && P.uploads && !A.linksCarried) {
     A.linksCarried = true;
     const pu = P.uploads;
     if (pu.deck && pu.deck.link && !slotValue('deck', 0)) setSlot('deck', 0, { link: pu.deck.link });
-    // the plan link, when Plans on paper was carried forward without being shown
-    if (pu.plan && pu.plan.link && !slotValue('plan', 0) && (A.F.d_bmc || A.F.d_plan)) setSlot('plan', 0, { link: pu.plan.link });
+    if (pu.plan && pu.plan.link && !slotValue('plan', 0)) setSlot('plan', 0, { link: pu.plan.link });
     (pu.supporting || []).forEach((x, i) => { if (x && x.link && !slotValue('supporting', i)) setSlot('supporting', i, { link: x.link }); });
   }
-  const deckFromFunding = A.F.f_deck === true && slotValue('deck', 0);
-  const h = CFG.submissionHandling;
+  // The plan or canvas slot, for applicants who said they have one written down.
+  const planAsked = A.F.d_bmc === true || A.F.d_plan === true;
+  if (!planAsked && slotValue('plan', 0)) setSlot('plan', 0, null);
   view().innerHTML = `<div class="panel"><p class="sect">Materials and submit</p><h2 class="q">Last, add any materials and submit</h2>
-    ${deckFromFunding ? '' : `<div class="field"><label class="f">Pitch deck <span class="opt-tag">optional</span></label>${slotHtml('deck', 0)}</div>`}
+    <div class="field"><label class="f">Pitch deck <span class="opt-tag">optional</span></label>${slotHtml('deck', 0)}</div>
+    ${planAsked ? `<div class="field"><label class="f">Business plan or canvas <span class="opt-tag">optional</span></label>${slotHtml('plan', 0)}</div>` : ''}
     <div class="field"><label class="f">Supporting materials <span class="opt-tag">optional, up to ${CFG.uploads.maxSupporting}</span></label>
       <p class="hint" style="margin:0 0 8px">Publications, white papers, prototype images, or videos. Files up to ${Math.round(CFG.uploads.maxBytes / 1048576)} MB; for anything bigger, share a link.</p>
       ${Array.from({ length: CFG.uploads.maxSupporting }, (_, i) => slotHtml('supporting', i)).join('')}</div>
-    <div class="field"><label class="f">What would help most right now? <span class="opt-tag">check all that apply</span></label>${checks('help', HELP, mt.help)}</div>
     <div class="field"><label class="f" for="anythingElse">Anything else we should know? <span class="opt-tag">optional</span></label>
       <textarea id="anythingElse" rows="4">${esc(mt.anythingElse)}</textarea>
       ${wordHint('anythingElse', mt.anythingElse)}</div>
-    <div class="handling"><h3>${esc(h.heading)}</h3>${h.paragraphs.map(x => `<p>${esc(x)}</p>`).join('')}
-      <label class="chk"><input type="checkbox" id="ack" ${mt.ack ? 'checked' : ''}><span>${esc(h.ackLabel)} <span class="opt-tag">required</span></span></label>
-      <label class="chk"><input type="checkbox" id="optout" ${mt.aiOptOut ? 'checked' : ''}><span>${esc(h.optOutLabel)} <span class="opt-tag">optional</span></span></label></div>
-    <div class="hp" aria-hidden="true"><label for="company_fax">Leave this field empty</label><input type="text" id="company_fax" name="company_fax" tabindex="-1" autocomplete="off" value="${esc(HP)}"></div>
-    <div class="actions"><button class="btn" id="go">${incompleteScreens().length ? 'Continue' : 'Submit'}</button>${backLink()}<span class="status err" id="err"></span></div></div>`;
-  const read = () => ({ help: readChecks('help'), ack: $('ack').checked, aiOptOut: $('optout').checked, anythingElse: $('anythingElse').value });
-  view().querySelectorAll('input[type=checkbox]').forEach(x => { x.onchange = () => { A._materials = read(); saveDraft(); }; });
+    <div class="actions"><button class="btn" id="go">${incompleteScreens().length ? 'Continue' : 'Submit application'}</button>${backLink()}${laterLink()}<span class="status err" id="err"></span></div></div>`;
+  const read = () => ({ anythingElse: $('anythingElse').value });
   wireWordCount('anythingElse', () => { A._materials = read(); saveDraft(); });
-  $('company_fax').oninput = () => { HP = $('company_fax').value; };
   wireSlots(() => { A._materials = read(); renderMaterials(); });
   $('go').onclick = () => {
     const x = read();
     A._materials = x;
     if (wordNote('anythingElse', x.anythingElse).block) return err('Please shorten your note under "Anything else".');
     x.anythingElse = x.anythingElse.trim();
-    if (!x.ack) return err('Please confirm you\'ve read how NobleReach handles your submission.');
     const lost = [['deck', 0], ['plan', 0], ...Array.from({ length: CFG.uploads.maxSupporting }, (_, i) => ['supporting', i])].find(([s, i]) => fileMissing(s, i));
     if (lost) return err('Choose ' + SLOT_LABEL(lost[0], lost[1]).toLowerCase() + ' again, or remove it.');
-    // A deck added here counts as "A pitch deck" (Funding).
-    if (slotValue('deck', 0)) A.F.f_deck = true;
-    HP = $('company_fax').value;
+    // Part 2 never changes levels (decision D-1), so a deck added here doesn't
+    // tick "A pitch deck" on the Funding screen.
     delete A._materials;
     A.materials = x;
     finish('materials');
@@ -1073,13 +1343,13 @@ function renderMaterials() {
   wireBack();
 }
 
-/* ----- submit ----- */
-/* ----- before you submit: sections skipped with required answers missing ----- */
+/* ----- before you save or submit: sections skipped with required answers missing ----- */
 function renderReview() {
   const ids = incompleteScreens();
-  view().innerHTML = `<div class="panel"><p class="sect">Before you submit</p>
+  const part1 = currentPart() === 1;
+  view().innerHTML = `<div class="panel"><p class="sect">${part1 ? 'Before you save Part 1' : 'Before you submit'}</p>
     <h2 class="q">A few answers are still needed</h2>
-    <p class="hint lead">You skipped some required questions. Finish them, and you'll be able to submit. Everything else you entered is saved.</p>
+    <p class="hint lead">You skipped some required questions. Finish them, and you'll be able to ${part1 ? 'save Part 1' : 'submit'}. Everything else you entered is saved.</p>
     <div class="review-list">${ids.map(id => `<div class="review-row">
       <div class="review-text"><strong>${esc(sectOf(id))}</strong><span>${A.missing[id].map(esc).join('; ')}</span></div>
       <button type="button" class="btn ghost small" data-goto="${id}">Go to</button></div>`).join('')}</div>
@@ -1089,58 +1359,136 @@ function renderReview() {
   wireBack();
 }
 
+/* ----- save Part 1, or submit Part 2 ----- */
 function renderSubmit() {
-  const st = submitState;
-  const msg = st.status === 'error'
-    ? `We could not save your submission: ${esc(st.message)}. Your answers are still saved on this device.`
-    : 'Saving your submission...';
-  view().innerHTML = `<div class="panel"><p class="sect">Submitting</p><h2 class="q">${st.status === 'error' ? 'Not saved yet' : 'Saving your answers'}</h2>
-    <p class="status${st.status === 'error' ? ' err' : ''}" role="status">${msg}</p>
-    <div class="actions">${st.status === 'error' ? '<button class="btn" id="retry">Try again</button>' : ''}${st.status === 'sending' ? '' : backLink()}</div></div>`;
+  const st = submitState, part1 = currentPart() === 1;
+  const what = part1 ? 'Part 1' : 'your application';
+  let body;
+  if (st.status === 'expired') {
+    // Part 2's row token ran out (14 days): a fresh one comes with the return code.
+    body = `<p class="status err" role="status">This session for Part 2 has expired. Your answers are still saved on this device. Enter your return code to continue.</p>
+      <div class="inline-fields"><input type="text" id="renew-code" placeholder="Return code" autocapitalize="characters" spellcheck="false" aria-label="Return code"></div>
+      <p class="status err" id="err"></p>
+      <div class="actions"><button class="btn" id="renew">Continue</button></div>`;
+  } else {
+    const msg = st.status === 'error'
+      ? `We could not save ${what}: ${esc(st.message)}. Your answers are still saved on this device.`
+      : `Saving ${what}...`;
+    body = `<p class="status${st.status === 'error' ? ' err' : ''}" role="status">${msg}</p>
+      <div class="actions">${st.status === 'error' ? '<button class="btn" id="retry">Try again</button>' : ''}${st.status === 'sending' ? '' : backLink()}</div>`;
+  }
+  view().innerHTML = `<div class="panel"><p class="sect">${part1 ? 'Saving Part 1' : 'Submitting'}</p><h2 class="q">${st.status === 'error' || st.status === 'expired' ? 'Not saved yet' : 'Saving your answers'}</h2>${body}</div>`;
   if ($('retry')) $('retry').onclick = () => { submitState = { status: 'idle' }; render(); };
+  if ($('renew')) $('renew').onclick = renewRowToken;
   wireBack();
-  if (st.status === 'idle') doSubmit();
+  if (st.status === 'idle') (part1 ? submitPart1 : submitPart2)();
 }
 
-async function doSubmit() {
-  if (incompleteScreens().length) return render();   // never submit with required answers missing
+async function renewRowToken() {
+  const code = $('renew-code').value.trim();
+  if (!code) return err('Enter your return code.');
+  $('renew').disabled = true;
+  try {
+    const res = await lookupIntake({ email: A.applicant.email, code, submissionId: meta.submissionId });
+    if (!res.success || !res.rowToken) {
+      $('renew').disabled = false;
+      return err(res.error || 'That code does not match our records.');
+    }
+    meta.rowToken = res.rowToken;
+    saveDraft();
+    submitState = { status: 'idle' };
+    render();
+  } catch (e) {
+    if (e.unauthorized) return showLogin(e.message);
+    $('renew').disabled = false;
+    err('We could not reach the server. Check your connection and try again.');
+  }
+}
+
+/* What a re-take started from, so the brief can show what moved (up or down). */
+function previousScores() {
+  return A.retake && P ? { scores: createModel(P).result().scores, submittedAt: meta.previous && meta.previous.submittedAt } : null;
+}
+
+/* Part 1: create the row with the facts, the levels, and the brief. */
+async function submitPart1() {
+  if (incompleteScreens().length) return render();   // never save with required answers missing
   submitState = { status: 'sending' };
   render();
   const submittedAt = new Date().toISOString();
   const result = createModel(A).result(H.length);
-  // Re-take: last time's levels, so the brief can show what moved (up or down).
-  const previous = A.retake && P ? { scores: createModel(P).result().scores, submittedAt: meta.previous && meta.previous.submittedAt } : null;
-  const brief = buildBrief(A, result, CFG, { submissionId: meta.submissionId, submittedAt, previous });
+  const brief = buildBrief(A, result, CFG, { submissionId: meta.submissionId, submittedAt, previous: previousScores() });
   const record = buildRow(A, { screensAnswered: H.length, previousA: A.retake ? P : null, questions: brief.questions });
-  const finalA = cleanA(A);
   const answers = {
-    version: VERSION, submissionId: meta.submissionId, submittedAt, A: finalA, H: H.slice(),
+    version: VERSION, part: 1, submissionId: meta.submissionId, submittedAt, A: cleanA(A), H: H.slice(),
     facts: result.facts, levels: result.scores, nextLevelNeeds: result.next,
-    gateSignals: result.gateFlags, reviewFlags: result.flags, questionsForCall: brief.questions
+    gateSignals: result.gateFlags, reviewFlags: result.flags, questionsForCall: brief.questions, timing: timingTotals()
   };
-  const planned = plannedUploads();
   try {
     const res = await submitIntake({
       submissionId: meta.submissionId,
       previousSubmissionId: (meta.previous && meta.previous.submissionId) || '',
-      record, answers, briefHtml: brief.html, uploads: planned, hp: HP,
-      // No QM summary for applicants who opted out of AI processing.
-      qmInput: A.materials.aiOptOut ? undefined : buildQmInput(finalA, { submittedAt })
+      record, answers, briefHtml: brief.html, hp: HP
     });
+    if (!res || !res.success) throw new Error((res && res.error) || 'Unknown error');
+    meta.rowToken = res.rowToken;
+    meta.part1 = { returnCode: res.returnCode, intakeNumber: res.intakeNumber, emailSent: !!res.emailSent, submittedAt };
+    A.part1 = { submittedAt };
+    invalidate();
+    // Straight on to Part 2, with a short "Part 1 is saved" banner: no stop page,
+    // so the default is to keep going (Brian, Oct 30, 2026).
+    meta.part2Intro = true;
+    submitState = { status: 'idle' };
+    saveDraft();   // Part 2 continues from this draft, even after a reload
+    render();
+    window.scrollTo(0, 0);
+  } catch (e) {
+    if (e.unauthorized) { submitState = { status: 'idle' }; showLogin(e.message); return; }
+    console.warn('[Intake] Part 1 save failed:', e);
+    submitState = { status: 'error', message: e.name === 'AbortError' ? 'the server took too long to respond' : e.message };
+    render();
+  }
+}
+
+/* Part 2: add the written answers, materials, rebuilt brief, and QM summary to the same row. */
+async function submitPart2() {
+  if (incompleteScreens().length) return render();
+  submitState = { status: 'sending' };
+  render();
+  const submittedAt = meta.part1.submittedAt;
+  const part2At = new Date().toISOString();
+  // Same levels as Part 1 (Part 2 answers score nothing); the brief adds their own words.
+  const result = createModel(A).result(H.length);
+  const brief = buildBrief(A, result, CFG, { submissionId: meta.submissionId, submittedAt, previous: previousScores() });
+  const record = buildRow(A, { screensAnswered: H.length, previousA: A.retake ? P : null, questions: brief.questions });
+  const finalA = cleanA(A);
+  const answers = {
+    version: VERSION, part: 2, submissionId: meta.submissionId, submittedAt, part2SubmittedAt: part2At, A: finalA, H: H.slice(),
+    facts: result.facts, levels: result.scores, nextLevelNeeds: result.next,
+    gateSignals: result.gateFlags, reviewFlags: result.flags, questionsForCall: brief.questions, timing: timingTotals()
+  };
+  const planned = plannedUploads();
+  try {
+    const res = await completeIntake({
+      rowToken: meta.rowToken, record, answers, briefHtml: brief.html, uploads: planned,
+      // No QM summary for applicants who opted out of AI processing.
+      qmInput: A.consent && A.consent.aiOptOut ? undefined : buildQmInput(finalA, { submittedAt })
+    });
+    if (res && res.error === 'expired') { submitState = { status: 'expired' }; return render(); }
     if (!res || !res.success) throw new Error((res && res.error) || 'Unknown error');
 
     done = {
       submissionId: meta.submissionId,
-      returnCode: res.returnCode,
-      intakeNumber: res.intakeNumber,
-      emailSent: !!res.emailSent,
-      uploadToken: res.uploadToken,
+      returnCode: meta.part1.returnCode,
+      intakeNumber: meta.part1.intakeNumber,
+      emailSent: meta.part1.emailSent,
+      rowToken: meta.rowToken,
       name: [A.applicant.first, A.applicant.last].join(' '),
       first: A.applicant.first,
       email: A.applicant.email,
       institution: A.applicant.org,
       project: A.project.title,
-      submittedAt,
+      submittedAt: part2At,
       A: finalA,
       result,
       brief,
@@ -1148,7 +1496,7 @@ async function doSubmit() {
       diff: P && P.applicant ? diffFacts(P, finalA) : null,
       uploads: planned.filter(u => !u.link).map(u => ({ slot: u.slot, index: u.index, name: u.name, state: 'pending', error: '' }))
     };
-    store(LAST_KEY, { submissionId: meta.submissionId, submittedAt, email: done.email, project: done.project, returnCode: res.returnCode, answers: finalA });
+    store(LAST_KEY, { submissionId: meta.submissionId, submittedAt: part2At, email: done.email, project: done.project, returnCode: done.returnCode, answers: finalA });
     clearDraft();
     phase = 'done';
     submitState = { status: 'idle' };
@@ -1157,7 +1505,7 @@ async function doSubmit() {
     uploadAll();
   } catch (e) {
     if (e.unauthorized) { submitState = { status: 'idle' }; showLogin(e.message); return; }
-    console.warn('[Intake] Submit failed:', e);
+    console.warn('[Intake] Part 2 submit failed:', e);
     submitState = { status: 'error', message: e.name === 'AbortError' ? 'the server took too long to respond' : e.message };
     render();
   }
@@ -1172,7 +1520,7 @@ async function uploadOne(u) {
   if (!file) { u.state = 'failed'; u.error = 'The file is no longer available. Choose it again.'; return renderUploads(); }
   u.state = 'uploading'; u.error = ''; renderUploads();
   try {
-    const res = await uploadIntakeFile({ uploadToken: done.uploadToken, slot: u.slot, index: u.index, file });
+    const res = await uploadIntakeFile({ rowToken: done.rowToken, slot: u.slot, index: u.index, file });
     if (res && res.success) { u.state = 'done'; }
     else { u.state = 'failed'; u.error = (res && res.error) || 'Upload failed.'; }
   } catch (e) {
@@ -1226,7 +1574,7 @@ function renderDone() {
     <div class="code-box">
       <p class="label">Your return code</p>
       <p class="code">${esc(d.returnCode)}</p>
-      <p>${d.emailSent ? `We emailed this code to ${esc(d.email)}.` : 'We could not email this code, so write it down or download the PDF below.'} Next time, enter your email and this code to start from these answers.</p>
+      <p>${d.emailSent ? `We emailed this code to ${esc(d.email)} when you saved Part 1.` : 'We could not email this code, so write it down or download the PDF below.'} Next time, enter your email and this code to start from these answers.</p>
     </div>
     <div class="blk"><h3>What happens next</h3><p>${esc(CFG.nextSteps)}</p></div>
     ${uploadsHtml()}

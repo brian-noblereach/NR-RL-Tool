@@ -13,6 +13,7 @@ import {
 } from "./submission-requirements.js";
 import { stampAssessedNow } from "./ui.js";
 import { getCategoryLabel } from "./category-labels.js";
+import { scoreRowsFor } from "./applications.js";
 
 function pad(n) {
   return n < 10 ? "0" + n : "" + n;
@@ -27,15 +28,18 @@ function formatLocalDateTime(d) {
   return `${yr}-${mo}-${da} ${hh}:${mm}`;
 }
 
+// A dual-use category gets one row per application ("Market (Government)").
 function buildSnapshotRows() {
   const allowed = new Set(getActiveSubmissionCategories(AppState, readinessData));
   const rows = [];
   SUBMISSION_CATEGORY_ORDER.forEach(cat => {
     if (!readinessData[cat] || !allowed.has(cat)) return;
-    rows.push({
-      category: cat,
-      label: getCategoryLabel(cat),
-      level: AppState.scores[cat] != null ? AppState.scores[cat] : "-",
+    scoreRowsFor(AppState, cat).forEach(({ application, score }) => {
+      rows.push({
+        category: cat,
+        label: application ? `${getCategoryLabel(cat)} (${application})` : getCategoryLabel(cat),
+        level: score != null ? score : "-",
+      });
     });
   });
   return rows;
@@ -94,7 +98,11 @@ export function savePdfSnapshot(options = {}) {
   doc.text(`Assessment #: ${assessmentNumber}`, left, y);
   y += lh;
   doc.text(`Assessed: ${assessed}`, left, y);
-  y += lh + 2;
+  y += lh;
+  if (AppState.isDualUse) {
+    y = addWrappedPdfText(doc, "Dual-use venture: Market, Product and Go-to-Market scored separately for Commercial and Government.", left, y, 178, lh);
+  }
+  y += 2;
 
   if (showPartialWarning) {
     doc.setFont("helvetica", "bold");

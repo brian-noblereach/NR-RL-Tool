@@ -90,6 +90,33 @@ export function coerceScore(value, { allowSubLevel = false } = {}) {
 }
 
 /**
+ * Lowest level a category can be scored at. TRL follows the DoD and BARDA
+ * scales, which begin at 1 (November 2026 framework); every other category
+ * has a Level 0.
+ */
+export function minLevel(category) {
+  return category === "Technology" ? 1 : 0;
+}
+
+/**
+ * coerceScore plus the category's rules: the sub-level letter only where the
+ * category allows one, and anything below the category's floor is unassessed —
+ * so a TRL 0 saved under the April 2026 framework (or a blank Smartsheet TRL
+ * cell, which reads back as 0) loads as null rather than as a level.
+ */
+export function coerceCategoryScore(category, value) {
+  const score = coerceScore(value, { allowSubLevel: allowsSubLevel(category) });
+  return score !== null && scoreRank(score) < minLevel(category) ? null : score;
+}
+
+/** A whole scores map through coerceCategoryScore. Unknown keys pass through the same rules. */
+export function normalizeScores(scores) {
+  return Object.fromEntries(
+    Object.entries(scores || {}).map(([category, value]) => [category, coerceCategoryScore(category, value)])
+  );
+}
+
+/**
  * Smartsheet cell -> score. Preserves the legacy "blank or non-numeric means 0"
  * behavior for every value that existed before sub-levels, so the round-trip is
  * unchanged except for genuine sub-level strings.

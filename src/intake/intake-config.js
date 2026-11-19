@@ -16,16 +16,22 @@ export const INTAKE_CONFIG = {
   // Use the same values as the RL and QM portfolio dropdowns.
   portfolio: '',
 
+  // gen-3.0 landing (spec 2026-10-29, section 4). It never says that doing more
+  // means answering more, which would encourage under-reporting, and it
+  // promises no call: not everyone gets one.
   landing: {
     heading: 'Tell us about your project',
     paragraphs: [
-      'This application asks what has actually happened with your project so far: the technology, customers, IP, team, and funding. It is not a test, and there are no wrong answers.',
-      'Your answers go to the NobleReach team, who will be in touch about next steps.'
+      'This application has two parts.',
+      'Part 1 asks what has actually happened with your project so far: the technology, customers, IP, team, and funding. It\'s mostly checkboxes. It is not a test, and there are no wrong answers.',
+      'Part 2 asks you to describe the technology and where it could be used, in your own words. You can do it right away, or come back later with the code we email you.',
+      'Your answers go to the NobleReach team. Reviewers may follow up on any answer and compare it with your materials.'
     ]
   },
 
-  // Shown on the first screen. Set after internal testing.
-  estimatedTime: 'about 20 minutes',
+  // Shown on the first screen, one per part. null hides the estimate.
+  // Set both from the timing pilot (spec section 13); until then, none is shown.
+  estimatedTime: { part1: null, part2: null },
 
   // Structured engagement. Leave as null to hide the commitment question.
   // Example: { hoursPerWeek: 5, months: 6 }
@@ -37,10 +43,36 @@ export const INTAKE_CONFIG = {
   // materials (Brian, Oct 2026). The "Technology Form" question picks the TRL track.
 
   // Written answers. Warn at the limit; block above limit x blockFactor,
-  // or at wordLimitBlockAt where one is set.
-  wordLimits: { science: 250, value: 200, impact: 200, oneLiner: 30, anythingElse: 200 },
+  // or at wordLimitBlockAt where one is set (decision D-7).
+  wordLimits: { oneLiner: 30, technology: 200, applications: 150, impact: 40, whyText: 40, changed: 60, collaborators: 40, anythingElse: 200 },
   wordLimitBlockFactor: 1.25,
   wordLimitBlockAt: { oneLiner: 40 },
+
+  // Part 2 written answers (spec section 9). Each prompt lists what to cover;
+  // the technology answer asks for specific names, because the QM tool uses
+  // them to tell this project apart from others on the web.
+  // `technology` and `applications` replace Katy Lenshin's science and value
+  // essays (D-5, pending her check).
+  written: {
+    technology: {
+      q: 'What is the technology, and how does it work?',
+      cover: [
+        'What it is and how it works. Use the specific names you\'d use with a colleague: the material, method, mechanism, or platform.',
+        'What\'s new compared with the best current approach, and what that approach is.',
+        'What results you have so far, with numbers where you have them.'
+      ]
+    },
+    applications: {
+      q: 'Where could it be used, and for whom?',
+      cover: [
+        'The problem it solves and who has it.',
+        'What they use today, and where that falls short.',
+        'Which application or customer you\'d start with, and why.',
+        'Other applications you see.'
+      ]
+    },
+    impact: 'Anything else about the broader impact: public health, environmental, or national security?'
+  },
 
   uploads: {
     maxBytes: 20 * 1024 * 1024,
@@ -58,7 +90,7 @@ export const INTAKE_CONFIG = {
     }
   },
 
-  // Screen 12. DRAFT (spec Appendix B) — needs Brian's review before use.
+  // The Part 1 submit screen. DRAFT (spec Appendix B) — needs Brian's review before use.
   submissionHandling: {
     heading: 'How NobleReach handles your submission',
     paragraphs: [
@@ -109,8 +141,8 @@ export const INTAKE_CONFIG = {
       claim_thin_support: '{item}: {said} of the {count} people you interviewed said this. How did you get from those conversations to that conclusion?',
       claim_source_unsure: '{item}: what is that conclusion based on?',
       claim_conversations_none: '{item}: who did you talk to, and how many?',
-      claims_no_interviews: 'What did you base your first market and your advantage over alternatives on?',
-      no_customers_but_claims: 'You said you haven\'t identified specific customers, but you\'ve picked a first market. Who is it, and how did you choose it?',
+      claims_no_interviews: 'What did you base your target markets and your advantage over alternatives on?',
+      no_customers_but_claims: 'You said you haven\'t identified specific customers, but you\'ve picked target markets. Who are they, and how did you choose them?',
       icorps_few_interviews: 'I-Corps usually involves many more interviews. What did yours tell you, and what\'s left to test?'
     },
     claimsMerged: 'Walk through how you reached these: {list}.',
@@ -120,11 +152,18 @@ export const INTAKE_CONFIG = {
     unsure: 'Walk through the {screen} items you weren\'t sure about.',
     evidence: {
       ip3: 'Confirm the application number, filing date, and who owns it.',
+      ip_ts: 'Ask how the trade secrets are documented and who can access them.',
       c_wtp: 'Who signed the letter of intent or purchase order, and what does it commit them to?',
       c_paid: 'What was the scope and amount of the paid pilot, and who paid?',
       c_talk: 'Who were the {count} people you interviewed, and how many were buyers versus users?',
       c_proto: 'What did the prototype users do with it, and what did they say?'
     },
+    // Health tracks, where the item is worded differently (gen-3.2: Life Science Market 5 is evidence of value).
+    evidenceHealth: {
+      c_wtp: 'What did the purchaser, payer, or partner provide (letter of intent, evaluation agreement, paid pilot, advisory input, or term sheet), and what does it commit them to?'
+    },
+    // Business 3 (gen-3.1): startup path, no company yet.
+    formationTrigger: 'What would trigger forming the company: a first SBIR proposal, an option or license, a paid pilot, outside investment, or a first hire?',
     ahead: 'You\'ve done "{done}" but not "{missing}". What\'s blocking that?',
     lowest: '{category}: what would it take to get to "{next}"?'
   }

@@ -1,0 +1,1934 @@
+// main.js – app entry + wiring
+import {
+  AppState,
+  loadVenture,
+  saveCurrentVenture,
+  createNewVenture,
+  deleteVenture,
+  getAllVentures,
+  saveAdvisorPreference,
+  loadAdvisorPreference,
+  getCurrentAssessmentNumber,
+  incrementAssessmentNumber,
+  getSubmissionStatus,
+  recordSubmission,
+  generateStateHash,
+  generateVentureId,
+  setCommentaryField,
+  setReportingMetadata,
+  resetActiveVenture,
+  hasCurrentVentureData
+} from "./state.js";
+import { readinessData } from "./data/index.js";
+import {
+  getSubmissionReadiness,
+  isFirstAssessmentRound,
+  normalizeCommentary
+} from "./submission-requirements.js";
+import {
+  buildReviewChecklist,
+  getReviewFlowConfig
+} from "./review-flow.js";
+import { savePdfSnapshot } from "./pdf-export.js";
+import { getCategoryLabel, getCategoryAbbrev } from "./category-labels.js";
+import { startExternalFlow } from "./external-flow.js";
+import { PORTFOLIOS } from "./data/constants.js";
+import { BRL_LICENSE, SOURCE_ATTRIBUTIONS, FOOTER_NOTICE, ABOUT_FRAMEWORK } from "./data/index.js";
+import { submitToSmartsheet, isCurrentlySubmitting, fetchVentureData, getPortfolioForVenture, fetchAllAssessments,fetchQualificationRecords, clearUserAssessmentsCache } from "./smartsheet.js";
+import {
+  getQualificationMatchResolution,
+  normalizeTrackAssignment
+} from "./qualification-matching.js";
+import { initializeCategories, updateCategoryDisplay } from "./categories.js";
+import { updateSummary } from "./summary.js";
+import { Auth } from "./auth.js";
+import { PROXY_URL } from "./proxy-client.js";
+import {
+  updateIndustrySelectorUI,
+  toggleMinimizeSummaryPanel,
+  toggleMaximizeSummaryPanel,
+  closeMaximizedPanel,
+  renderAssessedAt,
+  stampAssessedNow,
+  syncSummaryHeaderAndIcons,
+  setupPanelClickToExpand,
+  checkShowWelcomeModal,
+  hideWelcomeModal,
+  showFeedbackModal,
+  hideFeedbackModal,
+  showModal,
+  hideModal,
+  checkHidePilotBanner,
+  dismissPilotBanner,
+  checkShowAdvisorTip,
+  dismissAdvisorTip,
+} from "./ui.js";
+
+/* -------------------------
+   Helpers
+--------------------------*/
+const CATEGORY_ORDER = [
+  "IP", "Technology", "Market", "Product", "Team", "Go-to-Market", "Business", "Funding", "Mission Impact", "Regulatory",
+];
+
+function pad(n) {
+  return n < 10 ? "0" + n : "" + n;
+}
+
+function formatLocalDateTime(d) {
+  const yr = d.getFullYear();
+  const mo = pad(d.getMonth() + 1);
+  const da = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  return `${yr}-${mo}-${da} ${hh}:${mm}`;
+}
+
+function categoriesToInclude() {
+  const all = Object.keys(readinessData);
+  return AppState.isHealthRelated ? all : all.filter(c => c !== "Regulatory");
+}
+
+function nextCategoryName(cur) {
+  const allowed = categoriesToInclude();
+  const seq = CATEGORY_ORDER.filter(c => allowed.includes(c));
+  const idx = seq.indexOf(cur);
+  return idx >= 0 && idx < seq.length - 1 ? seq[idx + 1] : null;
+}
+
+function navigateToCategory(cat) {
+  if (!cat || AppState.currentCategory === cat) return;
+  
+  AppState.currentCategory = cat;
+  initializeCategories();
+  updateCategoryDisplay();
+  updateSummary();
+  syncSummaryHeaderAndIcons();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* ---------- Scroll helpers ---------- */
+function getScrollParent(el) {
+  const overflow = /auto|scroll/i;
+  let p = el && el.parentElement;
+  while (p && p !== document.body && p !== document.documentElement) {
+    const s = getComputedStyle(p);
+    if ((overflow.test(s.overflowY) || overflow.test(s.overflow)) && p.scrollHeight > p.clientHeight) {
+      return p;
+    }
+    p = p.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+function centerCardSmart(cardEl, retries = 3) {
+  if (!cardEl) return;
+
+  const container = getScrollParent(cardEl);
+  const isDoc = container === document.scrollingElement || 
+                container === document.documentElement || 
+                container === document.body;
+
+  const apply = () => {
+    const rect = cardEl.getBoundingClientRect();
+    if (isDoc) {
+      const viewportH = window.innerHeight || document.documentElement.clientHeight;
+      const target = (window.pageYOffset || document.documentElement.scrollTop || 0) +
+                     rect.top - (viewportH / 2 - rect.height / 2);
+      window.scrollTo({ top: Math.max(target, 0), behavior: "smooth" });
+    } else {
+      const cRect = container.getBoundingClientRect();
+      const delta = rect.top - cRect.top;
+      const target = container.scrollTop + delta - (container.clientHeight / 2 - rect.height / 2);
+      container.scrollTo({ top: Math.max(target, 0), behavior: "smooth" });
+    }
+  };
+
+  apply();
+  if (retries > 0) {
+    setTimeout(() => {
+      apply();
+      if (retries > 1) setTimeout(apply, 230);
+    }, 120);
+  }
+}
+
+/* ---------- Next Category Toast ---------- */
+function ensureNextToastDom() {
+  if (document.getElementById("next-cat-toast")) return;
+  const toast = document.createElement("div");
+  toast.id = "next-cat-toast";
+  toast.className = "next-toast hidden";
+  toast.setAttribute("aria-live", "polite");
+  toast.innerHTML = `
+    <button id="next-cat-btn" class="btn next-btn">
+      Next: <span id="next-cat-name">—</span> →
+    </button>`;
+  document.body.appendChild(toast);
+}
+
+function hideNextToast(immediate = false) {
+  const toast = document.getElementById("next-cat-toast");
+  if (!toast) return;
+
+  if (immediate) {
+    toast.classList.remove("show");
+    toast.classList.add("hidden");
+    return;
+  }
+
+  if (toast.classList.contains("hidden")) return;
+  toast.classList.remove("show");
+  const onEnd = (e) => {
+    if (e.target !== toast) return;
+    toast.classList.add("hidden");
+    toast.removeEventListener("transitionend", onEnd);
+  };
+  toast.addEventListener("transitionend", onEnd);
+}
+
+/**
+ * Populate the site footer and the attributions modal from
+ * src/data/attributions.js. Rendered once at boot; the content is static, and
+ * keeping one source means the modal and the PDF footer cannot drift apart.
+ */
+function renderAttributions() {
+  const notice = document.getElementById("site-footer-notice");
+  if (notice) notice.textContent = FOOTER_NOTICE;
+
+  // Welcome modal summary — the visible surface for the source credits. Shown
+  // to internal and external users alike.
+  const about = document.getElementById("welcome-about");
+  if (about) {
+    about.innerHTML = `
+      <h4>${escapeHtml(ABOUT_FRAMEWORK.heading)}</h4>
+      ${ABOUT_FRAMEWORK.body.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}
+      <p><button type="button" class="link-btn" id="welcome-attributions-link">${escapeHtml(ABOUT_FRAMEWORK.linkLabel)}</button></p>`;
+
+    // Hand off from the welcome modal to the attributions modal rather than
+    // stacking them.
+    document.getElementById("welcome-attributions-link")?.addEventListener("click", () => {
+      hideWelcomeModal();
+      showModal("attributions-modal");
+    });
+  }
+
+  const body = document.getElementById("attributions-body");
+  if (!body) return;
+
+  const licenseHtml = `
+    <section class="attribution-block">
+      <h4>Business Readiness Levels framework</h4>
+      <p>${escapeHtml(BRL_LICENSE.summary)}</p>
+      <ul>${BRL_LICENSE.terms.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>
+      <p><a href="${BRL_LICENSE.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(BRL_LICENSE.name)}</a></p>
+      <p class="attribution-scope">${escapeHtml(BRL_LICENSE.scopeNote)}</p>
+    </section>`;
+
+  const sourcesHtml = SOURCE_ATTRIBUTIONS.map(
+    (source) => `
+    <section class="attribution-block">
+      <h4>${escapeHtml(source.heading)}</h4>
+      ${source.body.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}
+      <p><a href="${source.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.urlLabel)}</a></p>
+    </section>`
+  ).join("");
+
+  body.innerHTML = licenseHtml + sourcesHtml;
+}
+
+function showNextToast(nextCat) {
+  ensureNextToastDom();
+  const toast = document.getElementById("next-cat-toast");
+  const btn = document.getElementById("next-cat-btn");
+  const name = document.getElementById("next-cat-name");
+  name.textContent = getCategoryLabel(nextCat);
+
+  if (!toast.classList.contains("show")) {
+    toast.classList.remove("hidden");
+    requestAnimationFrame(() => toast.classList.add("show"));
+  }
+
+  btn.replaceWith(btn.cloneNode(true));
+  document.getElementById("next-cat-btn").addEventListener("click", () => {
+    hideNextToast();
+    navigateToCategory(nextCat);
+  }, { once: true });
+}
+
+/* -------------------------
+   Venture Selector UI
+--------------------------*/
+function refreshVentureSelector() {
+  const select = document.getElementById("venture-select");
+  if (!select) return;
+
+  const ventures = getAllVentures();
+  select.innerHTML = `<option value="">Select a local draft...</option>`;
+  
+  ventures.forEach(v => {
+    const name = v.ventureName || "Unnamed Assessment";
+    const date = v.updatedAt ? new Date(v.updatedAt).toLocaleDateString() : "";
+    const opt = document.createElement("option");
+    opt.value = v.id;
+    opt.textContent = `${name}${date ? ` (${date})` : ""}`;
+    if (v.id === AppState.activeVentureId) {
+      opt.selected = true;
+    }
+    select.appendChild(opt);
+  });
+}
+
+function loadVentureFromSelector(id) {
+  if (!id) return;
+  
+  if (loadVenture(id)) {
+    syncUIFromState();
+    initializeCategories();
+    updateSummary();
+    syncSummaryHeaderAndIcons();
+  }
+}
+
+function syncUIFromState() {
+  // Sync venture name input
+  const nameInput = document.getElementById("venture-name");
+  if (nameInput) {
+    nameInput.value = AppState.ventureName || "";
+  }
+
+  // Sync health toggle
+  const healthCheckbox = document.getElementById("health-related");
+  if (healthCheckbox) {
+    healthCheckbox.checked = AppState.isHealthRelated;
+    const note = document.getElementById("health-mode-note");
+    if (note) note.classList.toggle("hidden", !AppState.isHealthRelated);
+  }
+
+  // Sync advisor name from localStorage preference
+  const advisorInput = document.getElementById("advisor-name");
+  if (advisorInput) {
+    const savedAdvisor = loadAdvisorPreference();
+    advisorInput.value = AppState.advisorName || savedAdvisor;
+    AppState.advisorName = advisorInput.value;
+  }
+  syncPickList("venture-pick", "venture-name");
+  syncPickList("advisor-pick", "advisor-name");
+
+  // Sync portfolio dropdown
+  const portfolioSelect = document.getElementById("portfolio-select");
+  if (portfolioSelect) {
+    portfolioSelect.value = AppState.portfolio || "";
+  }
+
+  renderAssessedAt();
+  refreshVentureSelector();
+  updateSubmissionStatusUI();
+  updateStartNewAssessmentButton();
+  renderWorkspaceHeader();
+}
+
+/* -------------------------
+   PDF Export
+   savePdfSnapshot lives in ./pdf-export.js so the external guided stepper can
+   reuse the identical assessment PDF. Imported at the top of this file.
+--------------------------*/
+
+/* -------------------------
+   Submission Status UI
+--------------------------*/
+function formatTime(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+function formatDatabaseTimestamp(isoString) {
+  if (!isoString) return "No confirmed database save yet";
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return "Database save time unavailable";
+  return `Saved to NobleReach database ${d.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  })}`;
+}
+
+function getWorkspaceSourceLabel() {
+  if (AppState.isEditingExisting && AppState.smartsheetRowId) {
+    return "Loaded from database";
+  }
+  if (AppState.currentAssessmentNumber > 1) {
+    return "New assessment round";
+  }
+  if (AppState.activeVentureId && hasCurrentVentureData()) {
+    return "Local draft";
+  }
+  return "Blank draft";
+}
+
+function getSaveConsequenceLabel(status) {
+  if (status.submitted && !status.hasChanges) {
+    return "Saved to database";
+  }
+  if (AppState.isEditingExisting && AppState.smartsheetRowId) {
+    return "This save will update the existing saved assessment";
+  }
+  return "This save will create a new saved assessment";
+}
+
+function getMetadataMissingLabels() {
+  const missing = [];
+  if (!String(AppState.ventureName || "").trim()) missing.push("Venture name");
+  if (!String(AppState.advisorName || "").trim()) missing.push("Advisor name");
+  if (!Auth.isExternal() && !String(AppState.portfolio || "").trim()) missing.push("Portfolio");
+  return missing;
+}
+
+function buildWorkspaceChips(readiness, metadataMissing) {
+  const chips = [];
+  const completedScores = readiness.activeCategories.length - readiness.missingScores.length;
+
+  chips.push({
+    label: `${completedScores}/${readiness.activeCategories.length} scores complete`,
+    complete: readiness.missingScores.length === 0
+  });
+
+  chips.push({
+    label: metadataMissing.length === 0
+      ? "Required fields complete"
+      : `${metadataMissing.length} required ${metadataMissing.length === 1 ? "field" : "fields"} missing`,
+    complete: metadataMissing.length === 0
+  });
+
+  if (readiness.isFirstAssessment) {
+    chips.push({
+      label: readiness.missingCommentary.length === 0
+        ? "Founder-call commentary complete"
+        : "First-assessment notes needed",
+      complete: readiness.missingCommentary.length === 0
+    });
+  }
+
+  return chips;
+}
+
+function renderWorkspaceHeader() {
+  const title = document.getElementById("workspace-venture-title");
+  const assessmentBadge = document.getElementById("workspace-assessment-badge");
+  const sourceBadge = document.getElementById("workspace-source-badge");
+  const consequenceBadge = document.getElementById("workspace-save-consequence");
+  const saveRow = document.getElementById("workspace-save-row");
+  const saveTitle = document.getElementById("workspace-save-title");
+  const saveDetail = document.getElementById("workspace-save-detail");
+  const chipsEl = document.getElementById("workspace-completion-chips");
+  const dbTimestamp = document.getElementById("workspace-database-timestamp");
+
+  if (!title || !assessmentBadge || !sourceBadge || !consequenceBadge || !saveRow || !saveTitle || !saveDetail || !chipsEl || !dbTimestamp) {
+    return;
+  }
+
+  const status = getSubmissionStatus();
+  const readiness = getSubmissionReadiness(AppState, readinessData);
+  const metadataMissing = getMetadataMissingLabels();
+  const sourceLabel = getWorkspaceSourceLabel();
+  const saveConsequence = getSaveConsequenceLabel(status);
+  const hasRelevantData = hasCurrentVentureData();
+  const needsDatabaseSave = !Auth.isExternal() && hasRelevantData && (!status.submitted || status.hasChanges);
+
+  title.textContent = AppState.ventureName?.trim() || "Untitled venture";
+  assessmentBadge.textContent = Auth.isExternal()
+    ? "PDF draft"
+    : `Assessment #${AppState.currentAssessmentNumber || 1}`;
+  sourceBadge.textContent = sourceLabel;
+  consequenceBadge.textContent = Auth.isExternal() ? "Local PDF export" : saveConsequence;
+  consequenceBadge.classList.toggle("success", status.submitted && !status.hasChanges);
+  consequenceBadge.classList.toggle("warning", !status.submitted || status.hasChanges);
+
+  saveRow.classList.toggle("hidden", Auth.isExternal());
+  saveRow.classList.toggle("is-saved", hasRelevantData && status.submitted && !status.hasChanges);
+  saveRow.classList.toggle("is-unconfirmed", false);
+
+  if (!hasRelevantData) {
+    saveTitle.textContent = "Start by entering a venture name or choosing scores.";
+    saveDetail.textContent = "Local changes will save in this browser. Review & Save to Database is required when the assessment is ready for NobleReach.";
+  } else if (status.submitted && !status.hasChanges) {
+    saveTitle.textContent = "Saved to the NobleReach database.";
+    saveDetail.textContent = isFirstAssessmentRound(AppState)
+      ? "This browser copy matches the last confirmed database save. Use Review & Save to Database to view or edit first-call details."
+      : "This browser copy matches the last confirmed database save.";
+  } else {
+    saveTitle.textContent = "Not saved to the NobleReach database.";
+    saveDetail.textContent = status.submitted
+      ? "Local changes are saved only in this browser until you complete Review & Save to Database again."
+      : "Local changes are saved only in this browser until you complete Review & Save to Database.";
+  }
+
+  chipsEl.innerHTML = buildWorkspaceChips(readiness, metadataMissing)
+    .map(chip => `<span class="workspace-chip ${chip.complete ? "complete" : "missing"}">${escapeHtml(chip.label)}</span>`)
+    .join("");
+
+  dbTimestamp.textContent = formatDatabaseTimestamp(AppState.lastSubmissionTimestamp);
+
+  const saveBtn = document.getElementById("btn-save-db");
+  if (saveBtn) {
+    saveBtn.classList.toggle("primary", needsDatabaseSave);
+    const saveBtnText = saveBtn.querySelector("span");
+    if (saveBtnText) {
+      saveBtnText.textContent = isFirstAssessmentRound(AppState)
+        ? "Review & Save to Database"
+        : "Save to Database";
+    }
+    saveBtn.title = status.submitted && status.hasChanges
+      ? "Save changes to the NobleReach database"
+      : "Save this assessment to the NobleReach database";
+  }
+}
+
+export function updateSubmissionStatusUI() {
+  const statusEl = document.getElementById("submission-status");
+  if (!statusEl) return;
+
+  if (Auth.isExternal()) {
+    statusEl.style.display = 'none';
+    return;
+  }
+
+  const status = getSubmissionStatus();
+  const iconEl = statusEl.querySelector(".status-icon");
+  const textEl = statusEl.querySelector(".status-text");
+
+  statusEl.className = "submission-status";
+
+  if (!status.submitted) {
+    statusEl.classList.add("not-submitted");
+    textEl.textContent = "Not submitted";
+    iconEl.innerHTML = '<circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/>';
+  } else if (status.hasChanges) {
+    statusEl.classList.add("modified");
+    textEl.textContent = `Unsaved changes since ${formatTime(status.lastSubmitted)}`;
+    iconEl.innerHTML = '<path d="M12 2v20M2 12h20" stroke="currentColor" stroke-width="2"/>';
+  } else {
+    statusEl.classList.add("submitted");
+    textEl.textContent = `Submitted ${formatTime(status.lastSubmitted)}`;
+    iconEl.innerHTML = '<path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" fill="none"/>';
+  }
+
+  updateStartNewAssessmentButton();
+  updateSaveButtonHint();
+  updateSubmissionBanner();
+  updateBeforeUnloadGuard();
+  renderWorkspaceHeader();
+}
+
+function hasDatabaseRelevantChanges() {
+  if (Auth.isExternal()) return false;
+  // Don't nag about a blank fresh assessment — only flag "needs submit" once
+  // the advisor has actually entered something worth submitting.
+  if (!hasCurrentVentureData()) return false;
+  const status = getSubmissionStatus();
+  return !status.submitted || status.hasChanges;
+}
+
+function updateSaveButtonHint() {
+  const btn = document.getElementById("btn-save-db");
+  if (!btn || Auth.isExternal()) return;
+
+  const status = getSubmissionStatus();
+  if (AppState.isEditingExisting && AppState.smartsheetRowId) {
+    btn.title = status.hasChanges
+      ? "Review details and save changes to the existing database assessment"
+      : isFirstAssessmentRound(AppState)
+        ? "Open the review step to view or edit first-call details"
+        : "This assessment is already saved to the database";
+  } else if (isFirstAssessmentRound(AppState)) {
+    btn.title = "Open the review step, add required founder-call commentary, and submit to the database";
+  } else {
+    btn.title = "Submit this assessment round to the database";
+  }
+}
+
+function updateSubmissionBanner() {
+  const banner = document.getElementById("submission-banner");
+  if (banner) banner.classList.add("hidden");
+  renderWorkspaceHeader();
+}
+
+let beforeUnloadAttached = false;
+
+function handleBeforeUnload(e) {
+  if (!hasDatabaseRelevantChanges()) return;
+  e.preventDefault();
+  e.returnValue = "";
+}
+
+function updateBeforeUnloadGuard() {
+  const shouldAttach = hasDatabaseRelevantChanges();
+  if (shouldAttach && !beforeUnloadAttached) {
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    beforeUnloadAttached = true;
+  } else if (!shouldAttach && beforeUnloadAttached) {
+    window.removeEventListener("beforeunload", handleBeforeUnload);
+    beforeUnloadAttached = false;
+  }
+}
+
+function updateStartNewAssessmentButton() {
+  const btn = document.getElementById("btn-start-new-assessment");
+  if (!btn) return;
+
+  const status = getSubmissionStatus();
+
+  if (status.submitted && !status.hasChanges) {
+    btn.disabled = false;
+    btn.title = "Start the next assessment round for this same venture after it has progressed";
+  } else {
+    btn.disabled = true;
+    btn.title = "Save the current assessment to the database before starting a new round";
+  }
+}
+
+/* -------------------------
+   Start New Assessment
+--------------------------*/
+// Rounds belong to a venture + advisor pair (how the sheet links them).
+// Works on assessment rows and on AppState, which share the field names.
+const roundKey = a => [a.ventureName, a.advisorName]
+  .map(s => (s || "").trim().replace(/\s+/g, " ").toLowerCase()).join("|");
+
+// Next round = highest round saved for this venture + advisor, plus one, so
+// starting a round from an older one can't create a duplicate number.
+async function nextRoundNumber() {
+  const key = roundKey(AppState);
+  const saved = (await fetchAllAssessments()).filter(a => roundKey(a) === key).map(a => a.assessmentNumber);
+  return Math.max(AppState.currentAssessmentNumber || 1, ...saved) + 1;
+}
+
+async function showStartNewAssessmentModal() {
+  const currentNum = AppState.currentAssessmentNumber;
+  const nextNum = await nextRoundNumber();
+
+  document.getElementById("current-num").textContent = currentNum;
+  document.getElementById("current-num-2").textContent = currentNum;
+  document.getElementById("next-num").textContent = nextNum;
+  document.getElementById("next-num-2").textContent = nextNum;
+
+  showModal("start-new-modal");
+}
+
+async function handleStartNewAssessment() {
+  incrementAssessmentNumber(await nextRoundNumber());
+
+  // Clear scores for fresh assessment
+  AppState.scores = {};
+  AppState.goalLevels = {};
+  // Commentary is intake-only and tied to Assessment #1, so reset it on the
+  // new round. incrementAssessmentNumber() already clears it in state.js, but
+  // we set it again here to keep the local handler self-evident.
+  AppState.commentary = { coachability: "", startupInterest: "", callNotes: "" };
+  AppState.assessedAt = null;
+  AppState.currentCategory = Object.keys(readinessData)[0];
+
+  saveCurrentVenture();
+  syncUIFromState();
+  initializeCategories();
+  updateSummary();
+  updateSubmissionStatusUI();
+
+  hideModal("start-new-modal");
+  showToast(`Started Assessment #${AppState.currentAssessmentNumber}`, "success");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* -------------------------
+   Load Assessment from Database
+--------------------------*/
+let pendingLoad = null;  // Load to run after the replace-warning confirmation
+
+async function showLoadAssessmentModal() {
+  if (Auth.isExternal()) return;
+  showModal("load-assessment-modal");
+  renderLoadAssessmentLoading();
+
+  const assessments = await fetchAllAssessments();
+  setupLoadAssessmentSearch(assessments);
+}
+
+function renderLoadAssessmentLoading() {
+  const listEl = document.getElementById("load-assessment-list");
+  if (!listEl) return;
+
+  listEl.innerHTML = `
+    <div class="load-assessment-loading">
+      <div class="spinner"></div>
+      <p>Loading your assessments...</p>
+    </div>
+  `;
+}
+
+function renderLoadAssessmentList(assessments) {
+  const listEl = document.getElementById("load-assessment-list");
+  if (!listEl) return;
+
+  if (!assessments || assessments.length === 0) {
+    listEl.innerHTML = `
+      <div class="load-assessment-empty">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <h4>No Assessments Match</h4>
+        <p>Try a different search.</p>
+      </div>
+    `;
+    return;
+  }
+
+  // One card per venture + advisor. Input is newest first, so cards are too.
+  const groups = new Map();
+  for (const a of assessments) {
+    const k = roundKey(a);
+    groups.has(k) ? groups.get(k).push(a) : groups.set(k, [a]);
+  }
+  const cards = [...groups.values()].map(rounds => rounds.sort((x, y) =>
+    x.assessmentNumber - y.assessmentNumber ||
+    String(x.submissionTimestamp || x.assessmentDate).localeCompare(String(y.submissionTimestamp || y.assessmentDate))
+  ));
+
+  listEl.innerHTML = cards.map((rounds, i) => {
+    const latest = rounds.at(-1);
+    return `
+    <div class="load-assessment-card" data-i="${i}">
+      <div class="load-assessment-card-header">
+        <h4>${escapeHtml(latest.ventureName)}</h4>
+        ${latest.portfolio ? `<span class="load-assessment-badge portfolio">${escapeHtml(latest.portfolio)}</span>` : ""}
+        ${latest.isHealthRelated ? `<span class="load-assessment-badge health">Health</span>` : ""}
+      </div>
+      <div class="load-assessment-card-meta">
+        ${latest.advisorName ? `<span>${escapeHtml(latest.advisorName)}</span>` : ""}
+        <span>${rounds.length} round${rounds.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="load-assessment-rounds">
+        ${rounds.map(r => `
+        <button type="button" class="round-chip" data-row-id="${r.rowId}" title="Open round #${r.assessmentNumber}">
+          <span class="round-chip-label">#${r.assessmentNumber} · ${formatRoundTime(r)}</span>
+          <span class="load-assessment-card-scores">${formatScoresCompact(r.scores, r.isHealthRelated)}</span>
+        </button>`).join("")}
+      </div>
+      <button type="button" class="btn small outline start-round-btn">Start round #${latest.assessmentNumber + 1}</button>
+    </div>`;
+  }).join("");
+
+  // Card opens the latest round, a chip opens that round, the button starts the next.
+  listEl.onclick = (e) => {
+    const card = e.target.closest(".load-assessment-card");
+    if (!card) return;
+    const rounds = cards[card.dataset.i];
+    const chip = e.target.closest(".round-chip");
+    if (e.target.closest(".start-round-btn")) handleLoadAssessmentClick(rounds.at(-1), true);
+    else handleLoadAssessmentClick(chip ? rounds.find(r => String(r.rowId) === chip.dataset.rowId) : rounds.at(-1));
+  };
+}
+
+// Date + time the round was last saved; date only for rows without a timestamp.
+function formatRoundTime(r) {
+  const t = new Date(r.submissionTimestamp);
+  return r.submissionTimestamp && !isNaN(t)
+    ? t.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
+    : formatAssessmentDate(r.assessmentDate);
+}
+
+// Search matches venture, advisor, or portfolio (partial, case-insensitive),
+// so "brian" finds "Brian Hayt".
+function setupLoadAssessmentSearch(allAssessments) {
+  const searchInput = document.getElementById("load-assessment-search");
+  if (!searchInput) return;
+
+  searchInput.value = "";
+
+  const apply = () => {
+    const term = searchInput.value.toLowerCase().trim();
+    renderLoadAssessmentList(allAssessments.filter(a =>
+      !term || [a.ventureName, a.advisorName, a.portfolio].some(f => (f || "").toLowerCase().includes(term))
+    ));
+  };
+
+  // Assign (not addEventListener) so reopening the modal doesn't stack listeners.
+  let debounceTimer;
+  searchInput.oninput = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(apply, 200); };
+  apply();
+}
+
+// startRound: load the venture's latest round, then open the next round blank.
+function handleLoadAssessmentClick(assessment, startRound = false) {
+  const load = () => {
+    loadAssessmentIntoState(assessment);
+    if (startRound) handleStartNewAssessment();
+  };
+  // Check if there's current work that would be lost
+  const hasCurrentWork = Object.values(AppState.scores || {}).some(s => s != null);
+
+  if (hasCurrentWork) {
+    // Show warning modal
+    pendingLoad = load;
+    document.getElementById("replace-current-venture").textContent =
+      AppState.ventureName || "Unnamed Assessment";
+    hideModal("load-assessment-modal");
+    showModal("replace-warning-modal");
+  } else {
+    load();
+    hideModal("load-assessment-modal");
+  }
+}
+
+function confirmLoadAssessment() {
+  pendingLoad?.();
+  pendingLoad = null;
+  hideModal("replace-warning-modal");
+}
+
+function loadAssessmentIntoState(assessment) {
+  // Create a new local venture entry for this loaded assessment
+  AppState.activeVentureId = generateId();
+  AppState.ventureName = assessment.ventureName;
+  AppState.scores = { ...assessment.scores };
+  AppState.goalLevels = {};
+  AppState.isHealthRelated = assessment.isHealthRelated;
+  AppState.assessedAt = assessment.assessmentDate ? new Date(assessment.assessmentDate) : new Date();
+  AppState.createdAt = new Date();
+  AppState.currentCategory = "IP";
+
+  // Commentary: round-trip from Smartsheet for Assessment #1 rows
+  AppState.commentary = normalizeCommentary(assessment.commentary || {
+    coachability: assessment.Coachability,
+    startupInterest: assessment.StartupInterest,
+    callNotes: assessment.CallNotes,
+  });
+  AppState.categoryNotes = { ...(assessment.categoryNotes || {}) };
+
+  // Smartsheet integration fields
+  AppState.ventureId = assessment.ventureId || generateVentureId();
+  AppState.portfolio = assessment.portfolio || "";
+  AppState.institution = assessment.institution || "";
+  AppState.trackAssignment = normalizeTrackAssignment(assessment.trackAssignment);
+
+  // Edit mode tracking - this is key for UPDATE operations
+  AppState.smartsheetRowId = assessment.rowId;
+  AppState.isEditingExisting = true;
+  AppState.originalAssessment = { ...assessment };
+
+  // Assessment tracking
+  AppState.currentAssessmentNumber = assessment.assessmentNumber || 1;
+  AppState.lastSubmissionTimestamp = assessment.assessmentDate;
+  // Snapshot the just-loaded state so a freshly loaded row shows as clean
+  // until the advisor changes a score or commentary field.
+  AppState.lastSubmittedStateHash = generateStateHash();
+
+  saveCurrentVenture();
+  syncUIFromState();
+  initializeCategories();
+  updateSummary();
+  syncSummaryHeaderAndIcons();
+  updateSubmissionStatusUI();
+  updateEditModeIndicator();
+
+  showToast(`Loaded "${assessment.ventureName}" for editing`, "success");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function updateEditModeIndicator() {
+  // Update UI to show we're in edit mode
+  const saveBtn = document.getElementById("btn-save-db");
+  if (saveBtn && AppState.isEditingExisting) {
+    saveBtn.title = isFirstAssessmentRound(AppState)
+      ? "Open the review step to view or edit first-call details before updating this database assessment"
+      : "Update existing assessment in database";
+  } else if (saveBtn) {
+    saveBtn.title = isFirstAssessmentRound(AppState)
+      ? "Open the review step, add required founder-call commentary, and submit to the database"
+      : "Save to Database";
+  }
+}
+
+// Helper functions for load assessment modal
+function formatAssessmentDate(dateStr) {
+  if (!dateStr) return "Unknown date";
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
+  } catch {
+    return dateStr.split("T")[0];
+  }
+}
+
+function formatScoresCompact(scores, isHealthRelated) {
+  const cats = ["IP", "Technology", "Market", "Product", "Team", "Go-to-Market", "Business", "Funding", "Mission Impact"];
+  if (isHealthRelated) cats.push("Regulatory");
+
+  return cats.map(c => {
+    return `${getCategoryAbbrev(c)}:${scores[c] != null ? scores[c] : "-"}`;
+  }).join(" ");
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Generate internal ID (copied from state.js for local use)
+function generateId() {
+  return "v_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
+}
+
+/* -------------------------
+   App Initialization
+--------------------------*/
+function initializeApp() {
+  // Always open in a fresh, blank assessment state. The advisor explicitly
+  // picks a saved venture via the venture-select dropdown or the Load
+  // Assessment modal when they want to continue prior work — refresh should
+  // not silently resurrect the last venture they happened to be looking at.
+  // resetActiveVenture clears AppState in-memory only; saved ventures remain
+  // in _savedVentures and no empty entry is written to localStorage.
+  resetActiveVenture();
+
+  syncUIFromState();
+  initializeCategories();
+  updateSummary();
+  syncSummaryHeaderAndIcons();
+  setupPanelClickToExpand();
+  
+  // Check for welcome modal, pilot banner, and advisor tip state
+  checkShowWelcomeModal();
+  checkHidePilotBanner();
+  checkShowAdvisorTip();
+}
+
+/* -------------------------
+   Event Setup
+--------------------------*/
+function setupEventDelegation() {
+  const catList = document.getElementById("category-list");
+  if (catList) {
+    catList.addEventListener("click", (e) => {
+      const item = e.target.closest(".category-item");
+      if (item) {
+        hideNextToast(true);
+      }
+    }, { capture: true });
+
+    catList.addEventListener("keydown", (e) => {
+      if ((e.key === "Enter" || e.key === " ") && e.target.closest(".category-item")) {
+        hideNextToast(true);
+      }
+    }, { capture: true });
+  }
+
+  // Level selection auto-scroll + next toast
+  document.addEventListener("click", (e) => {
+    const selectBtn = e.target.closest?.(".level-select-btn");
+    if (!selectBtn) return;
+
+    setTimeout(() => {
+      const selectedCard = document.querySelector(".levels-container .level-card.selected") ||
+                           selectBtn.closest(".level-card");
+      centerCardSmart(selectedCard, 3);
+
+      const nxt = AppState.currentCategory && nextCategoryName(AppState.currentCategory);
+      if (nxt) showNextToast(nxt);
+    }, 0);
+  }, { capture: true });
+}
+
+function setupEventListeners() {
+  // Health-related toggle
+  const healthCheckbox = document.getElementById("health-related");
+  if (healthCheckbox) {
+    healthCheckbox.addEventListener("change", (e) => {
+      AppState.isHealthRelated = e.target.checked;
+      saveCurrentVenture();
+      
+      const note = document.getElementById("health-mode-note");
+      if (note) note.classList.toggle("hidden", !AppState.isHealthRelated);
+      
+      // Deliberately does NOT auto-select a life-sciences track. The three
+      // life-sciences tracks now render materially different level definitions,
+      // so silently picking one would have a therapeutics venture reading
+      // device content.
+      updateIndustrySelectorUI();
+      initializeCategories();
+      updateSummary();
+      syncSummaryHeaderAndIcons();
+      updateSubmissionStatusUI();
+    });
+  }
+
+  // View toggle
+  document.querySelectorAll(".view-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const view = e.target.dataset.view;
+      AppState.currentView = view;
+      document.querySelectorAll(".view-btn").forEach(b => 
+        b.classList.toggle("active", b.dataset.view === view)
+      );
+      if (AppState.currentCategory) updateCategoryDisplay();
+    });
+  });
+
+  // TRL subtrack selector
+  const industrySelect = document.getElementById("industry-select");
+  if (industrySelect) {
+    industrySelect.addEventListener("change", () => {
+      AppState.technologyTrack = industrySelect.value;
+      saveCurrentVenture();
+      updateIndustrySelectorUI();
+      updateCategoryDisplay();
+    });
+  }
+
+  // Summary panel controls
+  document.getElementById("minimize-btn")?.addEventListener("click", toggleMinimizeSummaryPanel);
+  document.getElementById("maximize-btn")?.addEventListener("click", toggleMaximizeSummaryPanel);
+  document.getElementById("panel-overlay")?.addEventListener("click", closeMaximizedPanel);
+  
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeMaximizedPanel();
+      hideModal("welcome-modal");
+      hideModal("feedback-modal");
+      hideModal("new-venture-modal");
+      hideModal("delete-modal");
+      hideModal("start-new-modal");
+      hideModal("load-assessment-modal");
+      hideModal("replace-warning-modal");
+      hideModal("submit-review-modal");
+    }
+  });
+
+  wirePickList("venture-pick", "venture-name");
+  wirePickList("advisor-pick", "advisor-name");
+
+  // Venture name binding with auto-save and portfolio auto-fill
+  const nameInput = document.getElementById("venture-name");
+  if (nameInput) {
+    let previousValue = nameInput.value;
+
+    nameInput.addEventListener("input", (e) => {
+      AppState.ventureName = e.target.value;
+      saveCurrentVenture();
+      refreshVentureSelector();
+      updateSubmissionStatusUI();
+      renderWorkspaceHeader();
+    });
+
+    // Check for portfolio auto-fill when user selects from datalist or finishes typing
+    nameInput.addEventListener("change", (e) => {
+      const newValue = e.target.value;
+      if (newValue && newValue !== previousValue) {
+        handleVentureNameChange(newValue);
+        previousValue = newValue;
+      }
+    });
+  }
+
+  // Venture selector
+  const ventureSelect = document.getElementById("venture-select");
+  if (ventureSelect) {
+    ventureSelect.addEventListener("change", (e) => {
+      loadVentureFromSelector(e.target.value);
+    });
+  }
+
+  // New venture button
+  document.getElementById("btn-new-venture")?.addEventListener("click", () => {
+    showModal("new-venture-modal");
+    document.getElementById("new-venture-name")?.focus();
+  });
+
+  // Delete venture button
+  document.getElementById("btn-delete-venture")?.addEventListener("click", () => {
+    if (!AppState.activeVentureId) return;
+    document.getElementById("delete-venture-name").textContent = 
+      AppState.ventureName || "Unnamed Assessment";
+    showModal("delete-modal");
+  });
+
+  // PDF export
+  document.getElementById("btn-export-pdf")?.addEventListener("click", handlePdfExportRequest);
+
+  // Start New Assessment
+  document.getElementById("btn-start-new-assessment")?.addEventListener("click", showStartNewAssessmentModal);
+  document.getElementById("start-new-confirm")?.addEventListener("click", handleStartNewAssessment);
+  document.getElementById("start-new-cancel")?.addEventListener("click", () => hideModal("start-new-modal"));
+  document.getElementById("start-new-close")?.addEventListener("click", () => hideModal("start-new-modal"));
+  document.querySelector("#start-new-modal .modal-backdrop")?.addEventListener("click", () => hideModal("start-new-modal"));
+
+  // Load Assessment Modal
+  document.getElementById("btn-load-assessment")?.addEventListener("click", showLoadAssessmentModal);
+  document.getElementById("load-assessment-modal-close")?.addEventListener("click", () => hideModal("load-assessment-modal"));
+  document.querySelector("#load-assessment-modal .modal-backdrop")?.addEventListener("click", () => hideModal("load-assessment-modal"));
+
+  // Replace Warning Modal
+  document.getElementById("replace-warning-modal-close")?.addEventListener("click", () => hideModal("replace-warning-modal"));
+  document.getElementById("replace-warning-cancel")?.addEventListener("click", () => hideModal("replace-warning-modal"));
+  document.querySelector("#replace-warning-modal .modal-backdrop")?.addEventListener("click", () => hideModal("replace-warning-modal"));
+  document.getElementById("replace-warning-confirm")?.addEventListener("click", confirmLoadAssessment);
+
+  // Save to Database button
+  document.getElementById("btn-save-db")?.addEventListener("click", handleSaveToDatabase);
+
+  // Sticky submission banner — same action as the topbar Save button
+  document.getElementById("submission-banner-save")?.addEventListener("click", handleSaveToDatabase);
+
+  // Submit-review modal (Assessment #1 commentary capture)
+  document.getElementById("submit-review-close")?.addEventListener("click", () => hideModal("submit-review-modal"));
+  document.getElementById("submit-review-cancel")?.addEventListener("click", () => hideModal("submit-review-modal"));
+  document.querySelector("#submit-review-modal .modal-backdrop")?.addEventListener("click", () => hideModal("submit-review-modal"));
+  document.getElementById("submit-review-confirm")?.addEventListener("click", submitAssessmentFromModal);
+
+  document.getElementById("qualification-match-panel")?.addEventListener("change", (event) => {
+    if (event.target?.name !== "qualification-match-choice") return;
+    const value = event.target.value;
+    qualificationMatchState.selectedIndex = value === "none" ? "none" : Number(value);
+    renderSubmitReviewModal();
+  });
+
+  document.querySelectorAll('input[name="submit-review-coachability"]').forEach(input => {
+    input.addEventListener("change", (e) => {
+      setCommentaryField("coachability", e.target.value);
+      renderSubmitReviewModal();
+      updateSubmissionStatusUI();
+    });
+  });
+
+  document.querySelectorAll('input[name="submit-review-startup-interest"]').forEach(input => {
+    input.addEventListener("change", (e) => {
+      setCommentaryField("startupInterest", e.target.value);
+      renderSubmitReviewModal();
+      updateSubmissionStatusUI();
+    });
+  });
+
+  // Per-category notes box (built by external-flow.js) marks the save as changed.
+  document.getElementById("category-notes")?.addEventListener("input", () => updateSubmissionStatusUI());
+
+  document.getElementById("call-notes")?.addEventListener("input", (e) => {
+    setCommentaryField("callNotes", e.target.value);
+    renderSubmitReviewModal();
+    updateSubmissionStatusUI();
+  });
+
+  // Advisor name binding with localStorage persistence (debounced)
+  // Also refreshes venture autocomplete since it filters by advisor
+  const advisorInput = document.getElementById("advisor-name");
+  if (advisorInput) {
+    let advisorDebounceTimer;
+    advisorInput.addEventListener("input", (e) => {
+      AppState.advisorName = e.target.value;
+      renderWorkspaceHeader();
+      // Debounce localStorage write and autocomplete refresh
+      clearTimeout(advisorDebounceTimer);
+      advisorDebounceTimer = setTimeout(() => {
+        saveAdvisorPreference(e.target.value);
+        renderWorkspaceHeader();
+        if (!Auth.isExternal()) {
+          populateVentureNameAutocomplete();
+        }
+      }, 300);
+    });
+  }
+
+  // Portfolio dropdown binding
+  const portfolioSelect = document.getElementById("portfolio-select");
+  if (portfolioSelect) {
+    portfolioSelect.addEventListener("change", (e) => {
+      AppState.portfolio = e.target.value;
+      saveCurrentVenture();
+      updateSubmissionStatusUI();
+    });
+  }
+
+  // Help button
+  document.getElementById("btn-help")?.addEventListener("click", () => {
+    showModal("welcome-modal");
+  });
+
+  // Pilot banner
+  document.getElementById("close-pilot-banner")?.addEventListener("click", dismissPilotBanner);
+  document.getElementById("open-feedback")?.addEventListener("click", showFeedbackModal);
+
+  // Advisor tip dismiss
+  document.getElementById("dismiss-advisor-tip")?.addEventListener("click", dismissAdvisorTip);
+
+  // Welcome modal
+  document.getElementById("welcome-modal-close")?.addEventListener("click", hideWelcomeModal);
+  document.getElementById("welcome-get-started")?.addEventListener("click", hideWelcomeModal);
+  document.querySelector("#welcome-modal .modal-backdrop")?.addEventListener("click", hideWelcomeModal);
+
+  // Attributions & license modal
+  renderAttributions();
+  document.getElementById("open-attributions")?.addEventListener("click", () => showModal("attributions-modal"));
+  document.getElementById("attributions-modal-close")?.addEventListener("click", () => hideModal("attributions-modal"));
+  document.getElementById("attributions-done")?.addEventListener("click", () => hideModal("attributions-modal"));
+  document.querySelector("#attributions-modal .modal-backdrop")?.addEventListener("click", () => hideModal("attributions-modal"));
+
+  // Feedback modal
+  document.getElementById("feedback-modal-close")?.addEventListener("click", hideFeedbackModal);
+  document.querySelector("#feedback-modal .modal-backdrop")?.addEventListener("click", hideFeedbackModal);
+
+  // New venture modal
+  document.getElementById("new-venture-modal-close")?.addEventListener("click", () => hideModal("new-venture-modal"));
+  document.getElementById("new-venture-cancel")?.addEventListener("click", () => hideModal("new-venture-modal"));
+  document.querySelector("#new-venture-modal .modal-backdrop")?.addEventListener("click", () => hideModal("new-venture-modal"));
+  document.getElementById("new-venture-create")?.addEventListener("click", () => {
+    const name = document.getElementById("new-venture-name")?.value?.trim() || "";
+    createNewVenture(name);
+    // Reset to IP category for fresh start
+    AppState.currentCategory = "IP";
+    syncUIFromState();
+    initializeCategories();
+    updateSummary();
+    syncSummaryHeaderAndIcons();
+    hideModal("new-venture-modal");
+    document.getElementById("new-venture-name").value = "";
+    // Scroll to top for fresh assessment experience
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  // Delete modal
+  document.getElementById("delete-modal-close")?.addEventListener("click", () => hideModal("delete-modal"));
+  document.getElementById("delete-cancel")?.addEventListener("click", () => hideModal("delete-modal"));
+  document.querySelector("#delete-modal .modal-backdrop")?.addEventListener("click", () => hideModal("delete-modal"));
+  document.getElementById("delete-confirm")?.addEventListener("click", () => {
+    const idToDelete = AppState.activeVentureId;
+    deleteVenture(idToDelete);
+    
+    // Load another venture or create new
+    const ventures = getAllVentures();
+    if (ventures.length > 0) {
+      loadVenture(ventures[0].id);
+    } else {
+      createNewVenture("");
+    }
+    
+    syncUIFromState();
+    initializeCategories();
+    updateSummary();
+    syncSummaryHeaderAndIcons();
+    hideModal("delete-modal");
+  });
+}
+
+/* -------------------------
+   Save to Database
+--------------------------*/
+let lastSubmitTime = 0;
+const SUBMIT_COOLDOWN = 5000; // 5 seconds between submissions
+let reviewFlowIsExternalPdf = false;
+
+function createQualificationMatchState() {
+  return {
+    status: "idle",
+    candidates: [],
+    match: null,
+    selectedIndex: null,
+    error: "",
+  };
+}
+
+let qualificationMatchState = createQualificationMatchState();
+
+function resetQualificationMatchState() {
+  qualificationMatchState = createQualificationMatchState();
+}
+
+function hasReportingMetadata() {
+  return Boolean(String(AppState.institution || "").trim() || String(AppState.trackAssignment || "").trim());
+}
+
+function shouldRunQualificationMatching() {
+  return !reviewFlowIsExternalPdf && isFirstAssessmentRound(AppState);
+}
+
+function qualificationMatchCanProceed() {
+  if (!shouldRunQualificationMatching()) return true;
+  if (hasReportingMetadata()) return true;
+
+  return ["confident", "no-match", "error"].includes(qualificationMatchState.status) ||
+    (qualificationMatchState.status === "ambiguous" && qualificationMatchState.selectedIndex !== null);
+}
+
+function handlePdfExportRequest() {
+  if (Auth.isExternal()) {
+    openSubmitReviewModal({ isExternalPdf: true });
+    return;
+  }
+
+  savePdfSnapshot();
+}
+
+async function handleSaveToDatabase() {
+  if (Auth.isExternal()) return;
+  if (isCurrentlySubmitting()) return;
+
+  // Assessment #1 routes through the review modal so the advisor must add
+  // founder-call commentary before the database write. Assessment #2+ submits
+  // directly (subject to score-completeness validation in smartsheet.js).
+  if (isFirstAssessmentRound(AppState)) {
+    openSubmitReviewModal({ isExternalPdf: false });
+    return;
+  }
+
+  await submitAssessmentDirect();
+}
+
+function openSubmitReviewModal({ isExternalPdf = false } = {}) {
+  reviewFlowIsExternalPdf = isExternalPdf;
+  resetQualificationMatchState();
+  renderSubmitReviewModal();
+  showModal("submit-review-modal");
+
+  if (shouldRunQualificationMatching()) {
+    prepareQualificationMatch();
+  }
+}
+
+async function prepareQualificationMatch() {
+  if (hasReportingMetadata()) {
+    qualificationMatchState = {
+      status: "existing",
+      candidates: [],
+      match: {
+        institution: AppState.institution,
+        trackAssignment: normalizeTrackAssignment(AppState.trackAssignment),
+      },
+      selectedIndex: null,
+      error: "",
+    };
+    renderSubmitReviewModal();
+    return;
+  }
+
+  qualificationMatchState = {
+    status: "loading",
+    candidates: [],
+    match: null,
+    selectedIndex: null,
+    error: "",
+  };
+  renderSubmitReviewModal();
+
+  try {
+    const records = await fetchQualificationRecords();
+    const resolution = getQualificationMatchResolution({
+      ventureName: AppState.ventureName,
+      advisorName: AppState.advisorName,
+      portfolio: AppState.portfolio,
+    }, records);
+
+    qualificationMatchState = {
+      status: resolution.status,
+      candidates: resolution.candidates || [],
+      match: resolution.match || null,
+      selectedIndex: resolution.status === "confident" ? 0 : null,
+      error: "",
+    };
+
+    if (resolution.status === "confident" && resolution.match) {
+      setReportingMetadata(resolution.match);
+    }
+  } catch (error) {
+    console.warn("[Qualification Match] Failed to fetch Qualification records:", error);
+    qualificationMatchState = {
+      status: "error",
+      candidates: [],
+      match: null,
+      selectedIndex: null,
+      error: error.message || "Qualification lookup failed",
+    };
+  }
+
+  renderSubmitReviewModal();
+}
+
+function formatQualificationMeta(match = {}) {
+  const parts = [];
+  if (match.institution) parts.push(match.institution);
+  if (match.trackAssignment) parts.push(match.trackAssignment);
+  return parts.length > 0 ? parts.join(", ") : "No institution or track provided";
+}
+
+function renderQualificationCandidateOption(candidate, index) {
+  const checked = qualificationMatchState.selectedIndex === index ? "checked" : "";
+  const meta = [
+    candidate.portfolio,
+    candidate.advisorName,
+    candidate.institution,
+    candidate.trackAssignment,
+    candidate.timestamp ? formatAssessmentDate(candidate.timestamp) : "",
+  ].filter(Boolean).join(" | ");
+
+  return `
+    <label class="qualification-match-option">
+      <input type="radio" name="qualification-match-choice" value="${index}" ${checked}>
+      <span>
+        <span class="qualification-match-name">${escapeHtml(candidate.ventureName)}</span>
+        <span class="qualification-match-meta">${escapeHtml(meta || "No metadata available")}</span>
+      </span>
+    </label>
+  `;
+}
+
+function renderQualificationMatchPanel() {
+  const panel = document.getElementById("qualification-match-panel");
+  if (!panel) return;
+
+  if (!shouldRunQualificationMatching()) {
+    panel.className = "qualification-match-panel hidden";
+    panel.innerHTML = "";
+    return;
+  }
+
+  if (hasReportingMetadata()) {
+    panel.className = "qualification-match-panel success";
+    panel.innerHTML = `
+      <h4>Qualification metadata attached</h4>
+      <p>${escapeHtml(formatQualificationMeta({
+        institution: AppState.institution,
+        trackAssignment: AppState.trackAssignment,
+      }))}</p>
+    `;
+    return;
+  }
+
+  if (qualificationMatchState.status === "loading") {
+    panel.className = "qualification-match-panel loading";
+    panel.innerHTML = `
+      <h4>Looking for Qualification metadata</h4>
+      <p>Checking finalized Qualification records by advisor and portfolio.</p>
+    `;
+    return;
+  }
+
+  if (qualificationMatchState.status === "confident" && qualificationMatchState.match) {
+    panel.className = "qualification-match-panel success";
+    panel.innerHTML = `
+      <h4>Qualification metadata found</h4>
+      <p>${escapeHtml(formatQualificationMeta(qualificationMatchState.match))}</p>
+    `;
+    return;
+  }
+
+  if (qualificationMatchState.status === "ambiguous") {
+    const noneChecked = qualificationMatchState.selectedIndex === "none" ? "checked" : "";
+    panel.className = "qualification-match-panel warning";
+    panel.innerHTML = `
+      <h4>Choose the matching Qualification record</h4>
+      <p>Multiple records match this advisor or portfolio. Select one, or save without Qualification metadata.</p>
+      <div class="qualification-match-options">
+        ${qualificationMatchState.candidates.map(renderQualificationCandidateOption).join("")}
+        <label class="qualification-match-option">
+          <input type="radio" name="qualification-match-choice" value="none" ${noneChecked}>
+          <span>
+            <span class="qualification-match-name">Save without Qualification metadata</span>
+            <span class="qualification-match-meta">Institution and Track Assignment will be blank in the RL sheet.</span>
+          </span>
+        </label>
+      </div>
+    `;
+    return;
+  }
+
+  if (qualificationMatchState.status === "no-match") {
+    panel.className = "qualification-match-panel warning";
+    panel.innerHTML = `
+      <h4>No Qualification match found</h4>
+      <p>You can still save this RL assessment. Institution and Track Assignment will be blank in the RL sheet.</p>
+    `;
+    return;
+  }
+
+  if (qualificationMatchState.status === "error") {
+    panel.className = "qualification-match-panel warning";
+    panel.innerHTML = `
+      <h4>Qualification lookup unavailable</h4>
+      <p>You can still save this RL assessment. Institution and Track Assignment will be blank in the RL sheet.</p>
+    `;
+    return;
+  }
+
+  panel.className = "qualification-match-panel hidden";
+  panel.innerHTML = "";
+}
+
+function renderSubmitReviewModal() {
+  const title = document.getElementById("submit-review-modal-title");
+  const intro = document.getElementById("submit-review-intro");
+  const checklist = document.getElementById("submit-checklist");
+  const confirmBtn = document.getElementById("submit-review-confirm");
+  const footerNote = document.querySelector("#submit-review-modal .submit-review-note");
+  const readiness = getSubmissionReadiness(AppState, readinessData);
+  const metadataMissing = getMetadataMissingLabels();
+  const config = getReviewFlowConfig({
+    isExternal: reviewFlowIsExternalPdf,
+    ventureName: AppState.ventureName,
+  });
+  const canConfirm = config.canConfirm(readiness, metadataMissing) && qualificationMatchCanProceed();
+
+  if (title) {
+    title.textContent = config.title;
+  }
+
+  if (intro) intro.textContent = config.intro;
+  if (footerNote) footerNote.textContent = config.footerNote;
+
+  const items = buildReviewChecklist({ config, readiness, metadataMissing });
+
+  if (checklist) {
+    checklist.innerHTML = `
+      <h4>${escapeHtml(config.checklistTitle)}</h4>
+      <ul>
+        ${items.map(item => `<li class="${item.complete ? "complete" : ""}">${escapeHtml(item.label)}</li>`).join("")}
+      </ul>
+    `;
+  }
+
+  renderQualificationMatchPanel();
+
+  const commentary = AppState.commentary || {};
+  document.querySelectorAll('input[name="submit-review-coachability"]').forEach(input => {
+    input.checked = input.value === (commentary.coachability || "");
+  });
+  document.querySelectorAll('input[name="submit-review-startup-interest"]').forEach(input => {
+    input.checked = input.value === (commentary.startupInterest || "");
+  });
+  const notes = document.getElementById("call-notes");
+  if (notes && notes.value !== (commentary.callNotes || "")) {
+    notes.value = commentary.callNotes || "";
+  }
+
+  document.querySelectorAll("#submit-review-modal .required").forEach(marker => {
+    marker.textContent = config.requiresCommentary ? "*" : "(optional)";
+    marker.classList.toggle("optional", !config.requiresCommentary);
+  });
+
+  if (confirmBtn) {
+    confirmBtn.disabled = !canConfirm;
+    confirmBtn.textContent = config.confirmLabel;
+    confirmBtn.title = canConfirm
+      ? config.confirmTitleReady
+      : config.confirmTitleBlocked;
+  }
+}
+
+function applyQualificationMatchSelection() {
+  if (!shouldRunQualificationMatching()) return;
+  if (hasReportingMetadata()) return;
+
+  if (qualificationMatchState.status === "confident" && qualificationMatchState.match) {
+    setReportingMetadata(qualificationMatchState.match);
+    return;
+  }
+
+  if (qualificationMatchState.status === "ambiguous" && typeof qualificationMatchState.selectedIndex === "number") {
+    const selected = qualificationMatchState.candidates[qualificationMatchState.selectedIndex];
+    if (selected) setReportingMetadata(selected);
+  }
+}
+
+async function submitAssessmentFromModal() {
+  const readiness = getSubmissionReadiness(AppState, readinessData);
+  const metadataMissing = getMetadataMissingLabels();
+  const config = getReviewFlowConfig({
+    isExternal: reviewFlowIsExternalPdf,
+    ventureName: AppState.ventureName,
+  });
+  if (!config.canConfirm(readiness, metadataMissing)) {
+    renderSubmitReviewModal();
+    return;
+  }
+
+  if (!qualificationMatchCanProceed()) {
+    renderSubmitReviewModal();
+    return;
+  }
+
+  applyQualificationMatchSelection();
+
+  const modalBtn = document.getElementById("submit-review-confirm");
+  const originalText = modalBtn ? modalBtn.textContent : null;
+  if (modalBtn) {
+    modalBtn.disabled = true;
+    modalBtn.textContent = reviewFlowIsExternalPdf ? "Preparing PDF..." : "Submitting...";
+  }
+
+  if (reviewFlowIsExternalPdf) {
+    savePdfSnapshot({ showPartialWarning: true, includeCommentary: true });
+    hideModal("submit-review-modal");
+    if (modalBtn) {
+      modalBtn.textContent = originalText || config.confirmLabel;
+      renderSubmitReviewModal();
+    }
+    return;
+  }
+
+  const result = await submitAssessmentDirect();
+
+  if (result?.success) {
+    hideModal("submit-review-modal");
+    if (modalBtn) modalBtn.textContent = originalText || config.confirmLabel;
+  } else if (modalBtn) {
+    modalBtn.textContent = originalText || config.confirmLabel;
+    renderSubmitReviewModal();
+  }
+}
+
+async function submitAssessmentDirect() {
+  const btn = document.getElementById("btn-save-db");
+  if (!btn || isCurrentlySubmitting()) return { success: false };
+
+  // Rate limiting applies only to the actual database write, not to opening
+  // the review modal — so the advisor can re-open the modal freely.
+  const now = Date.now();
+  if (now - lastSubmitTime < SUBMIT_COOLDOWN) {
+    showToast("Please wait before saving again", "info");
+    return { success: false };
+  }
+  lastSubmitTime = now;
+
+  const originalHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `
+    <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10" opacity="0.25"></circle>
+      <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
+    </svg>
+    <span>Saving...</span>
+  `;
+
+  try {
+    const result = await submitToSmartsheet();
+
+    if (result.success) {
+      showToast("Saved to NobleReach database", "success");
+      updateSubmissionStatusUI();
+      btn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span>Saved!</span>
+      `;
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+      }, 2000);
+      return { success: true };
+    }
+
+    showToast(result.unconfirmed ? "Database save could not be confirmed. Please retry." : (result.message || "Failed to save"), "error");
+    updateSubmissionStatusUI();
+    btn.innerHTML = originalHTML;
+    btn.disabled = false;
+    return { success: false, message: result.message, unconfirmed: result.unconfirmed };
+  } catch (error) {
+    showToast("Failed to save: " + error.message, "error");
+    updateSubmissionStatusUI();
+    btn.innerHTML = originalHTML;
+    btn.disabled = false;
+    return { success: false, message: error.message };
+  }
+}
+
+/**
+ * Show toast notification
+ */
+function showToast(message, type = "info") {
+  // Create or reuse toast element
+  let toast = document.getElementById("app-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "app-toast";
+    toast.className = "app-toast";
+    document.body.appendChild(toast);
+  }
+
+  toast.textContent = message;
+  toast.className = `app-toast ${type}`;
+
+  // Force reflow then add show class
+  toast.offsetHeight;
+  toast.classList.add("show");
+
+  // Auto-hide after 3 seconds
+  setTimeout(() => {
+    toast.classList.remove("show");
+  }, 3000);
+}
+
+/**
+ * Populate portfolio dropdown from GAS proxy (single source of truth).
+ * Falls back to local PORTFOLIOS constant if proxy is unavailable.
+ */
+async function populatePortfolioDropdown() {
+  const select = document.getElementById("portfolio-select");
+  if (!select) return;
+
+  let portfolios = PORTFOLIOS; // fallback
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const resp = await fetch(`${PROXY_URL}?action=portfolios`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    const data = await resp.json();
+    if (data.success && Array.isArray(data.portfolios)) {
+      portfolios = data.portfolios;
+    }
+  } catch (e) {
+    console.warn("[RL] Could not fetch portfolios from proxy, using local fallback:", e.message);
+  }
+
+  select.innerHTML = '<option value="">Select portfolio...</option>';
+  portfolios.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.value;
+    opt.textContent = p.label;
+    select.appendChild(opt);
+  });
+
+  // Re-sync current portfolio value after options are loaded
+  if (AppState.portfolio) {
+    select.value = AppState.portfolio;
+  }
+}
+
+/* ---------- Name pick lists (venture + advisor) ----------
+ * A <select> of known names plus "Add new…", sitting over the real text input.
+ * The input stays the source of truth: state handlers, the external stepper and
+ * the loaders all read and write it. The input is shown only for "Add new…", or
+ * when there is no list (external mode, fetch failed, nothing saved yet).
+ */
+const PICK_NEW = "__new__";
+
+function setPickList(selectId, inputId, options, newLabel) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  if (!select || !input) return;
+  if (!options.length) {
+    select.hidden = true;
+    input.hidden = false;
+    return;
+  }
+  const placeholder = new Option("Select...", "");
+  placeholder.disabled = true;
+  select.replaceChildren(placeholder, ...options.map(([value, label]) => new Option(label, value)), new Option(newLabel, PICK_NEW));
+  select.hidden = false;
+  syncPickList(selectId, inputId);
+}
+
+// Point the select at the input's current value. A name that isn't in the list
+// (a loaded assessment, a just-added name) is added so it still shows.
+function syncPickList(selectId, inputId) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  if (!select || !input || select.hidden) return;
+  const v = input.value.trim();
+  if (!v) {
+    select.value = "";
+  } else {
+    const match = [...select.options].find(o => o.value !== PICK_NEW && o.value.toLowerCase() === v.toLowerCase());
+    if (match) select.value = match.value;
+    else select.insertBefore(new Option(v, v, true, true), select.lastElementChild);
+  }
+  input.hidden = true;
+}
+
+function wirePickList(selectId, inputId) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  if (!select || !input) return;
+  select.addEventListener("change", () => {
+    if (select.value === PICK_NEW) {
+      // Keep the current value until they type, so the venture isn't blanked.
+      input.hidden = false;
+      input.focus();
+      input.select();
+      return;
+    }
+    input.hidden = true;
+    input.value = select.value;
+    // Same events a typed name fires: autosave, header, portfolio auto-fill.
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+/**
+ * Fill the advisor pick list with names already in the RL sheet.
+ * Spelling comes from each advisor's most recent save (list is newest first);
+ * names differing only in case are merged.
+ */
+async function populateAdvisorNames() {
+  const names = new Map();
+  for (const a of await fetchAllAssessments()) {
+    const n = (a.advisorName || "").trim();
+    if (n && !names.has(n.toLowerCase())) names.set(n.toLowerCase(), n);
+  }
+  const sorted = [...names.values()].sort((a, b) => a.localeCompare(b));
+  setPickList("advisor-pick", "advisor-name", sorted.map(n => [n, n]), "Add new advisor...");
+}
+
+/**
+ * Fill the venture pick list from both Smartsheets, limited to ventures the
+ * current advisor has assessed (partial name match). No advisor → no list.
+ */
+async function populateVentureNameAutocomplete() {
+  const advisor = (AppState.advisorName || "").trim().toLowerCase();
+
+  try {
+    const ventures = advisor ? await fetchVentureData() : [];
+    const myVentures = ventures.filter(v =>
+      (v.advisorNames || []).some(n => n.includes(advisor))
+    );
+    setPickList("venture-pick", "venture-name",
+      myVentures.map(v => [v.name, v.portfolio ? `${v.name} (${v.portfolio})` : v.name]),
+      "Add new venture...");
+    console.log(`[Autocomplete] ${myVentures.length} ventures for advisor "${advisor}" (${ventures.length} total)`);
+  } catch (error) {
+    console.warn("[Autocomplete] Failed to load venture names:", error);
+  }
+}
+
+/**
+ * Handle venture name selection - auto-fill portfolio if available
+ */
+function handleVentureNameChange(ventureName) {
+  if (!ventureName || !ventureName.trim()) return;
+
+  // Look up portfolio from cached data
+  const portfolio = getPortfolioForVenture(ventureName);
+
+  if (portfolio) {
+    // Only auto-fill if portfolio is currently empty
+    const portfolioSelect = document.getElementById("portfolio-select");
+    if (portfolioSelect && !AppState.portfolio) {
+      AppState.portfolio = portfolio;
+      portfolioSelect.value = portfolio;
+      saveCurrentVenture();
+      console.log(`[Autocomplete] Auto-filled portfolio: ${portfolio}`);
+
+      // Show a brief hint that portfolio was auto-filled
+      showToast(`Portfolio set to "${portfolio}"`, "info");
+    }
+  }
+}
+
+/* -------------------------
+   Boot
+--------------------------*/
+
+/**
+ * Apply external mode restrictions.
+ * Adds CSS class for hiding elements and renames internal labels.
+ */
+function applyExternalMode() {
+  document.body.classList.add('external-mode');
+
+  // Rename "Advisor Name" → "Your Name"
+  const advisorLabel = document.querySelector('.advisor-name-field label[for="advisor-name"]');
+  if (advisorLabel) {
+    advisorLabel.innerHTML = 'Your Name <span class="required">*</span>';
+  }
+
+  const advisorInput = document.getElementById('advisor-name');
+  if (advisorInput) {
+    advisorInput.placeholder = 'Your name';
+  }
+
+  const pdfBtn = document.getElementById('btn-export-pdf');
+  if (pdfBtn) {
+    pdfBtn.textContent = 'Review & Save PDF';
+    pdfBtn.title = 'Review the assessment, optionally add call commentary, and download a PDF';
+  }
+
+  console.log('[External Mode] Applied external mode restrictions');
+}
+
+function normalBoot() {
+  const isExternal = Auth.isExternal();
+
+  if (isExternal) {
+    applyExternalMode();
+  } else {
+    populatePortfolioDropdown();
+  }
+
+  initializeApp();
+  setupEventDelegation();
+  setupEventListeners();
+  ensureNextToastDom();
+
+  if (!isExternal) {
+    // Load venture name and advisor name suggestions in background (non-blocking)
+    populateVentureNameAutocomplete();
+    populateAdvisorNames();
+  } else {
+    // External advisors get the guided stepper (Setup → Score → … → Download).
+    startExternalFlow();
+  }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  // Boot function — mode determined after auth (Auth.role is set).
+  // Runs once per page load. A later login (after the proxy reports an
+  // expired session) only closes the overlay; if the role changed, reload so
+  // the internal/external UI is rebuilt from scratch.
+  let bootedRole = null;
+  function boot() {
+    // LEGACY COPY (Nov 2026): only the external password uses this v06 copy.
+    // Staff are sent to the November 2026 tool at the site root (same sign-in).
+    if (!Auth.isExternal()) {
+      window.location.replace(new URL("../", window.location.href).href);
+      return;
+    }
+    if (bootedRole) {
+      if (Auth.role !== bootedRole) window.location.reload();
+      return;
+    }
+    bootedRole = Auth.role;
+
+    // LEGACY COPY: the VDR was removed from this external view (Nov 19, 2026);
+    // ?vdr=true now loads the normal stepper.
+    normalBoot();
+  }
+
+  // Auth gate
+  Auth.initLoginForm(boot);
+
+  const hasAccess = await Auth.checkAccess();
+  if (hasAccess) {
+    Auth.hideLoginOverlay();
+    boot();
+  } else {
+    Auth.showLoginOverlay();
+  }
+});

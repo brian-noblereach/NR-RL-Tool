@@ -9,15 +9,17 @@
 //   2b. on a re-take, one per category whose level went down (pivots happen;
 //       the question is neutral, not a warning)
 //   3. one per screen marked unsure
-//   4. evidence to verify: patent application, LOI, paid pilot, interviews, prototype user
+//   4. evidence to verify: patent application, trade secrets, LOI, paid pilot, interviews, prototype user;
+//      and, at Business 3+ on a startup path with no company, what would trigger forming it
+//      (a Business 3 indicator the form doesn't ask, gen-3.1)
 //   5. each item done ahead of the next level
 //   6. the two lowest categories, as discussion prompts
 // then capped at maxQuestions. If fewer than minQuestions qualify, more of the
 // lowest categories are added.
 
-import { CATS, NAMES, TRACK_LABEL, SOURCE_ITEMS, sourceText } from './intake-model.js';
+import { CATS, NAMES, TRACK_LABEL, SOURCE_ITEMS, sourceText, startupWithoutCompany, isHealth } from './intake-model.js';
 
-const EVIDENCE_ORDER = ['ip3', 'c_wtp', 'c_paid', 'c_talk', 'c_proto'];
+const EVIDENCE_ORDER = ['ip3', 'ip_ts', 'c_wtp', 'c_paid', 'c_talk', 'c_proto'];
 
 function fill(template, values) {
   return String(template).replace(/\{(\w+)\}/g, (m, k) => (values[k] == null ? '' : String(values[k])));
@@ -68,10 +70,12 @@ export function selectQuestions(A, result, config, previous = null) {
   for (const screen of result.notSure) push(fill(b.unsure, { screen }));
   // 4. evidence to verify
   for (const k of EVIDENCE_ORDER) {
-    if (result.facts[k] !== true || !b.evidence[k]) continue;
+    const q = (isHealth(A) && b.evidenceHealth && b.evidenceHealth[k]) || b.evidence[k];
+    if (result.facts[k] !== true || !q) continue;
     const count = k === 'c_talk' && A.count != null ? A.count : '';
-    push(fill(b.evidence[k], { count }).replace(/\s{2,}/g, ' '));
+    push(fill(q, { count }).replace(/\s{2,}/g, ' '));
   }
+  if (b.formationTrigger && result.scores.Business >= 3 && startupWithoutCompany(A)) push(b.formationTrigger);
   // 5. done ahead of the next level
   for (const p of result.progressItems) {
     const done = p.text.replace(/^.*? level \d+: /, '');
@@ -94,6 +98,9 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&': '&
  * A self-contained HTML brief for the BRL interview (attached to the
  * Smartsheet row as precall-brief.html, and shown to staff).
  * meta: { submissionId, submittedAt, previous?: { scores, submittedAt } }
+ * Built when Part 1 is saved (marked "Part 2 not yet received") and again when
+ * Part 2 arrives. The levels are the same both times; Part 2 adds the
+ * applicant's own words and can add one gate signal (icorps_nothing_changed).
  */
 export function buildBriefHtml(A, result, questions, meta = {}) {
   const ap = A.applicant || {}, pr = A.project || {};
@@ -114,7 +121,22 @@ export function buildBriefHtml(A, result, questions, meta = {}) {
 <p>Interviews outside the university: ${esc(A.count != null ? A.count : 'none reported')}${A.confirm ? ' &middot; Most confirmed the problem: ' + esc(A.confirm) : ''}</p>
 ${claimRows ? `<table><thead><tr><th>Claim</th><th>Where it came from</th></tr></thead><tbody>${claimRows}</tbody></table>` : ''}`
     : '';
-  const rows = result.cats.map(c => `<tr><td>${esc(NAMES[c])}</td><td class="n">${esc(result.scores[c])}</td>${prevCell(c)}<td>${esc(result.next[c] || '')}</td></tr>`).join('');
+  // Part 2 (gen-3.0): their own words near the top, the longer answers collapsed.
+  // Built at Part 1 without them, and again when Part 2 arrives.
+  const pe = A.perspective, wr = A.written, cs = A.consent || {};
+  const helped = cs.completedWith && cs.completedWith !== 'No' ? `<p class="meta">Filled in with help from: ${esc(cs.completedWith)}</p>` : '';
+  const words = pe || wr
+    ? `<h2>In their words</h2>
+${pe ? `<p><strong>Why this, why now:</strong> ${esc(pe.whyText)}</p>
+<p><strong>One thing they changed because of feedback:</strong> ${esc(pe.nothing ? 'Nothing yet' : pe.changed)}</p>
+${pe.collaborators ? `<p><strong>Key collaborators or partners:</strong> ${esc(pe.collaborators)}</p>` : ''}` : ''}
+${wr ? `<details><summary>The technology</summary><p>${esc(wr.technology)}</p></details>
+<details><summary>The applications</summary><p>${esc(wr.applications)}</p></details>
+${wr.impact ? `<details><summary>Broader impact</summary><p>${esc(wr.impact)}</p></details>` : ''}` : ''}`
+    : '<p class="pending">Part 2 (written answers) not yet received.</p>';
+  // "None of these yet" on the technology screen is no TRL, not TRL 0.
+  const levelText = c => (result.scores[c] == null && c === 'TRL' && A.stage === 0 ? 'Not yet at TRL 1' : result.scores[c]);
+  const rows = result.cats.map(c => `<tr><td>${esc(NAMES[c])}</td><td class="n">${esc(levelText(c))}</td>${prevCell(c)}<td>${esc(result.next[c] || '')}</td></tr>`).join('');
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Pre-call brief: ${esc(pr.title)}</title>
 <style>
@@ -124,10 +146,14 @@ h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px;color:#024A
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}th{font-size:12px;color:#475569}
 td.n{font-weight:700;width:56px}td.moved{color:#9a3412}.muted{color:#64748b}ol li,ul li{margin:0 0 6px}
 .note{font-size:12px;color:#64748b;margin-top:24px}.lede{font-size:16px;margin:0 0 6px}
+.pending{background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:8px 12px;color:#9a3412}
+details{margin:0 0 8px}summary{cursor:pointer;font-weight:600}
 </style></head><body>
 <h1>${esc(pr.title || 'Untitled project')}</h1>
 ${pr.oneLiner ? `<p class="lede">${esc(pr.oneLiner)}</p>` : ''}
-<p class="meta">${esc(name)} &middot; ${esc(ap.org)} &middot; I-Corps: ${esc(pr.icorps)} &middot; TRL track: ${esc(TRACK_LABEL[result.track])}${meta.submissionId ? ' &middot; ' + esc(meta.submissionId) : ''}${meta.submittedAt ? ' &middot; ' + esc(String(meta.submittedAt).slice(0, 10)) : ''}</p>
+<p class="meta">${esc(name)} &middot; ${esc(ap.org)} &middot; I-Corps: ${esc(pr.icorps)} &middot; TRL track: ${esc(TRACK_LABEL[result.track])}${pr.started ? ' &middot; Started: ' + esc(pr.started) : ''}${meta.submissionId ? ' &middot; ' + esc(meta.submissionId) : ''}${meta.submittedAt ? ' &middot; ' + esc(String(meta.submittedAt).slice(0, 10)) : ''}</p>
+${helped}
+${words}
 <h2>Questions for the call</h2>
 ${questions.length ? `<ol>${questions.map(q => `<li>${esc(q)}</li>`).join('')}</ol>` : '<p class="muted">None generated.</p>'}
 ${discovery}
